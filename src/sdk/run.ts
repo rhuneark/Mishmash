@@ -153,6 +153,183 @@ async function flush(key: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
+// Player identity.
+
+/** This player's profile id ('' when unknown, e.g. before start-up). */
+export function myId(): string {
+  try {
+    const id = RundotGameAPI.getProfile().id;
+    return typeof id === 'string' && id !== 'unknown-user' ? id : '';
+  } catch {
+    return '';
+  }
+}
+
+export function myName(): string {
+  try {
+    return RundotGameAPI.getProfile().username || 'Player';
+  } catch {
+    return 'Player';
+  }
+}
+
+/** Shows RUN's sign-in sheet; true once signed in. */
+export async function promptLogin(): Promise<boolean> {
+  return call('promptLogin', false, async () => {
+    const res = await RundotGameAPI.accessGate.promptLogin();
+    return Boolean(res?.success);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// UGC (rundot/ugc.config.json): community posts other players can see. Only
+// works inside the RUN host; the mock SDK can't store entries, so local dev
+// uses src/app/localUgc.ts instead. Rows come from other players: callers must
+// validate `data`.
+
+export type UgcFail = 'login' | 'rate' | 'flagged' | 'full' | 'error';
+
+export type UgcResult<T> =
+  { ok: true; value: T } | { ok: false; reason: UgcFail; retryAfterMs?: number };
+
+export interface UgcRow {
+  id: string;
+  contentType: string;
+  authorId: string;
+  authorName: string;
+  createdAt: number;
+  status: string;
+  data: unknown;
+}
+
+export interface UgcPage {
+  rows: UgcRow[];
+  next?: string;
+}
+
+export interface UgcBrowse {
+  types: readonly string[];
+  authorId?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+/** The community backend: RUN's UGC here, a local stand-in in dev (same contract). */
+export interface UgcApi {
+  /** The current player's author id ('' when unknown). */
+  me(): string;
+  create(contentType: string, data: Record<string, unknown>): Promise<UgcResult<UgcRow>>;
+  /** Newest first. */
+  browse(q: UgcBrowse): Promise<UgcResult<UgcPage>>;
+  remove(id: string): Promise<boolean>;
+  count(contentType: string): Promise<number | null>;
+  report(id: string): Promise<boolean>;
+  /** False when RUN's text filter would reject it (fails open). */
+  isClean(text: string): Promise<boolean>;
+}
+
+function failOf(err: unknown): { reason: UgcFail; retryAfterMs?: number } {
+  const e = (err ?? {}) as {
+    code?: unknown;
+    name?: unknown;
+    message?: unknown;
+    retryAfterMs?: unknown;
+  };
+  if (e.code === 'RATE_LIMITED' || e.name === 'RateLimitedError') {
+    return {
+      reason: 'rate',
+      retryAfterMs: typeof e.retryAfterMs === 'number' ? e.retryAfterMs : undefined,
+    };
+  }
+  if (e.name === 'AccessDeniedError') return { reason: 'login' };
+  const msg = typeof e.message === 'string' ? e.message.toLowerCase() : '';
+  if (/moderat|profan|inappropriate|flagged/.test(msg)) return { reason: 'flagged' };
+  if (/max(imum)? entries|entry limit|too many entries|quota/.test(msg)) return { reason: 'full' };
+  return { reason: 'error' };
+}
+
+function rowOf(e: {
+  id?: unknown;
+  contentType?: unknown;
+  authorId?: unknown;
+  authorName?: unknown;
+  createdAt?: unknown;
+  status?: unknown;
+  data?: unknown;
+}): UgcRow | null {
+  if (!e || typeof e.id !== 'string') return null;
+  return {
+    id: e.id,
+    contentType: typeof e.contentType === 'string' ? e.contentType : '',
+    authorId: typeof e.authorId === 'string' ? e.authorId : '',
+    authorName: typeof e.authorName === 'string' ? e.authorName : '',
+    createdAt: typeof e.createdAt === 'number' ? e.createdAt : 0,
+    status: typeof e.status === 'string' ? e.status : 'active',
+    data: e.data,
+  };
+}
+
+async function attempt<T>(label: string, fn: () => Promise<T>): Promise<UgcResult<T>> {
+  await ready();
+  try {
+    return { ok: true, value: await fn() };
+  } catch (err) {
+    warn(label, err);
+    return { ok: false, ...failOf(err) };
+  }
+}
+
+export const ugc: UgcApi = {
+  me: myId,
+
+  create: (contentType, data) =>
+    attempt('ugc.create', async () => {
+      const row = rowOf(await RundotGameAPI.ugc.create({ contentType, data, isPublic: true }));
+      if (!row) throw new Error('bad create response');
+      return row;
+    }),
+
+  browse: (q) =>
+    attempt('ugc.browse', async () => {
+      const types = [...q.types];
+      const res = await RundotGameAPI.ugc.browse({
+        contentType: types.length === 1 ? types[0] : types,
+        authorId: q.authorId,
+        sortBy: 'recent',
+        sortOrder: 'desc',
+        limit: q.limit ?? 30,
+        cursor: q.cursor,
+      });
+      const rows = (res?.entries ?? []).map(rowOf).filter((r): r is UgcRow => r !== null);
+      return { rows, next: res?.nextCursor || undefined };
+    }),
+
+  remove: (id) =>
+    call('ugc.remove', false, async () => {
+      await RundotGameAPI.ugc.delete(id);
+      return true;
+    }),
+
+  count: (contentType) =>
+    call('ugc.count', null, async () => {
+      const res = await RundotGameAPI.ugc.count({ contentType });
+      return typeof res?.count === 'number' ? res.count : null;
+    }),
+
+  report: (id) =>
+    call('ugc.report', false, async () => {
+      await RundotGameAPI.ugc.report({ id, reason: 'inappropriate' });
+      return true;
+    }),
+
+  isClean: (text) =>
+    call('ugc.checkText', true, async () => {
+      const res = await RundotGameAPI.ugc.checkTextAsync(text);
+      return res?.clean !== false;
+    }),
+};
+
+// ---------------------------------------------------------------------------
 // Analytics and lifecycle.
 
 export function track(event: string, payload?: Record<string, string | number | boolean>): void {

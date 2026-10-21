@@ -1,0 +1,115 @@
+import { describe, expect, it } from 'vitest';
+import { BASE_POLL, moveVote, optionForType, tally, voteType, voteTypes } from './poll';
+import {
+  MAX_MESSAGE,
+  applyLatest,
+  cleanMessage,
+  mergeMessages,
+  messageFromEntry,
+  timeAgo,
+  type ChatMessage,
+} from './chat';
+
+const msg = (id: string, at: number): ChatMessage => ({
+  id,
+  at,
+  authorId: 'a',
+  authorName: 'A',
+  text: id,
+});
+
+describe('poll', () => {
+  it('maps options to unique content types and back', () => {
+    const types = voteTypes(BASE_POLL);
+    expect(new Set(types).size).toBe(BASE_POLL.options.length);
+    for (const t of types) expect(t).toMatch(/^[a-z0-9_-]{1,64}$/);
+    expect(optionForType(BASE_POLL, voteType('base', 'arpg'))).toBe('arpg');
+    expect(optionForType(BASE_POLL, 'vote-base-nope')).toBeNull();
+    expect(optionForType(BASE_POLL, 'chat')).toBeNull();
+  });
+
+  it('tallies shares and leaders in poll order', () => {
+    const { rows, total } = tally(BASE_POLL, { arpg: 3, story: 3, puzzle: 2, bogus: 50 });
+    expect(total).toBe(8);
+    expect(rows.map((r) => r.option.id)).toEqual(BASE_POLL.options.map((o) => o.id));
+    expect(rows.find((r) => r.option.id === 'arpg')?.share).toBeCloseTo(3 / 8);
+    expect(rows.filter((r) => r.leading).map((r) => r.option.id)).toEqual(['arpg', 'story']);
+  });
+
+  it('has no leader and no shares without votes, and ignores junk counts', () => {
+    const { rows, total } = tally(BASE_POLL, { arpg: -2, story: Number.NaN });
+    expect(total).toBe(0);
+    expect(rows.every((r) => !r.leading && r.share === 0)).toBe(true);
+  });
+
+  it('moves a vote without going negative', () => {
+    expect(moveVote({ arpg: 1 }, 'arpg', 'story')).toEqual({ arpg: 0, story: 1 });
+    expect(moveVote({}, 'arpg', null)).toEqual({ arpg: 0 });
+    expect(moveVote({ arpg: 1 }, null, 'arpg')).toEqual({ arpg: 2 });
+    const same = { arpg: 1 };
+    expect(moveVote(same, 'arpg', 'arpg')).toBe(same);
+  });
+});
+
+describe('chat', () => {
+  it('cleans what players type', () => {
+    expect(cleanMessage('  hi \n\n there  ')).toBe('hi there');
+    expect(cleanMessage('   ')).toBe('');
+    expect(Array.from(cleanMessage('🙂'.repeat(MAX_MESSAGE + 20)))).toHaveLength(MAX_MESSAGE);
+  });
+
+  it('reads valid entries and drops hidden or malformed ones', () => {
+    const base = {
+      id: 'x',
+      authorId: 'p',
+      authorName: 'Pip',
+      createdAt: 5,
+      data: { text: ' yo ' },
+    };
+    expect(messageFromEntry(base)).toEqual({
+      id: 'x',
+      authorId: 'p',
+      authorName: 'Pip',
+      text: 'yo',
+      at: 5,
+    });
+    expect(messageFromEntry({ ...base, status: 'quarantined' })).toBeNull();
+    expect(messageFromEntry({ ...base, status: 'removed' })).toBeNull();
+    expect(messageFromEntry({ ...base, data: { text: 7 } })).toBeNull();
+    expect(messageFromEntry({ ...base, data: null })).toBeNull();
+    expect(messageFromEntry({ ...base, data: { text: '   ' } })).toBeNull();
+    expect(messageFromEntry({ ...base, id: 3 })).toBeNull();
+    expect(messageFromEntry({ ...base, authorName: '' })?.authorName).toBe('Player');
+  });
+
+  it('merges lists oldest first without duplicates', () => {
+    const merged = mergeMessages([msg('b', 2), msg('a', 1)], [msg('c', 3), msg('b', 2)]);
+    expect(merged.map((m) => m.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('drops messages the newest page no longer returns, inside its window only', () => {
+    const existing = [msg('old', 1), msg('gone', 5), msg('kept', 6)];
+    const latest = [msg('kept', 6), msg('new', 7), msg('edge', 4)];
+    expect(applyLatest(existing, latest, false).map((m) => m.id)).toEqual([
+      'old',
+      'edge',
+      'kept',
+      'new',
+    ]);
+  });
+
+  it('a complete page replaces everything', () => {
+    expect(applyLatest([msg('a', 1), msg('b', 2)], [msg('b', 2)], true).map((m) => m.id)).toEqual([
+      'b',
+    ]);
+    expect(applyLatest([msg('a', 1)], [], true)).toEqual([]);
+  });
+
+  it('formats ages', () => {
+    expect(timeAgo(1000, 1000)).toBe('now');
+    expect(timeAgo(5000, 1000)).toBe('now');
+    expect(timeAgo(0, 5 * 60_000)).toBe('5m');
+    expect(timeAgo(0, 3 * 3_600_000)).toBe('3h');
+    expect(timeAgo(0, 2 * 86_400_000)).toBe('2d');
+  });
+});

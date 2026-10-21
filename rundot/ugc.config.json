@@ -1,0 +1,7 @@
+{
+  "maxEntriesPerUser": 500,
+  "maxDataSizeBytes": 2048,
+  "moderationFields": ["data.text"],
+  "requireModeration": false,
+  "autoQuarantineReportThreshold": 3
+}

@@ -8,10 +8,12 @@ export interface SaveData {
   v: number;
   /** Times the game has been opened. */
   visits: number;
+  /** The intro has been read (it then stays under About). */
+  introSeen: boolean;
 }
 
 export function newSave(): SaveData {
-  return { v: SAVE_VERSION, visits: 0 };
+  return { v: SAVE_VERSION, visits: 0, introSeen: false };
 }
 
 /** Parses a stored save; anything missing or broken falls back to defaults. */
@@ -25,10 +27,12 @@ export function parseSave(raw: string | null): SaveData {
     return save;
   }
   if (!data || typeof data !== 'object') return save;
-  const visits = (data as Record<string, unknown>)['visits'];
+  const fields = data as Record<string, unknown>;
+  const visits = fields['visits'];
   if (typeof visits === 'number' && Number.isFinite(visits) && visits >= 0) {
     save.visits = Math.floor(visits);
   }
+  save.introSeen = fields['introSeen'] === true;
   return save;
 }
 

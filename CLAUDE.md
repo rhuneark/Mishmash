@@ -1,11 +1,44 @@
 # Mishmash — CLAUDE.md
 
-A game for RUN.world. **The concept isn't decided yet.** The current build is a placeholder
-screen (the name, "Coming soon" and a visit counter that proves appStorage saves work in the RUN
-host). Replace it once the user describes the game, and rewrite this file to match.
+A game for RUN.world that **the community designs**: players suggest features, everyone votes,
+and the winners get built, one update at a time, so it becomes a mishmash of everyone's ideas.
+There is no game yet. The first build is the community hub: an intro explaining the idea, a
+vote on the base genre and a Town Square chat. Once the base wins, it gets built, and the hub
+stays as the place where the next features are suggested and voted on.
 
-Share link (private, unlisted): _not deployed yet — add it here after the first deploy._
-(once it exists, end every update to the user with this link)
+Share link (private, unlisted): https://w.run/u/7VPvCLP7URUp69R6K10O/private?k=5ba4a9c6c90a7da7908d7c7dbb35a5f3
+(game ID `7VPvCLP7URUp69R6K10O`; end every update to the user with this link)
+
+## The hub
+
+- **Intro** (`screens/Intro.tsx`): full screen on first launch (`save.introSeen`), then the
+  About tab. "This game doesn't exist yet" → suggest / vote / we build it → "First up: what
+  should Mishmash be at its core?" Its two buttons are pinned under the scrolling text.
+- **Vote** (`screens/Vote.tsx`, `game/poll.ts`): `BASE_POLL` (Round 1: pick the base) with 8
+  options (Action RPG, Platformer, Story adventure, Roguelike, Survival & crafting, Tower
+  defense, Puzzle, Idle tycoon). Each player's vote is one UGC entry of content type
+  `vote-<poll>-<option>` (`voteType`); the tally is one `ugc.count` per option (refreshed every
+  45 s while the tab is open). Changing a vote creates the new entry, then deletes the old one;
+  `loadMyVote` finds the player's newest vote entry and deletes any extras (a failed delete).
+  **Never rename a live poll or option id**: its votes stay under the old content type. To
+  close a poll set `open: false`; a new round is a new `Poll` with a new id.
+- **Chat** (`screens/Chat.tsx`, `game/chat.ts`): the Town Square. Messages are UGC entries of
+  type `chat` (`{ v: 1, text }`, one line, ≤200 characters, `cleanMessage`). Newest 30 every
+  15 s while the tab is open (`applyLatest` drops messages the server stopped returning:
+  deleted or hidden); "Load older messages" pages back. Text is pre-checked with RUN's filter
+  (`ugc.checkTextAsync`) and checked again by the server (`moderationFields: data.text`), which
+  may hold a message (it then doesn't show, and the sender is told). Tap a message: Delete
+  (yours) or Report (others; hidden for the reporter at once, auto-hidden for everyone after 3
+  reports). Failures show a `Notice` (sign in, slow down, keep it friendly, limit reached).
+- **Community data is UGC** (`rundot/ugc.config.json`: 500 entries per player, chat and votes
+  combined; 2 KB data; 3 reports hide an entry). UGC needs a RUN sign-in to post (the SDK
+  prompts). `src/app/community.ts` holds the chat and vote logic over a `UgcApi`: `run.ugc` in
+  the RUN host, `src/app/localUgc.ts` in `npm run dev` (the mock SDK can't store UGC). The
+  local stand-in is in memory (resets on reload), seeded with sample players, and the screens
+  show a "Local preview" tag. Rate limits aren't published; reads back off on `RATE_LIMITED`.
+- **Moderation (the user's CLI, needs their RUN login):** `rundot ugc admin reports --status
+  pending`, `rundot ugc quarantined`, `rundot ugc approve <id>`, `rundot ugc admin remove <id>`
+  (see `rundot/docs/rundot-developer-platform/api/UGC.md`, "CLI Management").
 
 ## Ask first
 
@@ -15,29 +48,32 @@ the deploy key (`RUNDOT_API_KEY`, `rk_…`) in chat, code or logs.
 
 ## Setup status
 
-The one-time RUN setup is the user's to run (it needs their RUN login); the steps are in
-`README.md`: `rundot login` → `rundot init --name "Mishmash" … --orientation Portrait
---build-path ./dist` → first `rundot deploy` (prints the share link) → `rundot game api-keys
-create` → `RUNDOT_API_KEY` repo secret → commit `game.config.prod.json`. Until then the Deploy
-workflow typechecks, tests, builds and preflights, then skips the deploy with a warning.
-
-Once `game.config.prod.json` is committed: record the share link and game ID above, delete the
-stopgap `game.config.json` (it only declares portrait so preflight passes before `rundot init`;
-the prod config declares it too), and update this section.
+Setup is done (2026-10-21): the user ran `rundot init` and committed `game.config.prod.json`
+(declares portrait), and the `RUNDOT_API_KEY` secret is set, so every push to the game branch
+deploys a private build (v1.1.0 was the placeholder). The one-time steps stay in `README.md`.
 
 ## Layout
 
 ```
 src/game/     Pure rules. No SDK, no React, no DOM. Deterministic given inputs + seed.
-  save.ts       save JSON parse/repair (SAVE_KEY, SAVE_VERSION)
+  save.ts       save JSON parse/repair (SAVE_KEY, SAVE_VERSION; visits, introSeen)
+  poll.ts       polls, vote content types, tallies
+  chat.ts       message cleaning, validation of entries, merging pages, ages
   *.test.ts     vitest unit tests
 src/sdk/run.ts  THE ONLY module that imports the RUN SDK. Waits for start-up, catches everything.
+                Also defines the UgcApi contract and `run.ugc` (RUN's UGC).
+src/app/        community.ts (chat + votes over UgcApi), localUgc.ts (dev stand-in),
+                usePolling.ts (refresh while visible, honours rate-limit waits)
+src/screens/    Intro (also the About tab), Vote, Chat
+src/ui/         Logo (letter tiles), Notice (failure messages)
 src/components/ ErrorBoundary
-src/App.tsx     placeholder screen
+src/App.tsx     save load, first-launch intro, tab bar (Vote / Chat / About)
 src/main.tsx    entry: safe-area/font-scale CSS vars, lifecycle hooks, render
+scripts/playthrough.mjs  Playwright run of the local preview at 375×667 and 390×844
 public/thumbnail.jpg   store thumbnail placeholder (512×512 JPEG; deploy rejects the template's)
+rundot/ugc.config.json UGC limits and moderation
 rundot/cli_hooks.json  RUN CLI hooks (from the template)
-game.config.json       stopgap portrait declaration for preflight (see Setup status)
+game.config.prod.json  RUN game ID + build settings (from `rundot init`; declares portrait)
 ```
 
 Built on `series-ai/run-template-2d-react` (same base as the user's other RUN game, The Dood).
@@ -57,7 +93,8 @@ Built on `series-ai/run-template-2d-react` (same base as the user's other RUN ga
   with a visible frame and ≥14px text. Use `--safe-top/--safe-bottom` and `--fs` (font scale).
 - **Nothing unreleased in `public/`** — everything there ships.
 - SDK pinned at 5.28.1 with React 18.3.1 (the template's pair; the SDK's embedded libraries
-  expect that React). vitest stays on 3.x: vitest 4 fails to install with npm 10.
+  expect that React). vitest stays on 3.x: vitest 4 fails to install with npm 10. playwright
+  stays on 1.56.x, the browser build the cloud container ships (`/opt/pw-browsers`).
 - Format with Prettier (`npm run format`), match surrounding style, keep comments sparse.
 
 ## Checks before every push
@@ -67,7 +104,12 @@ npx tsc --noEmit
 npm test                    # vitest, pure rules
 npm run build
 rundot preflight --strict   # must be 0 warnings
+npm run dev                 # then, in another shell:
+npm run playthrough         # Playwright: intro, vote, chat at 375×667 + 390×844, must print "clean"
 ```
+
+The playthrough only covers the local stand-in; UGC itself only runs in the RUN host, so ask the
+user to try chat and voting on the live build after changes there.
 
 ## Deploying
 
@@ -75,7 +117,8 @@ rundot preflight --strict   # must be 0 warnings
   (docs-only changes skipped): npm ci → RUN CLI → typecheck, tests, build, preflight →
   `rundot login` with the `RUNDOT_API_KEY` secret → `rundot deploy --orientation Portrait` →
   `set-keywords` / `set-description` from the `GAME_KEYWORDS` / `GAME_DESCRIPTION` env lines
-  when they're set (blank for now). The share link is printed in the Deploy step log.
+  when they're set (description set, keywords blank for now). The share link is printed in the
+  Deploy step log.
 - `.github/workflows/publish.yml`: hand-run only, **only when the user asks**. `publish` runs
   `rundot game set-public --version X.Y.Z` (newest from `rundot game list-versions` if blank;
   the CLI rejects "latest"); `unpublish` runs `rundot game set-private`. `set-public` puts a

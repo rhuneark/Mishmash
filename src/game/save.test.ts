@@ -12,12 +12,22 @@ describe('parseSave', () => {
     expect(parseSave('42')).toEqual(newSave());
     expect(parseSave('{"visits":-3}')).toEqual(newSave());
     expect(parseSave('{"visits":"7"}')).toEqual(newSave());
+    expect(parseSave('{"introSeen":"yes"}').introSeen).toBe(false);
   });
 
   it('reads a stored save', () => {
-    expect(parseSave(JSON.stringify({ v: SAVE_VERSION, visits: 4 }))).toEqual({
+    expect(parseSave(JSON.stringify({ v: SAVE_VERSION, visits: 4, introSeen: true }))).toEqual({
       v: SAVE_VERSION,
       visits: 4,
+      introSeen: true,
+    });
+  });
+
+  it('accepts saves from before the intro', () => {
+    expect(parseSave(JSON.stringify({ v: 1, visits: 2 }))).toEqual({
+      v: SAVE_VERSION,
+      visits: 2,
+      introSeen: false,
     });
   });
 

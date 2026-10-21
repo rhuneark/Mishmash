@@ -1,11 +1,13 @@
 # Mishmash
 
-A game for RUN.world. Not designed yet: the current build is a placeholder screen.
+A RUN.world game the community designs: players suggest features, everyone votes, and the
+winners get built. The first build is the hub: an intro, a vote on the base genre and a chat.
 
 ```bash
 npm install
-npm run dev          # local, SDK in mock mode
+npm run dev          # local preview, SDK in mock mode (chat and votes are a local stand-in)
 npm test             # rules unit tests
+npm run playthrough  # Playwright playthrough (dev server running)
 ```
 
 See `CLAUDE.md` for architecture, conventions, checks and deployment.

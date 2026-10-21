@@ -12,7 +12,8 @@
     "test": "vitest run",
     "deploy": "npm run build && rundot deploy --orientation Portrait",
     "format": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --write",
-    "format:check": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --check"
+    "format:check": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --check",
+    "playthrough": "node scripts/playthrough.mjs"
   },
   "keywords": [
     "react",
@@ -28,6 +29,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "cross-env": "^7.0.3",
     "firebase": "^12.12.1",
+    "playwright": "~1.56.1",
     "prettier": "^3.4.2",
     "typescript": "^5.7.3",
     "vite": "^6.3.5",

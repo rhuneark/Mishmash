@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react';
 import * as run from '../sdk/run';
 import { BASE_POLL, moveVote, tally, type Counts } from '../game/poll';
-import { castVote, isLocalPreview, loadCounts, loadMyVote, type MyVote } from '../app/community';
+import { castVote, isLocalPreview, loadPoll, type MyVote } from '../app/community';
 import { usePolling } from '../app/usePolling';
 import { Notice, type NoticeState } from '../ui/Notice';
 
-const REFRESH_MS = 45_000;
+const REFRESH_MS = 60_000;
 
 export function Vote({ onChat }: { onChat: () => void }) {
   const poll = BASE_POLL;
@@ -14,31 +14,26 @@ export function Vote({ onChat }: { onChat: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const lastVoteAt = useRef(0);
-  const mineLoaded = useRef(false);
 
   usePolling(async () => {
     const started = Date.now();
-    if (!mineLoaded.current) {
-      const vote = await loadMyVote(poll);
-      if (vote) {
-        mineLoaded.current = true;
-        setMine((m) => m ?? vote);
-      }
+    const res = await loadPoll(poll);
+    // A refresh that started before a vote landed would undo it on screen.
+    if (started < lastVoteAt.current) return undefined;
+    if (!res.ok) {
+      if (!counts) setNotice({ reason: res.reason === 'login' ? 'login' : 'loadFailed' });
+      return res.reason === 'rate' ? Math.max(REFRESH_MS, res.retryAfterMs ?? 0) : undefined;
     }
-    const next = await loadCounts(poll);
-    // A refresh that started before a vote landed would undo its optimistic count.
-    if (started < lastVoteAt.current) return;
-    if (next) {
-      setCounts(next);
-      setNotice((n) => (n?.reason === 'loadFailed' ? null : n));
-    } else if (!counts) {
-      setNotice({ reason: 'loadFailed' });
-    }
+    setCounts(res.counts);
+    setMine(res.mine);
+    setNotice((n) => (n?.reason === 'loadFailed' ? null : n));
+    return undefined;
   }, REFRESH_MS);
 
   const vote = async (option: string) => {
-    if (busy || !poll.open || mine?.option === option) return;
-    const previous = mine ?? { option: null, entryIds: [] };
+    // Until this player's current vote is known, a new one could be a second vote.
+    if (!mine || busy || !poll.open || mine.option === option) return;
+    const previous = mine;
     setBusy(option);
     setNotice(null);
     const res = await castVote(poll, option, previous);
@@ -50,8 +45,6 @@ export function Vote({ onChat }: { onChat: () => void }) {
     }
     setMine(res.vote);
     setCounts((c) => moveVote(c ?? {}, previous.option, option));
-    // Without a known earlier vote, tidy any the server still holds.
-    if (!mine) void loadMyVote(poll).then((v) => v && setMine(v));
     run.track('vote_cast', { poll: poll.id, option, changed: Boolean(previous.option) });
   };
 
@@ -69,8 +62,8 @@ export function Vote({ onChat }: { onChat: () => void }) {
           <h2 className="page-title">{poll.question}</h2>
           <p className="muted">
             {chosen
-              ? `You voted ${chosen.name}. Tap another to change your vote.`
-              : 'Tap one to vote. You can change your vote any time.'}
+              ? `You voted ${chosen.name}. Tap another to move your vote.`
+              : 'One vote per person. Tap one to vote; you can move it later.'}
           </p>
         </header>
 
@@ -84,7 +77,7 @@ export function Vote({ onChat }: { onChat: () => void }) {
                 key={row.option.id}
                 className={`option${picked ? ' picked' : ''}`}
                 aria-pressed={picked}
-                disabled={busy !== null || !poll.open}
+                disabled={!mine || busy !== null || !poll.open}
                 onClick={() => void vote(row.option.id)}
               >
                 <span

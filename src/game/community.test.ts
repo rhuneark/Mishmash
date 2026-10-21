@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BASE_POLL, moveVote, optionForType, tally, voteType, voteTypes } from './poll';
+import { BASE_POLL, countVotes, moveVote, optionForType, tally, voteType, voteTypes } from './poll';
 import {
   MAX_MESSAGE,
   applyLatest,
@@ -40,6 +40,35 @@ describe('poll', () => {
     const { rows, total } = tally(BASE_POLL, { arpg: -2, story: Number.NaN });
     expect(total).toBe(0);
     expect(rows.every((r) => !r.leading && r.share === 0)).toBe(true);
+  });
+
+  it('counts one vote per person: their newest', () => {
+    const v = (id: string, authorId: string, option: string, createdAt: number) => ({
+      id,
+      authorId,
+      contentType: voteType('base', option),
+      createdAt,
+    });
+    const { counts, byAuthor, extras } = countVotes(BASE_POLL, [
+      v('a1', 'ann', 'arpg', 1),
+      v('a2', 'ann', 'story', 5),
+      v('a3', 'ann', 'arpg', 3),
+      v('b1', 'bob', 'arpg', 2),
+      v('c1', 'cat', 'puzzle', 4),
+      v('n1', '', 'puzzle', 9),
+      { id: 'x', authorId: 'dan', contentType: 'chat', createdAt: 9 },
+    ]);
+    expect(counts).toEqual({ story: 1, arpg: 1, puzzle: 1 });
+    expect(byAuthor.get('ann')).toEqual({ option: 'story', id: 'a2' });
+    expect(byAuthor.has('dan')).toBe(false);
+    expect(extras.map((e) => e.id).sort()).toEqual(['a1', 'a3', 'n1']);
+  });
+
+  it('breaks a same-time tie between one person’s votes the same way every time', () => {
+    const a = { id: 'p', authorId: 'ann', contentType: voteType('base', 'arpg'), createdAt: 1 };
+    const b = { id: 'q', authorId: 'ann', contentType: voteType('base', 'idle'), createdAt: 1 };
+    expect(countVotes(BASE_POLL, [a, b]).counts).toEqual({ idle: 1 });
+    expect(countVotes(BASE_POLL, [b, a]).counts).toEqual({ idle: 1 });
   });
 
   it('moves a vote without going negative', () => {

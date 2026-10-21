@@ -214,15 +214,21 @@ export interface UgcBrowse {
   cursor?: string;
 }
 
+/** The player's role on this game, checked by RUN's server against the account email. */
+export type Role = 'owner' | 'editor' | 'none';
+
 /** The community backend: RUN's UGC here, a local stand-in in dev (same contract). */
 export interface UgcApi {
   /** The current player's author id ('' when unknown). */
   me(): string;
+  role(): Promise<Role>;
   create(contentType: string, data: Record<string, unknown>): Promise<UgcResult<UgcRow>>;
   /** Newest first. */
   browse(q: UgcBrowse): Promise<UgcResult<UgcPage>>;
+  /** Deletes one of the player's own entries (RUN refuses anyone else's). */
   remove(id: string): Promise<boolean>;
-  count(contentType: string): Promise<number | null>;
+  /** Removes anyone's entry; RUN only allows the game's owner and editors. */
+  adminRemove(id: string): Promise<boolean>;
   report(id: string): Promise<boolean>;
   /** False when RUN's text filter would reject it (fails open). */
   isClean(text: string): Promise<boolean>;
@@ -282,6 +288,12 @@ async function attempt<T>(label: string, fn: () => Promise<T>): Promise<UgcResul
 export const ugc: UgcApi = {
   me: myId,
 
+  role: () =>
+    call<Role>('app.getMyRole', 'none', async () => {
+      const role = await RundotGameAPI.app.getMyRole();
+      return role === 'owner' || role === 'editor' ? role : 'none';
+    }),
+
   create: (contentType, data) =>
     attempt('ugc.create', async () => {
       const row = rowOf(await RundotGameAPI.ugc.create({ contentType, data, isPublic: true }));
@@ -310,10 +322,10 @@ export const ugc: UgcApi = {
       return true;
     }),
 
-  count: (contentType) =>
-    call('ugc.count', null, async () => {
-      const res = await RundotGameAPI.ugc.count({ contentType });
-      return typeof res?.count === 'number' ? res.count : null;
+  adminRemove: (id) =>
+    call('adminUgc.removeEntry', false, async () => {
+      await RundotGameAPI.app.adminUgc.removeEntry(id);
+      return true;
     }),
 
   report: (id) =>

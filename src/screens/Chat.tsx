@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import * as run from '../sdk/run';
 import {
   MAX_MESSAGE,
@@ -8,7 +8,15 @@ import {
   timeAgo,
   type ChatMessage,
 } from '../game/chat';
-import { chatPage, deleteChat, isLocalPreview, myId, postChat, reportChat } from '../app/community';
+import {
+  chatPage,
+  deleteChat,
+  isLocalPreview,
+  isOwner,
+  myId,
+  postChat,
+  reportChat,
+} from '../app/community';
 import { usePolling } from '../app/usePolling';
 import { Notice, type NoticeState } from '../ui/Notice';
 
@@ -36,6 +44,16 @@ export function Chat() {
   const stickToBottom = useRef(true);
   const keepFromBottom = useRef<number | null>(null);
   const me = myId();
+  // The game's owner may delete anyone's message; everyone else only their own.
+  const [owner, setOwner] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void isOwner().then((yes) => !cancelled && setOwner(yes));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   usePolling(async () => {
     const res = await chatPage();
@@ -111,7 +129,7 @@ export function Chat() {
   const remove = async (m: ChatMessage) => {
     setSelected(null);
     setMessages((prev) => prev.filter((x) => x.id !== m.id));
-    if (!(await deleteChat(m.id))) {
+    if (!(await deleteChat(m))) {
       setMessages((prev) => mergeMessages(prev, [m]));
       setNotice({ reason: 'error' });
     }
@@ -177,7 +195,7 @@ export function Chat() {
               </button>
               {open && (
                 <div className="msg-actions">
-                  {mine ? (
+                  {mine || owner ? (
                     <button className="btn small" onClick={() => void remove(m)}>
                       Delete
                     </button>

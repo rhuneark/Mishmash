@@ -1,7 +1,7 @@
 // Local stand-in for RUN's UGC, used by `npm run dev` (the mock SDK can't store
 // entries). Same contract as run.ugc, kept in memory, seeded with a few sample
 // players so the chat and the vote have something to show. Never used in the
-// RUN host.
+// RUN host. `owner` plays the game's owner (dev URL `?owner`).
 
 import type { UgcApi, UgcRow } from '../sdk/run';
 import { BASE_POLL, voteType } from '../game/poll';
@@ -9,7 +9,7 @@ import { CHAT_TYPE } from '../game/chat';
 
 const ME = 'local-you';
 
-export function createLocalUgc(now: () => number = Date.now): UgcApi {
+export function createLocalUgc(owner = false, now: () => number = Date.now): UgcApi {
   let seq = 0;
   const rows: UgcRow[] = [];
   const add = (
@@ -57,12 +57,19 @@ export function createLocalUgc(now: () => number = Date.now): UgcApi {
   };
   for (const [option, n] of Object.entries(seedVotes)) {
     for (let i = 0; i < n; i++) {
-      add(voteType(BASE_POLL.id, option), `local-voter-${option}-${i}`, 'Voter', { v: 1, option });
+      const voter = `local-voter-${option}-${i}`;
+      add(voteType(BASE_POLL.id, option), voter, 'Voter', { v: 1, option }, 60 * min);
     }
   }
+  // A voter with a second, newer vote: only that one counts (roguelike, not arpg).
+  add(voteType(BASE_POLL.id, 'roguelike'), 'local-voter-arpg-0', 'Voter', { v: 1 }, 5 * min);
 
   return {
     me: () => ME,
+
+    async role() {
+      return owner ? 'owner' : 'none';
+    },
 
     async create(contentType, data) {
       return { ok: true, value: add(contentType, ME, 'You', data) };
@@ -87,8 +94,10 @@ export function createLocalUgc(now: () => number = Date.now): UgcApi {
       return i >= 0;
     },
 
-    async count(contentType) {
-      return rows.filter((r) => r.contentType === contentType).length;
+    async adminRemove(id) {
+      const i = owner ? rows.findIndex((r) => r.id === id) : -1;
+      if (i >= 0) rows.splice(i, 1);
+      return i >= 0;
     },
 
     async report(id) {

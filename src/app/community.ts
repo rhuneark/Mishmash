@@ -5,12 +5,16 @@ import * as run from '../sdk/run';
 import type { UgcFail, UgcRow } from '../sdk/run';
 import { createLocalUgc } from './localUgc';
 import { CHAT_TYPE, cleanMessage, messageFromEntry, type ChatMessage } from '../game/chat';
-import { optionForType, voteType, voteTypes, type Counts, type Poll } from '../game/poll';
+import { countVotes, voteType, voteTypes, type Counts, type Poll } from '../game/poll';
 
 let api: run.UgcApi | null = null;
 
 function backend(): run.UgcApi {
-  if (!api) api = run.isMock() ? createLocalUgc() : run.ugc;
+  if (!api) {
+    api = run.isMock()
+      ? createLocalUgc(new URLSearchParams(window.location.search).has('owner'))
+      : run.ugc;
+  }
   return api;
 }
 
@@ -62,8 +66,27 @@ export async function postChat(raw: string): Promise<PostResult> {
   return { ok: true, message: messageFromEntry(res.value) };
 }
 
-export function deleteChat(id: string): Promise<boolean> {
-  return backend().remove(id);
+let ownerCheck: Promise<boolean> | null = null;
+
+/** True only for the game's owner (the user): they may delete anyone's message. */
+export function isOwner(): Promise<boolean> {
+  if (!ownerCheck) {
+    ownerCheck = backend()
+      .role()
+      .then((role) => role === 'owner');
+    // A failed check (e.g. before sign-in) may succeed later.
+    void ownerCheck.then((yes) => {
+      if (!yes) ownerCheck = null;
+    });
+  }
+  return ownerCheck;
+}
+
+/** Deletes a message: players only their own, the owner anyone's. */
+export async function deleteChat(m: ChatMessage): Promise<boolean> {
+  const me = myId();
+  if (me && m.authorId === me) return backend().remove(m.id);
+  return (await isOwner()) ? backend().adminRemove(m.id) : false;
 }
 
 export function reportChat(id: string): Promise<boolean> {
@@ -71,42 +94,47 @@ export function reportChat(id: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
-// Votes. A player's vote is their newest entry among the poll's vote types;
-// older ones (left by a failed delete) are cleaned up when found.
+// Votes: one per person. Every vote entry of the poll is read and only each
+// player's newest counts (countVotes); this player's extra entries (left by a
+// failed delete) are cleaned up when found.
+
+export const VOTE_PAGE = 100;
+/** Pages read per refresh: counts are exact up to VOTE_PAGE × VOTE_PAGES entries. */
+export const VOTE_PAGES = 30;
 
 export interface MyVote {
   option: string | null;
-  /** Ids of this player's vote entries for the poll, newest first. */
+  /** Ids of this player's vote entries for the poll. */
   entryIds: string[];
 }
 
-/** Vote totals per option; null if none could be read. */
-export async function loadCounts(poll: Poll): Promise<Counts | null> {
-  const counts: Counts = {};
-  let any = false;
-  for (const o of poll.options) {
-    const n = await backend().count(voteType(poll.id, o.id));
-    if (n !== null) {
-      counts[o.id] = n;
-      any = true;
-    }
-  }
-  return any ? counts : null;
+export interface PollState {
+  ok: true;
+  counts: Counts;
+  mine: MyVote;
 }
 
-export async function loadMyVote(poll: Poll): Promise<MyVote | null> {
+export async function loadPoll(poll: Poll): Promise<PollState | Failure> {
+  const rows: UgcRow[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < VOTE_PAGES; page++) {
+    const res = await backend().browse({ types: voteTypes(poll), limit: VOTE_PAGE, cursor });
+    if (!res.ok) return res;
+    rows.push(...res.value.rows);
+    cursor = res.value.next;
+    if (!cursor) break;
+  }
+  const { counts, byAuthor, extras } = countVotes(poll, rows);
   const me = myId();
-  if (!me) return { option: null, entryIds: [] };
-  const res = await backend().browse({ types: voteTypes(poll), authorId: me, limit: 20 });
-  if (!res.ok) return null;
-  const mine = res.value.rows.filter(
-    (r) => r.authorId === me && optionForType(poll, r.contentType),
-  );
-  const [newest, ...stale] = mine;
-  for (const r of stale) void backend().remove(r.id);
-  return newest
-    ? { option: optionForType(poll, newest.contentType), entryIds: [newest.id] }
-    : { option: null, entryIds: [] };
+  for (const e of extras) if (me && e.authorId === me) void backend().remove(e.id);
+  const counted = me ? byAuthor.get(me) : undefined;
+  return {
+    ok: true,
+    counts,
+    mine: counted
+      ? { option: counted.option, entryIds: [counted.id] }
+      : { option: null, entryIds: [] },
+  };
 }
 
 /** Votes for `option`, then removes the player's previous vote entries. */

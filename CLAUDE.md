@@ -16,10 +16,14 @@ Share link (private, unlisted): https://w.run/u/7VPvCLP7URUp69R6K10O/private?k=5
   should Mishmash be at its core?" Its two buttons are pinned under the scrolling text.
 - **Vote** (`screens/Vote.tsx`, `game/poll.ts`): `BASE_POLL` (Round 1: pick the base) with 8
   options (Action RPG, Platformer, Story adventure, Roguelike, Survival & crafting, Tower
-  defense, Puzzle, Idle tycoon). Each player's vote is one UGC entry of content type
-  `vote-<poll>-<option>` (`voteType`); the tally is one `ugc.count` per option (refreshed every
-  45 s while the tab is open). Changing a vote creates the new entry, then deletes the old one;
-  `loadMyVote` finds the player's newest vote entry and deletes any extras (a failed delete).
+  defense, Puzzle, Idle tycoon). **One vote per person** (the user's rule): each vote is a UGC
+  entry of content type `vote-<poll>-<option>` (`voteType`), and `loadPoll` reads every vote
+  entry of the poll (all options in one browse, 100 a page, up to `VOTE_PAGES` 30 pages, so
+  exact up to 3,000 entries; revisit past that) and `countVotes` counts only each author's
+  newest one, so a second entry (a failed delete, a tampered client) never counts. Refreshed
+  every 60 s while the tab is open. Moving a vote creates the new entry, then deletes the old
+  one; the player's own extra entries are deleted when found. The buttons stay disabled until
+  the player's current vote is known, so the client never makes a second vote blind.
   **Never rename a live poll or option id**: its votes stay under the old content type. To
   close a poll set `open: false`; a new round is a new `Poll` with a new id.
 - **Chat** (`screens/Chat.tsx`, `game/chat.ts`): the Town Square. Messages are UGC entries of
@@ -27,15 +31,21 @@ Share link (private, unlisted): https://w.run/u/7VPvCLP7URUp69R6K10O/private?k=5
   15 s while the tab is open (`applyLatest` drops messages the server stopped returning:
   deleted or hidden); "Load older messages" pages back. Text is pre-checked with RUN's filter
   (`ugc.checkTextAsync`) and checked again by the server (`moderationFields: data.text`), which
-  may hold a message (it then doesn't show, and the sender is told). Tap a message: Delete
-  (yours) or Report (others; hidden for the reporter at once, auto-hidden for everyone after 3
-  reports). Failures show a `Notice` (sign in, slow down, keep it friendly, limit reached).
+  may hold a message (it then doesn't show, and the sender is told). Tap a message: **Delete
+  only your own** (`ugc.delete`; RUN's server also refuses anyone else's) or Report others'
+  (hidden for the reporter at once, auto-hidden for everyone after 3 reports). **Only the
+  game's owner (the user) may delete anyone's message** (the user's rule): `isOwner` asks
+  `app.getMyRole()` (RUN checks the signed-in account's email against the game owner's) and
+  the owner's Delete calls `app.adminUgc.removeEntry` (RUN refuses non-owners/editors; editors
+  don't get the button). Removed entries are soft-deleted (`status: 'removed'`). Failures show
+  a `Notice` (sign in, slow down, keep it friendly, limit reached).
 - **Community data is UGC** (`rundot/ugc.config.json`: 500 entries per player, chat and votes
   combined; 2 KB data; 3 reports hide an entry). UGC needs a RUN sign-in to post (the SDK
   prompts). `src/app/community.ts` holds the chat and vote logic over a `UgcApi`: `run.ugc` in
   the RUN host, `src/app/localUgc.ts` in `npm run dev` (the mock SDK can't store UGC). The
-  local stand-in is in memory (resets on reload), seeded with sample players, and the screens
-  show a "Local preview" tag. Rate limits aren't published; reads back off on `RATE_LIMITED`.
+  local stand-in is in memory (resets on reload), seeded with sample players (one voted twice),
+  and the screens show a "Local preview" tag; add `?owner` to the dev URL to play the owner.
+  Rate limits aren't published; reads back off on `RATE_LIMITED`.
 - **Moderation (the user's CLI, needs their RUN login):** `rundot ugc admin reports --status
   pending`, `rundot ugc quarantined`, `rundot ugc approve <id>`, `rundot ugc admin remove <id>`
   (see `rundot/docs/rundot-developer-platform/api/UGC.md`, "CLI Management").
@@ -107,7 +117,7 @@ npm test                    # vitest, pure rules
 npm run build
 rundot preflight --strict   # must be 0 warnings
 npm run dev                 # then, in another shell:
-npm run playthrough         # Playwright: intro, vote, chat at 375×667 + 390×844, must print "clean"
+npm run playthrough         # Playwright: intro, vote, chat, owner delete at 375×667 + 390×844, must print "clean"
 ```
 
 The playthrough only covers the local stand-in; UGC itself only runs in the RUN host, so ask the

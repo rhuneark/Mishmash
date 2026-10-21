@@ -1,6 +1,7 @@
 // Community polls. Each player's vote is one UGC entry whose content type names
-// the option (voteType), so a tally is one count per option. Never rename a
-// live poll or option id: its votes stay under the old content type.
+// the option (voteType). Tallies count one vote per person (countVotes), so
+// extra entries from a failed delete or a tampered client never count. Never
+// rename a live poll or option id: its votes stay under the old content type.
 
 export interface PollOption {
   id: string;
@@ -50,6 +51,51 @@ export function optionForType(poll: Poll, type: string): string | null {
 }
 
 export type Counts = Record<string, number>;
+
+export interface VoteEntry {
+  id: string;
+  authorId: string;
+  contentType: string;
+  createdAt: number;
+}
+
+export interface CountedVotes {
+  counts: Counts;
+  /** Each voter's counted vote: their newest entry. */
+  byAuthor: Map<string, { option: string; id: string }>;
+  /** Entries that don't count: a voter's older votes, or ones with no author. */
+  extras: VoteEntry[];
+}
+
+/** One vote per person: only each author's newest vote for this poll counts. */
+export function countVotes(poll: Poll, entries: readonly VoteEntry[]): CountedVotes {
+  const newest = new Map<string, VoteEntry>();
+  const extras: VoteEntry[] = [];
+  for (const e of entries) {
+    if (!optionForType(poll, e.contentType)) continue;
+    if (!e.authorId) {
+      extras.push(e);
+      continue;
+    }
+    const kept = newest.get(e.authorId);
+    if (!kept) {
+      newest.set(e.authorId, e);
+    } else if (e.createdAt > kept.createdAt || (e.createdAt === kept.createdAt && e.id > kept.id)) {
+      extras.push(kept);
+      newest.set(e.authorId, e);
+    } else {
+      extras.push(e);
+    }
+  }
+  const counts: Counts = {};
+  const byAuthor = new Map<string, { option: string; id: string }>();
+  for (const [author, e] of newest) {
+    const option = optionForType(poll, e.contentType) as string;
+    counts[option] = (counts[option] ?? 0) + 1;
+    byAuthor.set(author, { option, id: e.id });
+  }
+  return { counts, byAuthor, extras };
+}
 
 export interface TallyRow {
   option: PollOption;

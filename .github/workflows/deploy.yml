@@ -1,0 +1,85 @@
+name: Deploy to RUN
+
+# Every push to the game branch is checked and deployed (unlisted; publishing
+# is a separate, hand-run workflow). Docs-only changes don't deploy.
+on:
+  push:
+    branches:
+      - claude/happy-mayer-ufwo5m
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE.txt'
+  workflow_dispatch:
+
+concurrency:
+  group: rundot-deploy
+  cancel-in-progress: false
+
+env:
+  # Store listing, applied after each deploy when set. Keywords (tags) drive RUN
+  # search and recommendations. Left blank until the game has a concept.
+  GAME_DESCRIPTION: ''
+  GAME_KEYWORDS: ''
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUNDOT_API_KEY: ${{ secrets.RUNDOT_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install RUN CLI
+        run: |
+          curl -fsSL https://github.com/series-ai/rundot-cli-releases/releases/latest/download/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Preflight
+        run: rundot preflight --strict
+
+      - name: Check deploy setup
+        id: setup
+        run: |
+          if [ -z "$RUNDOT_API_KEY" ]; then
+            echo "::warning::RUNDOT_API_KEY secret is not set; skipping deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          elif [ ! -f game.config.prod.json ]; then
+            echo "::warning::game.config.prod.json is not committed (run rundot init); skipping deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to RUN
+        if: steps.setup.outputs.ready == 'true'
+        run: printf '%s' "$RUNDOT_API_KEY" | rundot login --api-key-stdin
+
+      - name: Deploy
+        if: steps.setup.outputs.ready == 'true'
+        run: rundot deploy --orientation Portrait
+
+      - name: Set keywords and description
+        if: steps.setup.outputs.ready == 'true'
+        run: |
+          if [ -n "$GAME_KEYWORDS" ]; then rundot game set-keywords "$GAME_KEYWORDS"; fi
+          if [ -n "$GAME_DESCRIPTION" ]; then rundot game set-description "$GAME_DESCRIPTION"; fi

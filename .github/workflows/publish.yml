@@ -1,0 +1,64 @@
+name: Publish on RUN
+
+# Hand-run only. Makes a deployed version public on Explore, or hides the game
+# again. Never runs on push.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'publish (set-public) or unpublish (set-private)'
+        required: true
+        default: publish
+        type: choice
+        options:
+          - publish
+          - unpublish
+      version:
+        description: 'Version to publish, e.g. 1.4.0. Leave blank for the newest deployed version.'
+        required: false
+        default: ''
+
+concurrency:
+  group: rundot-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RUNDOT_API_KEY: ${{ secrets.RUNDOT_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install RUN CLI
+        run: |
+          curl -fsSL https://github.com/series-ai/rundot-cli-releases/releases/latest/download/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Log in to RUN
+        run: |
+          if [ -z "$RUNDOT_API_KEY" ]; then echo "::error::RUNDOT_API_KEY secret is not set"; exit 1; fi
+          printf '%s' "$RUNDOT_API_KEY" | rundot login --api-key-stdin
+
+      - name: Publish
+        if: inputs.action == 'publish'
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          VERSION="$VERSION_INPUT"
+          if [ -z "$VERSION" ]; then
+            # The CLI rejects "latest", so find the newest deployed version.
+            rundot game list-versions | tee versions.txt
+            VERSION=$(grep -oE '\b[0-9]+\.[0-9]+\.[0-9]+\b' versions.txt | sort -V | tail -n 1)
+          fi
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Could not determine a version to publish (got '$VERSION')"
+            exit 1
+          fi
+          echo "Publishing version $VERSION"
+          rundot game set-public --version "$VERSION"
+
+      - name: Unpublish
+        if: inputs.action == 'unpublish'
+        run: rundot game set-private

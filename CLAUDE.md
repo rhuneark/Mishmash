@@ -72,6 +72,8 @@ src/main.tsx    entry: safe-area/font-scale CSS vars, lifecycle hooks, render
 scripts/playthrough.mjs  Playwright run of the local preview at 375×667 and 390×844
 public/thumbnail.jpg   store thumbnail placeholder (512×512 JPEG; deploy rejects the template's)
 rundot/ugc.config.json UGC limits and moderation
+rundot/textGen.config.json  `{ "disabled": true }`: AI text generation is off (unused; without
+                       this file every deploy auto-enables it with permissive spend limits)
 rundot/cli_hooks.json  RUN CLI hooks (from the template)
 game.config.prod.json  RUN game ID + build settings (from `rundot init`; declares portrait)
 ```

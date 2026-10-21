@@ -59,6 +59,10 @@ for (const [width, height] of VIEWPORTS) {
   check((await page.locator('.option.picked').count()) === 1, `${tag} vote: not exactly one pick`);
   await noSideScroll('vote');
   await shot('2-vote');
+  check(
+    (await page.getByRole('button', { name: 'Dev', exact: true }).count()) === 0,
+    `${tag} a player sees the Dev tab`,
+  );
 
   // Chat: post, delete, report, and the friendly-words filter.
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
@@ -110,6 +114,40 @@ for (const [width, height] of VIEWPORTS) {
   await page.getByText('first! what is this game going to be?').click();
   await page.getByRole('button', { name: 'Delete' }).click();
   await page.getByText('first! what is this game going to be?').waitFor({ state: 'detached' });
+
+  // Dev area (owner only): the seeded spam was hidden by 3 reports, Bram's message
+  // has one open report. Delete the spam, keep Bram's, then both are resolved.
+  const devTab = page.getByRole('button', { name: 'Dev', exact: true });
+  await page.locator('.tab-badge', { hasText: '2' }).waitFor();
+  await devTab.click();
+  const spamCard = page.locator('.flag', { hasText: 'FREE GOLD click my profile' });
+  const bramCard = page.locator('.flag', { hasText: 'a roguelike where every run' });
+  await spamCard.waitFor();
+  check(
+    (await spamCard.getByText('Hidden from players').count()) === 1,
+    `${tag} dev: hidden message not marked hidden`,
+  );
+  check(
+    (await spamCard.getByText('rundot ugc approve').count()) === 1,
+    `${tag} dev: no restore command for a hidden message`,
+  );
+  await noSideScroll('dev');
+  await shot('4-dev');
+  await spamCard.getByRole('button', { name: 'Delete message' }).click();
+  await spamCard.waitFor({ state: 'detached' });
+  await bramCard.getByRole('button', { name: 'Keep' }).click();
+  await page.getByText('No open reports').waitFor();
+  check((await page.locator('.tab-badge').count()) === 0, `${tag} dev: badge after clearing`);
+  await page.getByRole('tab', { name: 'Resolved' }).click();
+  await spamCard.getByText('Resolved: deleted').waitFor();
+  await bramCard.getByText('Resolved: kept').waitFor();
+  // Kept messages stay in the chat; deleted ones don't.
+  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await page.getByText('a roguelike where every run').waitFor();
+  check(
+    (await page.getByText('FREE GOLD click my profile').count()) === 0,
+    `${tag} dev: deleted message still in chat`,
+  );
 
   check(errors.length === 0, `${tag} console errors: ${errors.join(' | ')}`);
   console.log(`${tag}: done`);

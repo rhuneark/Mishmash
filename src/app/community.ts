@@ -1,11 +1,12 @@
-// Chat and voting on top of the UGC backend: RUN's UGC in the host, the local
-// stand-in in `npm run dev`.
+// Chat, voting and the owner's Dev area on top of the UGC backend: RUN's UGC
+// in the host, the local stand-in in `npm run dev`.
 
 import * as run from '../sdk/run';
 import type { UgcFail, UgcRow } from '../sdk/run';
 import { createLocalUgc } from './localUgc';
 import { CHAT_TYPE, cleanMessage, messageFromEntry, type ChatMessage } from '../game/chat';
 import { countVotes, voteType, voteTypes, type Counts, type Poll } from '../game/poll';
+import { groupReports, type ReportGroup } from '../game/moderation';
 
 let api: run.UgcApi | null = null;
 
@@ -91,6 +92,76 @@ export async function deleteChat(m: ChatMessage): Promise<boolean> {
 
 export function reportChat(id: string): Promise<boolean> {
   return backend().report(id);
+}
+
+// ---------------------------------------------------------------------------
+// Dev area (owner only): reported messages. RUN refuses these calls for anyone
+// but the game's owner and editors; the tab only shows for the owner.
+
+/** visible: players see it; hidden: auto-hidden (e.g. 3 reports); deleted: removed by
+ *  the owner; missing: deleted by its author, or too old to look up. */
+export type FlaggedState = 'visible' | 'hidden' | 'deleted' | 'missing';
+
+export interface Flagged {
+  group: ReportGroup;
+  message: ChatMessage | null;
+  state: FlaggedState;
+}
+
+export async function loadFlagged(
+  view: 'open' | 'resolved',
+): Promise<{ ok: true; items: Flagged[] } | Failure> {
+  const statuses: run.ReportStatus[] = view === 'open' ? ['pending'] : ['reviewed', 'dismissed'];
+  const reports: run.ReportRow[] = [];
+  for (const status of statuses) {
+    const res = await backend().reports(status);
+    if (!res.ok) return res;
+    reports.push(...res.value);
+  }
+  const groups = groupReports(reports);
+  if (groups.length === 0) return { ok: true, items: [] };
+  const entries = await backend().adminEntries(
+    groups.map((g) => g.entryId),
+    CHAT_TYPE,
+  );
+  if (!entries.ok) return entries;
+  const byId = new Map(entries.value.map((e) => [e.id, e]));
+  return {
+    ok: true,
+    items: groups.map((group) => {
+      const row = byId.get(group.entryId);
+      if (!row) return { group, message: null, state: 'missing' };
+      const state: FlaggedState =
+        row.status === 'active' ? 'visible' : row.status === 'removed' ? 'deleted' : 'hidden';
+      return { group, message: messageFromEntry({ ...row, status: 'active' }), state };
+    }),
+  };
+}
+
+/** Number of messages with open reports, or null if it can't be read. */
+export async function openReportCount(): Promise<number | null> {
+  const res = await backend().reports('pending');
+  return res.ok ? new Set(res.value.map((r) => r.entryId)).size : null;
+}
+
+/** Deletes a reported message (if it still exists) and closes its reports as reviewed. */
+export async function deleteFlagged(item: Flagged): Promise<boolean> {
+  if (item.state === 'visible' || item.state === 'hidden') {
+    if (!(await backend().adminRemove(item.group.entryId))) return false;
+  }
+  return resolveAll(item, 'reviewed');
+}
+
+/** Keeps the message and closes its reports as dismissed. */
+export function keepFlagged(item: Flagged): Promise<boolean> {
+  return resolveAll(item, 'dismissed');
+}
+
+async function resolveAll(item: Flagged, action: 'reviewed' | 'dismissed'): Promise<boolean> {
+  const done = await Promise.all(
+    item.group.reportIds.map((id) => backend().resolveReport(id, action)),
+  );
+  return done.every(Boolean);
 }
 
 // ---------------------------------------------------------------------------

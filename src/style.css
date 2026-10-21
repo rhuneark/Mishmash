@@ -577,3 +577,116 @@ button:disabled {
 .tab.active {
   color: var(--accent);
 }
+
+/* Dev area (owner only) */
+
+.segmented {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.segment {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 9px;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+.segment.active {
+  background: var(--panel-2);
+  color: var(--accent);
+}
+
+.flag {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.flag.deleted,
+.flag.missing {
+  opacity: 0.75;
+}
+
+.flag-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.flag-text {
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.flag-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.flag-actions .btn {
+  flex: 1;
+}
+
+.flag-hint {
+  font-size: calc(14px * var(--fs));
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
+.flag-hint code {
+  color: var(--text);
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.badge {
+  font-size: calc(14px * var(--fs));
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0 8px;
+  background: var(--panel-2);
+  color: var(--text-soft);
+}
+
+.badge.hidden {
+  background: var(--tile-1);
+  color: var(--bg);
+}
+
+.badge.visible {
+  background: var(--tile-2);
+  color: var(--bg);
+}
+
+.btn.danger {
+  background: var(--tile-0);
+  border-color: var(--tile-0);
+  color: var(--bg);
+}
+
+.tab-icon {
+  position: relative;
+}
+
+.tab-badge {
+  position: absolute;
+  top: -6px;
+  left: 70%;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--tile-0);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+}

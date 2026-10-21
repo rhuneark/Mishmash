@@ -217,6 +217,19 @@ export interface UgcBrowse {
 /** The player's role on this game, checked by RUN's server against the account email. */
 export type Role = 'owner' | 'editor' | 'none';
 
+export type ReportStatus = 'pending' | 'reviewed' | 'dismissed';
+
+/** A player's report on an entry (admin only). */
+export interface ReportRow {
+  id: string;
+  entryId: string;
+  reporterId: string;
+  reason: string;
+  details: string;
+  createdAt: number;
+  status: ReportStatus;
+}
+
 /** The community backend: RUN's UGC here, a local stand-in in dev (same contract). */
 export interface UgcApi {
   /** The current player's author id ('' when unknown). */
@@ -232,7 +245,46 @@ export interface UgcApi {
   report(id: string): Promise<boolean>;
   /** False when RUN's text filter would reject it (fails open). */
   isClean(text: string): Promise<boolean>;
+
+  // Owner/editor only (RUN refuses everyone else).
+  reports(status: ReportStatus): Promise<UgcResult<ReportRow[]>>;
+  resolveReport(id: string, action: 'reviewed' | 'dismissed'): Promise<boolean>;
+  /**
+   * Entries by id, including ones hidden from players: status 'active' (visible),
+   * 'removed' (deleted by an admin) or anything else (hidden, e.g. after
+   * reports). Ids not returned are gone or too old to find.
+   */
+  adminEntries(ids: readonly string[], contentType: string): Promise<UgcResult<UgcRow[]>>;
 }
+
+const REPORT_STATUSES: readonly string[] = ['pending', 'reviewed', 'dismissed'];
+
+function reportOf(r: {
+  id?: unknown;
+  entryId?: unknown;
+  reporterId?: unknown;
+  reason?: unknown;
+  details?: unknown;
+  createdAt?: unknown;
+  status?: unknown;
+}): ReportRow | null {
+  if (!r || typeof r.id !== 'string' || typeof r.entryId !== 'string') return null;
+  return {
+    id: r.id,
+    entryId: r.entryId,
+    reporterId: typeof r.reporterId === 'string' ? r.reporterId : '',
+    reason: typeof r.reason === 'string' ? r.reason : 'other',
+    details: typeof r.details === 'string' ? r.details : '',
+    createdAt: typeof r.createdAt === 'number' ? r.createdAt : 0,
+    status:
+      typeof r.status === 'string' && REPORT_STATUSES.includes(r.status)
+        ? (r.status as ReportStatus)
+        : 'pending',
+  };
+}
+
+/** Admin reads page through at most this many pages of 100. */
+const ADMIN_PAGES = 5;
 
 function failOf(err: unknown): { reason: UgcFail; retryAfterMs?: number } {
   const e = (err ?? {}) as {
@@ -338,6 +390,58 @@ export const ugc: UgcApi = {
     call('ugc.checkText', true, async () => {
       const res = await RundotGameAPI.ugc.checkTextAsync(text);
       return res?.clean !== false;
+    }),
+
+  reports: (status) =>
+    attempt('adminUgc.listReports', async () => {
+      const rows: ReportRow[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < ADMIN_PAGES; page++) {
+        const res = await RundotGameAPI.app.adminUgc.listReports({ status, limit: 100, cursor });
+        rows.push(...(res?.reports ?? []).map(reportOf).filter((r): r is ReportRow => r !== null));
+        cursor = res?.nextCursor || undefined;
+        if (!cursor) break;
+      }
+      return rows;
+    }),
+
+  resolveReport: (id, action) =>
+    call('adminUgc.resolveReport', false, async () => {
+      await RundotGameAPI.app.adminUgc.resolveReport(id, action);
+      return true;
+    }),
+
+  adminEntries: (ids, contentType) =>
+    attempt('adminUgc.entries', async () => {
+      const wanted = new Set(ids);
+      const found: UgcRow[] = [];
+      // Visible entries come straight from getMany (hidden ones read as missing there).
+      for (let i = 0; i < ids.length; i += 100) {
+        const res = await RundotGameAPI.ugc.getMany({ entryIds: ids.slice(i, i + 100) });
+        for (const e of res?.entries ?? []) {
+          const row = rowOf(e);
+          if (row && wanted.delete(row.id)) found.push({ ...row, status: 'active' });
+        }
+      }
+      // The rest: look through the newest entries, hidden ones included.
+      let cursor: string | undefined;
+      for (let page = 0; page < ADMIN_PAGES && wanted.size > 0; page++) {
+        const res = await RundotGameAPI.app.adminUgc.browse({
+          contentType,
+          sortBy: 'recent',
+          sortOrder: 'desc',
+          limit: 100,
+          cursor,
+        });
+        for (const e of res?.entries ?? []) {
+          const status = (e as { status?: unknown }).status;
+          const row = rowOf({ ...e, status: typeof status === 'string' ? status : 'hidden' });
+          if (row && wanted.delete(row.id)) found.push(row);
+        }
+        cursor = res?.nextCursor || undefined;
+        if (!cursor) break;
+      }
+      return found;
     }),
 };
 

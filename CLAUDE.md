@@ -39,12 +39,26 @@ Share link (private, unlisted): https://w.run/u/7VPvCLP7URUp69R6K10O/private?k=5
   the owner's Delete calls `app.adminUgc.removeEntry` (RUN refuses non-owners/editors; editors
   don't get the button). Removed entries are soft-deleted (`status: 'removed'`). Failures show
   a `Notice` (sign in, slow down, keep it friendly, limit reached).
+- **Dev area** (`screens/Dev.tsx`, `game/moderation.ts`): a 🛠️ Dev tab that **only the game's
+  owner (the user) sees** (`isOwner` → `app.getMyRole()`, checked by RUN against the account;
+  RUN also refuses the admin calls it makes for anyone but the owner and editors). Lists player
+  reports grouped per message (`groupReports`: most reported first), with the reported text even
+  when the message is hidden (`adminEntries`: `ugc.getMany`, then `app.adminUgc.browse` over the
+  newest 500 chat entries for hidden ones), its state (visible / hidden from players / deleted /
+  already gone), report count, reasons and notes. Open: **Delete message**
+  (`adminUgc.removeEntry`, reports resolved as `reviewed`) or **Keep** (resolved as
+  `dismissed`). Resolved: the history. The SDK can't lift an auto-hide (3 reports), so a
+  hidden message shows the CLI command (`rundot ugc approve <id>`). The tab shows a badge with
+  the number of messages with open reports (`ReportWatch` in App.tsx, every 5 min; the list
+  refreshes every 60 s while open).
 - **Community data is UGC** (`rundot/ugc.config.json`: 500 entries per player, chat and votes
   combined; 2 KB data; 3 reports hide an entry). UGC needs a RUN sign-in to post (the SDK
   prompts). `src/app/community.ts` holds the chat and vote logic over a `UgcApi`: `run.ugc` in
   the RUN host, `src/app/localUgc.ts` in `npm run dev` (the mock SDK can't store UGC). The
   local stand-in is in memory (resets on reload), seeded with sample players (one voted twice),
   and the screens show a "Local preview" tag; add `?owner` to the dev URL to play the owner.
+  It follows the server's rules (own deletes only, 3 reports hide, admin calls need the owner)
+  and seeds reports for the Dev area (a hidden spam message, one open, one dismissed).
   Rate limits aren't published; reads back off on `RATE_LIMITED`.
 - **Moderation (the user's CLI, needs their RUN login):** `rundot ugc admin reports --status
   pending`, `rundot ugc quarantined`, `rundot ugc approve <id>`, `rundot ugc admin remove <id>`
@@ -69,15 +83,16 @@ src/game/     Pure rules. No SDK, no React, no DOM. Deterministic given inputs +
   save.ts       save JSON parse/repair (SAVE_KEY, SAVE_VERSION; visits, introSeen)
   poll.ts       polls, vote content types, tallies
   chat.ts       message cleaning, validation of entries, merging pages, ages
+  moderation.ts reports grouped per message (Dev area)
   *.test.ts     vitest unit tests
 src/sdk/run.ts  THE ONLY module that imports the RUN SDK. Waits for start-up, catches everything.
                 Also defines the UgcApi contract and `run.ugc` (RUN's UGC).
-src/app/        community.ts (chat + votes over UgcApi), localUgc.ts (dev stand-in),
+src/app/        community.ts (chat, votes, Dev area over UgcApi), localUgc.ts (dev stand-in),
                 usePolling.ts (refresh while visible, honours rate-limit waits)
-src/screens/    Intro (also the About tab), Vote, Chat
+src/screens/    Intro (also the About tab), Vote, Chat, Dev (owner only)
 src/ui/         Logo (letter tiles), Notice (failure messages)
 src/components/ ErrorBoundary
-src/App.tsx     save load, first-launch intro, tab bar (Vote / Chat / About)
+src/App.tsx     save load, first-launch intro, tab bar (Vote / Chat / About / Dev for the owner)
 src/main.tsx    entry: safe-area/font-scale CSS vars, lifecycle hooks, render
 scripts/playthrough.mjs  Playwright run of the local preview at 375×667 and 390×844
 public/thumbnail.jpg   store thumbnail placeholder (512×512 JPEG; deploy rejects the template's)
@@ -117,7 +132,8 @@ npm test                    # vitest, pure rules
 npm run build
 rundot preflight --strict   # must be 0 warnings
 npm run dev                 # then, in another shell:
-npm run playthrough         # Playwright: intro, vote, chat, owner delete at 375×667 + 390×844, must print "clean"
+npm run playthrough         # Playwright: intro, vote, chat, owner delete + Dev area at 375×667 and
+                            # 390×844, must print "clean"
 ```
 
 The playthrough only covers the local stand-in; UGC itself only runs in the RUN host, so ask the

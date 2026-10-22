@@ -95,7 +95,10 @@ src/components/ ErrorBoundary
 src/App.tsx     save load, first-launch intro, tab bar (Vote / Chat / About / Dev for the owner)
 src/main.tsx    entry: safe-area/font-scale CSS vars, lifecycle hooks, render
 scripts/playthrough.mjs  Playwright run of the local preview at 375×667 and 390×844
-public/thumbnail.jpg   store thumbnail placeholder (512×512 JPEG; deploy rejects the template's)
+public/thumbnail.jpg   store thumbnail, exported from art/ (exactly 512×512 JPEG, under ~150 KB)
+art/thumbnail-source.png  store thumbnail art from the user ("Mishmash · Community Build",
+                       Halloween look; full size, not shipped)
+scripts/thumbnail.mjs  `npm run thumbnail`: re-exports public/thumbnail.jpg from the art (PIL)
 rundot/ugc.config.json UGC limits and moderation
 rundot/textGen.config.json  `{ "disabled": true }`: AI text generation is off (unused; without
                        this file every deploy auto-enables it with permissive spend limits)
@@ -136,6 +139,9 @@ npm run playthrough         # Playwright: intro, vote, chat, owner delete + Dev 
                             # 390×844, must print "clean"
 ```
 
+The store thumbnail is the user's own art (`art/thumbnail-source.png`); don't replace it without
+asking. If the source changes, run `npm run thumbnail` (no dev server needed).
+
 The playthrough only covers the local stand-in; UGC itself only runs in the RUN host, so ask the
 user to try chat and voting on the live build after changes there.
 
@@ -145,8 +151,10 @@ user to try chat and voting on the live build after changes there.
   (docs-only changes skipped): npm ci → RUN CLI → typecheck, tests, build, preflight →
   `rundot login` with the `RUNDOT_API_KEY` secret → `rundot deploy --orientation Portrait` →
   `set-keywords` / `set-description` from the `GAME_KEYWORDS` / `GAME_DESCRIPTION` env lines
-  when they're set (description set, keywords blank for now). The share link is printed in the
-  Deploy step log.
+  when they're set. Both are first versions the user wants updated as the game takes shape
+  (keywords: community, community-build, player-made, voting, chat, social, multiplayer, casual,
+  halloween, spooky, monsters; the last three match the Halloween thumbnail). The share link is
+  printed in the Deploy step log.
 - `.github/workflows/publish.yml`: hand-run only, **only when the user asks**. `publish` runs
   `rundot game set-public --version X.Y.Z` (newest from `rundot game list-versions` if blank;
   the CLI rejects "latest"); `unpublish` runs `rundot game set-private`. `set-public` puts a

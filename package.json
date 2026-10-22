@@ -13,7 +13,8 @@
     "deploy": "npm run build && rundot deploy --orientation Portrait",
     "format": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --write",
     "format:check": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --check",
-    "playthrough": "node scripts/playthrough.mjs"
+    "playthrough": "node scripts/playthrough.mjs",
+    "thumbnail": "node scripts/thumbnail.mjs"
   },
   "keywords": [
     "react",

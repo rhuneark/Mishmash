@@ -19,9 +19,10 @@ concurrency:
 
 env:
   # Store listing, applied after each deploy when set. Keywords (tags) drive RUN
-  # search and recommendations.
-  GAME_DESCRIPTION: "Mishmash is a game built by its players. Suggest features, vote on what comes next, and watch it grow one update at a time into a mishmash of everyone's ideas. First up: vote on what kind of game it should be, and chat about it in the Town Square!"
-  GAME_KEYWORDS: ''
+  # search and recommendations; each deploy replaces the whole list. Both are
+  # first versions, to update as the game takes shape.
+  GAME_DESCRIPTION: "Mishmash is a community build: a game made by its players. Suggest features, vote on what comes next, and watch it grow one update at a time into a mishmash of everyone's ideas. First up: vote on what kind of game it should be, then chat about it in the Town Square!"
+  GAME_KEYWORDS: 'community,community-build,player-made,voting,chat,social,multiplayer,casual,halloween,spooky,monsters'
 
 jobs:
   deploy:

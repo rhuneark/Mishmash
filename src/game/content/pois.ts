@@ -76,6 +76,7 @@ export const POIS: PoiDef[] = [
     boxes: [{ dx: 0, dz: 0, w: 5.5, d: 3.4, rot: -0.4, h: 3 }],
     spots: [
       { id: 'cockpit_log', kind: 'note', dx: 2.5, dz: 2.6, note: 'captain' },
+      { id: 'cockpit_transcript', kind: 'note', dx: 0, dz: -3.5, note: 'transcript' },
       {
         id: 'cockpit_kit',
         kind: 'loot',
@@ -114,6 +115,7 @@ export const POIS: PoiDef[] = [
         ],
       },
       { id: 'tail_manifest', kind: 'note', dx: -3, dz: 3.5, note: 'manifest' },
+      { id: 'tail_diary', kind: 'note', dx: -8, dz: 4.5, note: 'diary31a' },
     ],
   },
   {
@@ -130,6 +132,7 @@ export const POIS: PoiDef[] = [
     spots: [
       { id: 'tower_antenna', kind: 'antenna', dx: 0, dz: 2.4 },
       { id: 'tower_memo', kind: 'note', dx: 6, dz: 5, note: 'memo' },
+      { id: 'tower_log', kind: 'note', dx: -4, dz: -3.5, note: 'relaylog' },
       { id: 'tower_beacon', kind: 'beacon', dx: 3.8, dz: 3.2 },
       { id: 'tower_heli', kind: 'heli', dx: 14, dz: -12 },
     ],
@@ -149,6 +152,8 @@ export const POIS: PoiDef[] = [
     spots: [
       { id: 'station_journal', kind: 'note', dx: -12, dz: -10.4, note: 'kessler' },
       { id: 'station_memo', kind: 'note', dx: 12, dz: -10.4, note: 'specimen' },
+      { id: 'station_brief', kind: 'note', dx: -6, dz: -10.5, note: 'briefing' },
+      { id: 'station_order', kind: 'note', dx: -16, dz: -9.5, note: 'directive' },
     ],
   },
   {

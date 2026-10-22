@@ -63,6 +63,59 @@ const hold = (page, id, slot) =>
     },
     [id, slot],
   );
+/**
+ * Stands somewhere the building in hand can go right in front (facing north), so the
+ * build preview is free. Islands differ per seed, so this searches.
+ */
+const standToBuild = async (page, kind) => {
+  const spot = await game(
+    page,
+    async (kind) => {
+      const { snapPlacement } = await import('/src/game/sim/place.ts');
+      const { BUILDINGS } = await import('/src/game/content/buildings.ts');
+      const sim = window.__game.client.link.sim;
+      // Facing north, the preview sits this far ahead (client.ts updateGhost).
+      const ahead = 2.6 + BUILDINGS[kind].d / 2;
+      for (let r = 6; r < 220; r += 3) {
+        for (let a = 0; a < 24; a++) {
+          const x = Math.round(Math.sin((a / 24) * 6.2832) * r);
+          const z = 258 + Math.round(Math.cos((a / 24) * 6.2832) * r);
+          const g = snapPlacement(kind, x, z - ahead);
+          // Either way round (the preview may have been turned).
+          if (!sim.placeProblem(kind, g.x, g.z, 0) && !sim.placeProblem(kind, g.x, g.z, 1))
+            return [x, z];
+        }
+      }
+      return null;
+    },
+    kind,
+  );
+  if (!spot) return false;
+  await teleport(page, spot[0], spot[1]);
+  await game(page, () => {
+    window.__game.client.ry = Math.PI;
+  });
+  // Frames are slow in headless WebGL: wait for the preview to follow.
+  return until(
+    page,
+    () => {
+      const c = window.__game.client;
+      return (
+        !!c.ghost &&
+        Math.abs(c.ghost.z - c.z) < 5 &&
+        Math.abs(c.ghost.x - c.x) < 2 &&
+        !c.ghost.problem
+      );
+    },
+    `standToBuild: no free preview for ${kind}`,
+  );
+};
+
+/** Taps the action button where it is (it re-renders often, so no stability wait). */
+const pressUse = async (page) => {
+  const b = await page.locator('.use-btn').boundingBox();
+  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+};
 const until = async (page, fn, what, ms = 15000) => {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -97,11 +150,17 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   const zone = await page.locator('.joy-zone').boundingBox();
   const sx = zone.x + 70;
   const sy = zone.y + zone.height - 70;
-  await page.mouse.move(sx, sy);
-  await page.mouse.down();
-  await page.mouse.move(sx, sy - 45, { steps: 4 });
+  // A finger, not a mouse: on PC the mouse clicks the island instead of grabbing the stick.
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, x, y) =>
+    cdp.send('Input.dispatchTouchEvent', {
+      type,
+      touchPoints: type === 'touchEnd' ? [] : [{ x, y }],
+    });
+  await touch('touchStart', sx, sy);
+  for (let k = 1; k <= 4; k++) await touch('touchMove', sx, sy - k * 11);
   await page.waitForTimeout(1200);
-  await page.mouse.up();
+  await touch('touchEnd', sx, sy - 45);
   const moved = start - (await game(page, () => window.__game.client.z));
   check(moved > 0.5, `${tag} game: the stick didn't move the survivor (${moved.toFixed(2)} m)`);
 
@@ -112,7 +171,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     () => window.__game.client.target?.kind === 'spot',
     `${tag} game: no note in reach`,
   );
-  await page.locator('.use-btn').click();
+  await pressUse(page);
   await page.getByText('Boarding pass, Flight MX207').waitFor();
   await shot('5-note');
   await page.keyboard.press('Escape');
@@ -140,7 +199,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     () => window.__game.client.target?.verb === 'Pick up',
     `${tag} game: branch not targeted`,
   );
-  await page.locator('.use-btn').click();
+  await pressUse(page);
   await until(
     page,
     () => window.__game.client.count('wood') >= 1,
@@ -194,7 +253,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     await page.waitForTimeout(400);
     if (!(await game(page, () => window.__game.client.ghost?.problem))) break;
   }
-  await page.locator('.use-btn').click();
+  await pressUse(page);
   await until(
     page,
     () => [...window.__game.client.buildings.values()].some((b) => b.kind === 'campfire'),
@@ -249,6 +308,145 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     () => window.__game.client.drops.size > 0,
     `${tag} game: no bag where you fell`,
   );
+  // Morning, and nothing hunting you, for the calmer checks below.
+  await game(page, () => {
+    const sim = window.__game.client.link.sim;
+    sim.time = 600 * 3 + 200;
+    window.__calm = setInterval(() => sim.mobs.clear(), 100);
+  });
+
+  // The quick bag stays open while you move; drag items between slots and onto the island.
+  await give(page, [
+    // After the respawn the bag is empty: enough kinds to spill past the hotbar.
+    ['wood', 6],
+    ['stone', 4],
+    ['fiber', 4],
+    ['sap', 2],
+    ['cloth', 2],
+    ['berries', 3],
+    ['snap_tooth', 6],
+    ['bloom_tendril', 6],
+    ['scrap', 6],
+    ['mashbench', 1],
+  ]);
+  await page.waitForTimeout(400);
+  // Every item has a picture (not an emoji that some devices can't draw).
+  const pictured = await page
+    .waitForFunction(
+      () => document.querySelectorAll('.hotbar .slot img.slot-icon').length === 6,
+      null,
+      { timeout: 10000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check(pictured, `${tag} game: hotbar items without a picture`);
+  await page.getByRole('button', { name: 'Bag and crafting' }).click();
+  await page.locator('.quick-panel').waitFor();
+  await page.locator('.quick-panel').getByRole('button', { name: 'Bag', exact: true }).click();
+  const qz = await game(page, () => window.__game.client.z);
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(900);
+  await page.keyboard.up('KeyW');
+  check(
+    qz - (await game(page, () => window.__game.client.z)) > 0.3,
+    `${tag} game: can't move with the quick bag open`,
+  );
+  const drag = async (from, to) => {
+    const a = await from.boundingBox();
+    const b = await to.boundingBox();
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(a.x + a.width / 2 + 20, a.y + a.height / 2 + 20, { steps: 4 });
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+  };
+  // A bag item (the quick panel shows the bag; the hotbar is right below it).
+  const bagItem = () =>
+    game(page, () => {
+      const inv = window.__game.client.me.inv;
+      const i = inv.findIndex((s, k) => s && k >= 6 && s.id === 'scrap');
+      return [i, inv[i]?.id];
+    });
+  const [fromSlot, movedId] = await bagItem();
+  await drag(
+    page.locator(`.quick-panel [data-slot="inv:${fromSlot}"]`),
+    page.locator('.hotbar [data-slot="inv:5"]'),
+  );
+  check(
+    (await game(page, () => window.__game.client.me.inv[5]?.id)) === movedId,
+    `${tag} game: dragging to the hotbar didn't move the item`,
+  );
+  const bags = await game(page, () => window.__game.client.drops.size);
+  const dropSlot = await game(page, () =>
+    window.__game.client.me.inv.findIndex((s, k) => s && k >= 6 && s.id === 'berries'),
+  );
+  await drag(
+    page.locator(`.quick-panel [data-slot="inv:${dropSlot}"]`),
+    page.locator('.game-canvas'),
+  );
+  await until(
+    page,
+    () => window.__game.client.drops.size > 0,
+    `${tag} game: dragging onto the island didn't drop the item`,
+  );
+  check(
+    (await game(page, () => window.__game.client.drops.size)) > bags,
+    `${tag} game: no bag dropped`,
+  );
+  await shot('9a-quick-bag');
+
+  // The Mashbench turns monster parts into special gear (quick craft, panel still open).
+  await hold(page, 'mashbench', 1);
+  await until(page, () => window.__game.client.ghost !== null, `${tag} game: no Mashbench preview`);
+  check(await standToBuild(page, 'mashbench'), `${tag} game: nowhere to put the Mashbench`);
+  await pressUse(page);
+  await until(
+    page,
+    () => window.__game.client.stations().mash,
+    `${tag} game: Mashbench not placed`,
+  );
+  await page.locator('.quick-panel').getByRole('button', { name: 'Craft', exact: true }).click();
+  await page
+    .locator('.quick-panel .recipe', { hasText: 'Jawblade' })
+    .getByRole('button', { name: 'Craft' })
+    .click();
+  await until(page, () => window.__game.client.count('jawblade') === 1, `${tag} game: no Jawblade`);
+  await shot('9b-mashbench');
+  await page.keyboard.press('Escape');
+  await page.locator('.quick-panel').waitFor({ state: 'detached' });
+
+  // A Husk's research page tells the Bloom's story.
+  await game(page, () => {
+    const c = window.__game.client;
+    c.link.sim.findPage(c.link.sim.players.get(c.you));
+  });
+  await page
+    .getByText(/Dr. Kessler's research, page \d/)
+    .first()
+    .waitFor();
+  await page.keyboard.press('Escape');
+
+  // PC keys can be changed: journal on K instead of J.
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('button', { name: /Controls/ }).click();
+  await page.getByRole('button', { name: 'Journal, key 1' }).click();
+  await page.keyboard.press('KeyK');
+  await page.getByText('K → Journal').waitFor();
+  await noSideScroll('controls');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.locator('.sheet').waitFor({ state: 'detached' });
+  await page.keyboard.press('KeyK');
+  await page.locator('.label', { hasText: /Dr. Kessler's research \([1-8]\/8\)/ }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('button', { name: /Controls/ }).click();
+  await page.getByRole('button', { name: 'Reset to defaults' }).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.locator('.sheet').waitFor({ state: 'detached' });
+  await page.waitForTimeout(600);
 
   // Journal and map.
   await page.getByRole('button', { name: 'Journal' }).click();
@@ -327,7 +525,7 @@ async function playCoop() {
 }
 for (const [width, height] of VIEWPORTS) {
   const tag = `${width}x${height}`;
-  const context = await browser.newContext({ viewport: { width, height } });
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: true });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));

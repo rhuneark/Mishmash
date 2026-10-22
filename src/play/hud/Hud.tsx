@@ -8,15 +8,25 @@ import {
   useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { ITEMS } from '../../game/content/items';
 import { HOTBAR } from '../../game/sim/inventory';
 import { clockLabel } from '../../game/sim/time';
 import type { GameClient } from '../client';
 import type { Input } from '../input';
 import type { Sound } from '../audio';
+import { keyHint, type Action, type Bindings } from '../keys';
 import type { Fog } from './map';
 import { FullMap, MiniMap } from './MapView';
-import { BagSheet, JournalSheet, KeypadSheet, MenuSheet, NoteSheet, StorageSheet } from './Panels';
+import {
+  BagSheet,
+  ControlsSheet,
+  JournalSheet,
+  KeypadSheet,
+  MenuSheet,
+  NoteSheet,
+  StorageSheet,
+} from './Panels';
+import { QuickPanel } from './QuickPanel';
+import { DragLayer, ItemIcon, SlotButton, quickUse } from './Slots';
 
 export interface HudProps {
   client: GameClient;
@@ -33,6 +43,10 @@ export function useClient(client: GameClient): number {
   return useSyncExternalStore(client.subscribe, client.getVersion);
 }
 
+/** A mouse or trackpad: show key hints and PC tips. */
+export const isPc = (): boolean =>
+  typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: fine)').matches;
+
 export function Hud(props: HudProps) {
   const { client, input, sound } = props;
   useClient(client);
@@ -42,6 +56,9 @@ export function Hud(props: HudProps) {
   const label = client.actionLabel();
   const panel = client.panel;
   const close = () => client.openPanel(null);
+  const pc = isPc();
+  const quick = client.quickOpen && !panel && me?.alive !== false;
+  const hint = (a: Action) => (pc ? keyHint(input.bindings, a) : '');
   const mother = [...client.mobs.values()].find(
     (m) => m.kind === 'mother' && m.dying === 0 && Math.hypot(m.x - client.x, m.z - client.z) < 40,
   );
@@ -49,7 +66,9 @@ export function Hud(props: HudProps) {
   if (!me) return null;
 
   return (
-    <div className={`hud${info.bloom ? ' bloom' : ''}${info.night ? ' night' : ''}`}>
+    <div
+      className={`hud${info.bloom ? ' bloom' : ''}${info.night ? ' night' : ''}${client.quickOpen && !panel ? ' quick-open' : ''}`}
+    >
       <div className="hurt-flash" style={{ opacity: client.hurtFlash * 0.7 }} />
       {me.poison > 0 && <div className="poison-tint" />}
       <div className="hud-top">
@@ -75,6 +94,7 @@ export function Hud(props: HudProps) {
               className="round-btn"
               onClick={() => client.openPanel('journal')}
               aria-label="Journal"
+              title={withKey('Journal', hint('journal'))}
             >
               📖
             </button>
@@ -88,7 +108,7 @@ export function Hud(props: HudProps) {
           </div>
         </div>
       </div>
-      <div className="hud-feed">
+      <div className={`hud-left${quick ? ' with-quick' : ''}`}>
         {objective && (
           <button className="objective" onClick={() => client.openPanel('journal')}>
             <span className="objective-mark">▸</span> {objective.text}
@@ -115,13 +135,19 @@ export function Hud(props: HudProps) {
             🚁 The helicopter is waiting! {formatTime(client.rescueLeft())}
           </div>
         )}
+        {quick && <QuickPanel client={client} pc={pc} />}
+        {quick && client.banner && (
+          <div key={client.banner.id} className={`toast banner-toast ${client.banner.kind}`}>
+            {client.banner.text}
+          </div>
+        )}
         {client.toasts.map((t) => (
           <div key={t.id} className="toast">
             {t.text}
           </div>
         ))}
       </div>
-      {client.banner && (
+      {client.banner && !quick && (
         <div key={client.banner.id} className={`banner ${client.banner.kind}`}>
           {client.banner.text}
         </div>
@@ -129,6 +155,9 @@ export function Hud(props: HudProps) {
       <Joystick input={input} />
       <div className="hud-actions">
         <div className={`action-label${label.blocked ? ' blocked' : ''}`}>
+          {!label.blocked && label.text && hint('use') ? (
+            <span className="key-cap">{hint('use')}</span>
+          ) : null}
           {label.blocked ?? label.text}
         </div>
         <div className="action-row">
@@ -138,6 +167,7 @@ export function Hud(props: HudProps) {
                 className="round-btn big"
                 onClick={() => client.turnGhost()}
                 aria-label="Turn"
+                title={withKey('Turn', hint('turn'))}
               >
                 🔄
               </button>
@@ -150,9 +180,10 @@ export function Hud(props: HudProps) {
               />
             )}
             <button
-              className="round-btn big"
-              onClick={() => client.openPanel('bag')}
+              className={`round-btn big${client.quickOpen ? ' on' : ''}`}
+              onClick={() => client.toggleQuick()}
               aria-label="Bag and crafting"
+              title={withKey('Quick bag and craft', hint('quick'))}
             >
               🎒
             </button>
@@ -163,6 +194,7 @@ export function Hud(props: HudProps) {
                 client.touch();
               }}
               aria-label="Sprint"
+              title={withKey('Sprint', hint('sprint'))}
             >
               🏃
               <span className="stamina" style={{ height: `${client.stamina}%` }} />
@@ -171,9 +203,13 @@ export function Hud(props: HudProps) {
           <UseButton client={client} input={input} sound={sound} kind={label.kind} />
         </div>
       </div>
-      <Hotbar client={client} />
-      {panel === 'bag' && <BagSheet client={client} onClose={close} tab="bag" />}
-      {panel === 'craft' && <BagSheet client={client} onClose={close} tab="craft" />}
+      <Hotbar client={client} hints={pc ? input.bindings : null} />
+      <DragLayer />
+      {panel === 'bag' && <BagSheet client={client} onClose={close} tab="bag" pc={pc} />}
+      {panel === 'craft' && <BagSheet client={client} onClose={close} tab="craft" pc={pc} />}
+      {panel === 'controls' && (
+        <ControlsSheet input={input} onClose={() => client.openPanel('menu')} />
+      )}
       {panel === 'storage' && <StorageSheet client={client} onClose={close} />}
       {panel === 'keypad' && <KeypadSheet client={client} onClose={close} />}
       {panel === 'journal' && <JournalSheet client={client} onClose={close} />}
@@ -184,6 +220,7 @@ export function Hud(props: HudProps) {
         <MenuSheet
           client={client}
           sound={sound}
+          pc={pc}
           onClose={close}
           onLeave={props.onLeave}
           onHost={props.onHost}
@@ -208,6 +245,10 @@ export function Hud(props: HudProps) {
       )}
     </div>
   );
+}
+
+function withKey(label: string, key: string): string {
+  return key ? `${label} (${key})` : label;
 }
 
 function formatTime(s: number): string {
@@ -242,11 +283,11 @@ function UseButton({
     e.preventDefault();
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     sound.unlock();
-    input.useHeld = true;
+    input.useButton = true;
     client.use();
   };
   const up = () => {
-    input.useHeld = false;
+    input.useButton = false;
   };
   const icon =
     kind === 'place'
@@ -292,49 +333,33 @@ function TakeDown({ onConfirm }: { onConfirm: () => void }) {
       }}
       aria-label="Take down"
     >
-      {armed ? '✔️' : '🪚'}
+      {armed ? '✔️' : <ItemIcon id="axe_stone" className="btn-icon" />}
       {armed && <span className="btn-tip">Tap again to take it down</span>}
     </button>
   );
 }
 
-function Hotbar({ client }: { client: GameClient }) {
+function Hotbar({ client, hints }: { client: GameClient; hints: Bindings | null }) {
   const me = client.me;
   if (!me) return null;
   return (
     <div className="hotbar">
-      {Array.from({ length: HOTBAR }, (_, i) => {
-        const s = me.inv[i] ?? null;
-        return (
-          <button
-            key={i}
-            className={`slot${me.held === i ? ' held' : ''}`}
-            onClick={() => client.select(i)}
-            aria-label={s ? ITEMS[s.id]?.name : `Slot ${i + 1}`}
-          >
-            <SlotView slot={s} />
-            <span className="slot-key">{i + 1}</span>
-          </button>
-        );
-      })}
+      {Array.from({ length: HOTBAR }, (_, i) => (
+        <SlotButton
+          key={i}
+          client={client}
+          slotRef={{ area: 'inv', index: i }}
+          slot={me.inv[i] ?? null}
+          className={me.held === i ? 'held' : ''}
+          onTap={() => client.select(i)}
+          onContext={() => quickUse(client, i)}
+        >
+          <span className="slot-key">
+            {hints ? keyHint(hints, `slot${i + 1}` as Action) : i + 1}
+          </span>
+        </SlotButton>
+      ))}
     </div>
-  );
-}
-
-export function SlotView({ slot }: { slot: { id: string; n: number; d?: number } | null }) {
-  if (!slot) return null;
-  const def = ITEMS[slot.id];
-  const max = def?.durability;
-  return (
-    <>
-      <span className="slot-icon">{def?.icon ?? '?'}</span>
-      {slot.n > 1 && <span className="slot-n">{slot.n}</span>}
-      {max !== undefined && slot.d !== undefined && slot.d < max && (
-        <span className="slot-dur">
-          <span style={{ width: `${(slot.d / max) * 100}%` }} />
-        </span>
-      )}
-    </>
   );
 }
 
@@ -369,7 +394,8 @@ function Joystick({ input }: { input: Input }) {
       ref={zone}
       className="joy-zone"
       onPointerDown={(e) => {
-        if (pointer.current !== null) return;
+        // A mouse clicks the island (Input), it doesn't grab the stick.
+        if (pointer.current !== null || e.pointerType === 'mouse') return;
         pointer.current = e.pointerId;
         zone.current?.setPointerCapture(e.pointerId);
         const base = { x: e.clientX, y: e.clientY };

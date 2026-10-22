@@ -1,5 +1,7 @@
-// The Bloom: the island's flora, hungry and awake. Everything hostile here is
-// a plant. The Husks were passengers once.
+// The Bloom: one root colony under the island (Project Perennial's "Specimen
+// M"), wearing whatever it grows into. Husks were people once, Thornbacks the
+// station's guard dogs; Snapjaws grow where the dead lay down, Puffers are its
+// seed pods. Their parts feed the Mashbench.
 
 import type { Drop } from './nodes';
 
@@ -51,6 +53,7 @@ export const MONSTERS: Record<MonsterKind, MonsterDef> = {
     hostile: true,
     drops: [
       { item: 'sap', n: 1, chance: 0.6 },
+      { item: 'bloom_tendril', n: 1, chance: 0.65 },
       { item: 'cloth', n: 1, chance: 0.35 },
       { item: 'fiber', n: 1, chance: 0.5 },
     ],
@@ -72,7 +75,10 @@ export const MONSTERS: Record<MonsterKind, MonsterDef> = {
     rooted: true,
     fireWeak: 2,
     hostile: true,
-    drops: [{ item: 'sap', n: 2 }],
+    drops: [
+      { item: 'sap', n: 2 },
+      { item: 'snap_tooth', n: 2 },
+    ],
   },
   puffer: {
     kind: 'puffer',
@@ -91,7 +97,10 @@ export const MONSTERS: Record<MonsterKind, MonsterDef> = {
     rooted: false,
     fireWeak: 3,
     hostile: true,
-    drops: [{ item: 'sap', n: 1 }],
+    drops: [
+      { item: 'sap', n: 1 },
+      { item: 'spore_sac', n: 1, chance: 0.85 },
+    ],
   },
   thornback: {
     kind: 'thornback',
@@ -112,6 +121,8 @@ export const MONSTERS: Record<MonsterKind, MonsterDef> = {
     hostile: true,
     drops: [
       { item: 'sap', n: 3 },
+      { item: 'thorn_plate', n: 1 },
+      { item: 'thorn_plate', n: 1, chance: 0.4 },
       { item: 'fiber', n: 2 },
     ],
   },

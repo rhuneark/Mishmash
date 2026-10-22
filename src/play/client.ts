@@ -94,7 +94,8 @@ export interface Target {
   building?: number;
 }
 
-export type Panel = 'bag' | 'craft' | 'storage' | 'keypad' | 'journal' | 'map' | 'menu' | 'note';
+export type Panel =
+  'bag' | 'craft' | 'storage' | 'keypad' | 'journal' | 'map' | 'menu' | 'note' | 'controls';
 
 export interface Toast {
   id: number;
@@ -178,6 +179,9 @@ export class GameClient {
 
   // UI state.
   panel: Panel | null = null;
+  /** The quick bag/craft panel (doesn't stop you moving). */
+  quickOpen = false;
+  quickTab: 'bag' | 'craft' = 'bag';
   storageId: number | null = null;
   noteId: string | null = null;
   /** Where closing a note returns to (the journal, or the game). */
@@ -622,6 +626,17 @@ export class GameClient {
     ) {
       this.use();
     }
+    // Crafting stations come and go as you walk: the craft lists depend on them.
+    this.stationAcc += dt;
+    if (this.stationAcc > 0.25) {
+      this.stationAcc = 0;
+      const st = this.stations();
+      const key = `${st.fire ? 1 : 0}${st.bench ? 1 : 0}${st.mash ? 1 : 0}`;
+      if (key !== this.stationKey) {
+        this.stationKey = key;
+        this.touch();
+      }
+    }
     // The clock on the HUD changes every in-game ten minutes.
     // ...and every second while the rescue clock runs.
     const busy = this.rescue.phase === 'calling' || this.rescue.phase === 'landed';
@@ -633,6 +648,8 @@ export class GameClient {
   }
 
   private lastMinute = -1;
+  private stationAcc = 0;
+  private stationKey = '';
 
   private panelBlocksMove(): boolean {
     return this.panel !== null && this.panel !== 'map';
@@ -947,6 +964,14 @@ export class GameClient {
         return { ...base, verb: 'Open', name: 'storage box', panel: 'storage' };
       case 'workbench':
         return { ...base, verb: 'Craft at', name: 'the workbench', panel: 'craft' };
+      case 'mashbench':
+        return { ...base, verb: 'Mash parts at', name: 'the Mashbench', panel: 'craft' };
+      case 'snap_trap':
+        return {
+          ...base,
+          verb: '',
+          name: (b.v ?? 0) > 0 ? 'Snap trap (re-arming)' : 'Snap trap (armed)',
+        };
       default:
         return { ...base, verb: '', name };
     }
@@ -1054,7 +1079,7 @@ export class GameClient {
   /** The action button. */
   use(): void {
     const me = this.me;
-    if (!me?.alive || me.escaped || this.clock < this.nextUse) return;
+    if (!me?.alive || me.escaped || this.clock < this.nextUse || this.panelBlocksMove()) return;
     const held = this.heldItem();
     const cooldown = held?.weapon?.cooldown ?? 0.6;
     if (this.ghost) {
@@ -1086,7 +1111,14 @@ export class GameClient {
       this.ry = Math.atan2(t.x - this.x, t.z - this.z);
       if (t.panel) {
         if (t.panel === 'storage') this.storageId = Number(t.id);
-        this.openPanel(t.panel);
+        // Crafting opens the quick panel, so you can keep an eye on things.
+        if (t.panel === 'craft') {
+          this.quickOpen = true;
+          this.quickTab = 'craft';
+          this.touch();
+        } else {
+          this.openPanel(t.panel);
+        }
         return;
       }
       this.send({ type: 'use', kind: t.kind, id: t.id });
@@ -1156,12 +1188,52 @@ export class GameClient {
     this.send({ type: 'drop', slot });
   }
 
-  store(slot: number): void {
-    if (this.storageId !== null) this.send({ type: 'store', id: this.storageId, slot });
+  /** Bag slot → the open storage box (into box slot `to` when given). */
+  store(slot: number, to?: number): void {
+    if (this.storageId === null) return;
+    this.send({ type: 'store', id: this.storageId, slot, ...(to !== undefined ? { to } : {}) });
   }
 
-  take(slot: number): void {
-    if (this.storageId !== null) this.send({ type: 'take', id: this.storageId, slot });
+  /** Storage box slot → your bag (into bag slot `to` when given). */
+  take(slot: number, to?: number): void {
+    if (this.storageId === null) return;
+    this.send({ type: 'take', id: this.storageId, slot, ...(to !== undefined ? { to } : {}) });
+  }
+
+  /** Eat, drink or use what's in your hand (a key on PC). */
+  eatHeld(): void {
+    const me = this.me;
+    const held = this.heldItem();
+    if (!me?.alive || !held) return;
+    if (held.food || held.heal) this.eat(me.held);
+  }
+
+  /** Drop what's in your hand (a key on PC). */
+  dropHeld(): void {
+    const me = this.me;
+    const held = this.heldItem();
+    if (!me?.alive || !held) return;
+    if (held.quest) {
+      this.toast('Keep that one: you need it to get off the island.');
+      return;
+    }
+    this.dropSlot(me.held);
+  }
+
+  /** Scrolls the hotbar selection. */
+  cycle(step: number): void {
+    if (!this.me) return;
+    this.select((((this.me.held + step) % HOTBAR) + HOTBAR) % HOTBAR);
+  }
+
+  /** The quick bag/craft panel stays open while you play. */
+  toggleQuick(tab?: 'bag' | 'craft'): void {
+    if (this.quickOpen && (!tab || tab === this.quickTab)) this.quickOpen = false;
+    else {
+      this.quickOpen = true;
+      if (tab) this.quickTab = tab;
+    }
+    this.touch();
   }
 
   enterCode(code: string): void {
@@ -1178,7 +1250,7 @@ export class GameClient {
 
   /** Crafting stations in reach. */
   stations(): Record<Station, boolean> {
-    const out: Record<Station, boolean> = { hand: true, fire: false, bench: false };
+    const out: Record<Station, boolean> = { hand: true, fire: false, bench: false, mash: false };
     for (const b of this.buildings.values()) {
       const st = BUILDINGS[b.kind]?.station;
       if (!st || Math.hypot(b.x - this.x, b.z - this.z) > STATION_RANGE) continue;

@@ -91,6 +91,8 @@ export interface Mob {
   /** Spawned by the day/night director (vs static/boss). */
   roamer: boolean;
   nextSpawn: number;
+  /** Held by a snap trap until then (sim time). */
+  heldUntil: number;
 }
 
 export interface RescueState {

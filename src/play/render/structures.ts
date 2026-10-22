@@ -6,6 +6,10 @@ import { MAT, box, cone, cyl, disc, dodeca, mesh, sphere, torus } from './geo';
 
 export interface BuildingView {
   group: THREE.Group;
+  /** Snap trap jaws (closed while re-arming). */
+  jaws?: THREE.Object3D[];
+  /** Heart lantern heart (pulses). */
+  heart?: THREE.Object3D;
   /** Flame parts (campfire, torch post). */
   flame?: THREE.Object3D;
   /** Door leaf (rotates open). */
@@ -172,6 +176,100 @@ export function buildingModel(kind: string): BuildingView {
         ]),
       );
       break;
+    case 'mashbench': {
+      group.add(
+        mesh([
+          box(1.8, 0.12, 1.1, 0x6d737a, { y: 0.85 }),
+          ...[-0.8, 0.8].flatMap((x) =>
+            [-0.45, 0.45].map((z) => box(0.1, 0.85, 0.1, WOOD2, { x, y: 0.42, z })),
+          ),
+          box(1.6, 0.06, 0.9, 0x5b3a22, { y: 0.3 }),
+          box(1.7, 0.6, 0.08, 0x5b3a22, { y: 1.2, z: -0.5 }),
+          ...[0, 1, 2, 3].map((k) =>
+            cone(0.05, 0.22, 3, 0xf2efe0, { x: -0.6 + k * 0.18, y: 1.32, z: -0.44, rx: Math.PI }),
+          ),
+          cyl(0.03, 0.05, 0.7, 4, 0x3f8a35, { x: 0.45, y: 1.05, z: -0.43, rz: 0.2 }),
+          cyl(0.03, 0.05, 0.6, 4, 0x2c4f2a, { x: 0.65, y: 1.1, z: -0.43, rz: -0.25 }),
+          box(0.45, 0.22, 0.32, 0x5a6a3a, { x: -0.45, y: 1.0, z: 0.1, ry: 0.3 }),
+          cyl(0.1, 0.1, 0.22, 6, 0xe8f4ff, { x: 0.15, y: 1.02, z: 0.25 }),
+        ]),
+      );
+      group.add(
+        mesh(
+          [
+            sphere(0.17, 6, 5, 0x9a6ac8, { x: 0.55, y: 1.08, z: 0.15 }),
+            cyl(0.08, 0.08, 0.12, 6, 0xb6ff5a, { x: 0.15, y: 0.98, z: 0.25 }),
+          ],
+          MAT.glow,
+        ),
+      );
+      break;
+    }
+    case 'thorn_wall':
+      group.add(
+        mesh([
+          ...Array.from({ length: 4 }, (_, k) =>
+            box(0.52, 2.0 + (k % 2) * 0.2, 0.5, k % 2 ? 0x5a6a3a : 0x4f5f33, {
+              x: -0.75 + k * 0.5,
+              y: 1.0 + (k % 2) * 0.1,
+            }),
+          ),
+          ...Array.from({ length: 10 }, (_, k) =>
+            cone(0.06, 0.4, 4, 0xd8c8a0, {
+              x: -0.85 + (k % 5) * 0.42,
+              y: 0.5 + Math.floor(k / 5) * 0.9,
+              z: k % 2 ? 0.34 : -0.34,
+              rx: k % 2 ? Math.PI / 2 : -Math.PI / 2,
+            }),
+          ),
+        ]),
+      );
+      break;
+    case 'snap_trap': {
+      group.add(
+        mesh([
+          cyl(0.48, 0.5, 0.08, 10, 0x6d737a, { y: 0.04 }),
+          sphere(0.06, 4, 3, 0xf2c14e, { y: 0.1 }),
+        ]),
+      );
+      const jaws: THREE.Object3D[] = [];
+      for (const side of [-1, 1]) {
+        const pivotJaw = new THREE.Group();
+        pivotJaw.position.set(0, 0.08, side * 0.42);
+        pivotJaw.add(
+          mesh([
+            box(0.8, 0.06, 0.4, 0x7a2a3a, { z: -side * 0.2 }),
+            ...[0, 1, 2, 3, 4].map((k) =>
+              cone(0.04, 0.14, 3, 0xf2efe0, { x: -0.32 + k * 0.16, y: 0.08, z: -side * 0.38 }),
+            ),
+          ]),
+        );
+        group.add(pivotJaw);
+        jaws.push(pivotJaw);
+      }
+      view.jaws = jaws;
+      break;
+    }
+    case 'heart_lantern': {
+      group.add(
+        mesh([
+          cyl(0.08, 0.12, 1.6, 6, 0x3a3a3a, { y: 0.8 }),
+          box(0.6, 0.06, 0.6, 0x3a3a3a, { y: 1.55 }),
+          box(0.6, 0.06, 0.6, 0x3a3a3a, { y: 2.25 }),
+          ...[-1, 1].flatMap((sx) =>
+            [-1, 1].map((sz) =>
+              box(0.04, 0.7, 0.04, 0x3a3a3a, { x: sx * 0.27, y: 1.9, z: sz * 0.27 }),
+            ),
+          ),
+          cone(0.36, 0.25, 4, 0x2a2a2a, { y: 2.4, ry: Math.PI / 4 }),
+        ]),
+      );
+      const heart = mesh([sphere(0.2, 7, 6, 0xff5a9a, { sy: 1.1 })], MAT.glow);
+      heart.position.y = 1.9;
+      group.add(heart);
+      view.heart = heart;
+      break;
+    }
     case 'rain_collector': {
       group.add(
         mesh([

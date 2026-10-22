@@ -8,6 +8,7 @@ import type { GameClient } from './client';
 import { Hud, useClient } from './hud/Hud';
 import { Fog, islandImage } from './hud/map';
 import { Input } from './input';
+import { KEYS_KEY, parseBindings, type Action } from './keys';
 import { View } from './view';
 
 const FOG_KEY = 'mishmash_fog';
@@ -63,9 +64,31 @@ export function Game(props: {
   }, [client, ready]);
 
   useEffect(() => {
-    input.attach();
+    input.attach(canvas.current);
     return () => input.detach();
   }, [input]);
+
+  // Your keys (PC), saved per player.
+  useEffect(() => {
+    let cancelled = false;
+    void run.getItem(KEYS_KEY).then((raw) => {
+      if (cancelled || !raw) return;
+      try {
+        input.setBindings(parseBindings(JSON.parse(raw)));
+        client.touch();
+      } catch {
+        // keep the defaults
+      }
+    });
+    input.onBindingsChanged = (b) => {
+      void run.setItem(KEYS_KEY, JSON.stringify(b));
+      client.touch();
+    };
+    return () => {
+      cancelled = true;
+      input.onBindingsChanged = null;
+    };
+  }, [client, input]);
 
   // Map picture and explored fog for this island.
   useEffect(() => {
@@ -130,18 +153,31 @@ export function Game(props: {
     };
   }, [client, ready, map, input, seed]);
 
-  // Keyboard shortcuts.
+  // What keys and mouse buttons do (keys.ts; rebindable under Menu › Controls).
   useEffect(() => {
-    for (let i = 0; i < 6; i++) input.on(`Digit${i + 1}`, () => client.select(i));
+    for (let i = 0; i < 6; i++) input.on(`slot${i + 1}` as Action, () => client.select(i));
     const toggle = (p: 'bag' | 'craft' | 'journal' | 'map') => () =>
       client.openPanel(client.panel === p ? null : p);
-    input.on('KeyI', toggle('bag'));
-    input.on('Tab', toggle('bag'));
-    input.on('KeyC', toggle('craft'));
-    input.on('KeyJ', toggle('journal'));
-    input.on('KeyM', toggle('map'));
-    input.on('KeyR', () => client.turnGhost());
-    input.on('Escape', () => client.openPanel(client.panel ? null : 'menu'));
+    input.on('use', () => client.use());
+    input.on('eat', () => client.eatHeld());
+    input.on('drop', () => client.dropHeld());
+    input.on('turn', () => client.turnGhost());
+    input.on('quick', () => {
+      if (client.panel === 'bag' || client.panel === 'craft') client.openPanel(null);
+      else if (!client.panel) client.toggleQuick();
+    });
+    input.on('bag', toggle('bag'));
+    input.on('craft', toggle('craft'));
+    input.on('journal', toggle('journal'));
+    input.on('map', toggle('map'));
+    input.on('next', () => client.cycle(1));
+    input.on('prev', () => client.cycle(-1));
+    input.onEscape(() => {
+      if (client.panel === 'controls') client.openPanel('menu');
+      else if (client.panel) client.openPanel(null);
+      else if (client.quickOpen) client.toggleQuick();
+      else client.openPanel('menu');
+    });
   }, [client, input]);
 
   // The world pauses (solo) and sound stops while the app is in the background.
@@ -149,7 +185,7 @@ export function Game(props: {
     const pause = () => {
       client.link.pause();
       sound.suspend();
-      input.useHeld = false;
+      input.release();
     };
     const resume = () => {
       client.link.resume();

@@ -376,10 +376,19 @@ export class Actor {
     if (itemId === this.heldId) return;
     this.heldId = itemId;
     const hand = this.parts['hand'];
+    const head = this.parts['head'];
     if (!hand) return;
-    if (this.held) hand.remove(this.held);
+    this.held?.parent?.remove(this.held);
     this.held = itemId ? heldModel(itemId) : null;
-    if (this.held) hand.add(this.held);
+    if (!this.held) return;
+    // A petal mask is worn, not carried.
+    if (itemId === 'petal_mask' && head) {
+      this.held.rotation.set(0, 0, 0);
+      this.held.position.set(0, 0.2, 0.17);
+      head.add(this.held);
+    } else {
+      hand.add(this.held);
+    }
   }
 
   /** speed: m/s moved; state: MOB_STATE code (players: 0 idle / 1 walk / 2 run). */

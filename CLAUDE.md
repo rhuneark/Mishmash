@@ -109,7 +109,27 @@ survivor) over a flat-shaded low-poly island. Everything is procedural (no art f
   storage box, bedroll, rain collector), `monsters.ts` (Husk = a taken passenger, Snapjaw =
   rooted biting flower, Puffer = spore sac that bursts into poison, Thornback = fast heavy
   crawler, the Mother Bloom = boss, crabs), `pois.ts` (landmarks, colliders, interactive
-  spots), `notes.ts` (lore notes, the cargo code).
+  spots), `notes.ts` (lore notes, research pages, the cargo code).
+- **Lore** (`content/notes.ts`, header comment has the whole story): under the marsh lives
+  one root colony, "Specimen M"; Verdance Biotech's Kessler Station studied it (Project
+  Perennial: its sap heals, and it makes the dead walk). It took the staff (Husks), their guard
+  dogs (Thornbacks); Snapjaws grow where the dead lay down, Puffers are its seed pods. Verdance
+  ordered the island kept dark, so the relay on the peak jams every signal: that is what
+  brought Flight MX207 down. Every seventh night the colony blooms and fears nothing. Told by
+  notes at the landmarks (spot notes in `pois.ts`) and by **Dr. Kessler's 8 research pages**
+  (`PAGES`): a Husk killed by a player drops the next unfound page 30% of the time
+  (`PAGE_CHANCE`, `IslandSim.findPage`); found pages are shared progress in `notes` (ids
+  `page_1`…) and listed in the journal. Spot notes must not change world generation: adding a
+  spot to an existing POI is safe (generation only reads `x/z/flat/boxes`).
+- **Monster parts and the Mashbench**: Husks drop tendrils, Snapjaws teeth, Puffers spore sacs
+  (only if killed before they burst), Thornbacks thorn plates, the Mother Bloom her heart (in
+  her remains bag). The Mashbench (built at a workbench; crafting station `'mash'`) makes:
+  Jawblade (fast weapon that also cuts vines), Thornmaul (heavy weapon), spore bombs (wide
+  rot cloud, fx `spore`), petal mask (held: roaming monsters only notice you within
+  `STEALTH_RANGE`, never on Bloom nights; wears out while held, `wears`), Bloom tonic (heal),
+  thorn wall (tough, cuts), snap trap (`trap`: bites, holds a monster `heldUntil`, re-arms;
+  `b.v` = seconds until armed) and the heart lantern (`repels`: nothing of the Bloom enters
+  its light, not even enraged hordes; `IslandSim.repelAt`). Tendrils also twist into rope.
 - **Monsters** (`sim/mobs.ts`): the director (every 1 s) spawns roamers near players by
   biome, day/night and Bloom night, wakes rooted Snapjaws within 45 m, grows the Mother
   Bloom at Kessler Station within 75 m (her HP is kept when she despawns), crabs on beaches.
@@ -138,9 +158,31 @@ survivor) over a flat-shaded low-poly island. Everything is procedural (no art f
   (exact `0.183.2`, no addons). Sound is made on the fly with WebAudio (`play/audio.ts`).
 - **HUD** (`play/hud/`): stat bars, clock, objective, minimap (fog of war, `map.ts` `Fog`,
   saved per island under `mishmash_fog`), journal (objectives, notes, cargo code so far,
-  tips), map, bag + crafting, storage box, keypad, menu (room code, sound, how to play,
-  leave), death and win screens. Floating joystick on the left half; keyboard on desktop
-  (WASD/arrows, Shift, Space/E, 1–6, I/C/J/M/R, Esc).
+  Kessler pages, tips), map, bag + crafting sheet, storage box, keypad, menu (room code,
+  sound, controls, how to play, leave), death and win screens. Floating joystick on the left
+  half (touch only: a mouse clicks the island through it).
+- **Item pictures** (`hud/itemIcons.ts`): every item is a small SVG (48×48, flat colours,
+  dark outline) shown as a data-URL `<img>` (`Slots.tsx` `ItemIcon`). Not emoji: newer emoji
+  (wood, rock, rope…) are empty boxes on older phones and Windows. `itemIcons.test.ts`
+  fails when an item has no picture. The `icon` emoji in `items.ts` is unused by the HUD.
+- **Quick bag and craft panel** (`hud/QuickPanel.tsx`, the 🎒 button, Tab on PC): stays open
+  while you move, fight and gather (`client.quickOpen`, not a modal `panel`): the bag (slots
+  6–23; the hotbar is right below it) and a craft list sorted craftable-first, with the station
+  each recipe needs. Using a workbench/Mashbench opens it on Craft. ⤢ opens the full sheets.
+  Phones: full width under the minimap buttons; PC: a 380px column on the left. Craft lists
+  refresh when a station comes into reach (`stationKey` in `client.update`).
+- **Drag and drop** (`hud/drag.ts`, `Slots.tsx` `SlotButton`/`dropItem`/`DragLayer`):
+  pointer events, so mouse and touch both work. Slots carry `data-slot="inv:N"` / `"box:N"`;
+  drop on another slot (move/merge/swap; into or out of a storage box at that slot: `store`
+  / `take` with `to`, `transfer` in `inventory.ts`) or on the island (canvas) to drop it as a
+  bag (not quest items). A tap stays a tap; right-click (PC) eats, holds or sends to the hotbar.
+- **PC controls** (`play/keys.ts`, `play/input.ts`, Menu › ⌨️ Controls): every action can have
+  up to 3 keys or mouse buttons (`Mouse0`… and `WheelUp/Down`); one key never does two things
+  (`bind` moves it); saved per player in appStorage under `mishmash_keys` (`parseBindings`
+  repairs it). Defaults: WASD/arrows, Shift sprint, Space/E/left click action, F eat, Q drop,
+  R turn, Tab quick panel, I/B bag, C craft, J journal, M map, 1–6 hotbar, wheel cycles the
+  hotbar. Esc is fixed (closes screens). Key hints show on devices with a mouse
+  (`isPc`: `(pointer: fine)`).
 - **Saves**: your island is one JSON in appStorage (`mishmash_island`, `IslandSave` v1,
   `parseIslandSave` repairs untrusted data; keep it accepting old saves). The player key is the
   RUN profile id (the same id the room uses), so your survivor is the same solo and hosting.
@@ -167,7 +209,12 @@ Most features are data first, then a little code:
   `buildingTarget`.
 - **New monster**: `content/monsters.ts` (+ `MOB_KINDS` in `sim/protocol.ts`: append, never
   reorder), a rig in `render/actors.ts`, behaviour in `sim/mobs.ts` (walkers reuse `walker`),
-  spawn rules in `runDirector`, a name in `client.ts` `MOB_NAMES`.
+  spawn rules in `runDirector`, a name in `client.ts` `MOB_NAMES`. Give it a part to drop
+  (`drops`) and something the Mashbench makes from it.
+- **Every new item needs a picture** in `hud/itemIcons.ts` (the test enforces it); draw it on
+  the 48×48 grid with the `O`/`T` outline styles and check it on a contact sheet.
+- **New lore**: a note in `content/notes.ts` plus a spot in an existing POI, or another
+  research page (`page_9`…, Husks drop them in order).
 - **New node / resource**: `content/nodes.ts` (append to `NODE`, never reorder: ids are
   saved), scatter rules in `world.ts` `NODE_TABLE`, geometry in `render/props.ts`.
 - **New landmark or puzzle**: a `PoiDef` in `content/pois.ts` (boxes = colliders, spots =
@@ -211,9 +258,10 @@ src/sdk/run.ts     THE ONLY client module that imports the RUN SDK. Waits for st
                    catches everything. UgcApi + run.ugc, realtime rooms (createRoom/joinRoom).
 src/server/IslandRoom.ts  co-op GameRoom (imports the SDK's mp-server; runs IslandSim)
 src/play/          the game client: session.ts (solo/host/join, saves), link.ts (LocalLink),
-                   roomLink.ts, client.ts (GameClient), input.ts, audio.ts, view.ts (scene),
-                   Game.tsx (canvas, frame loop), render/ (terrain, nodes, actors,
-                   structures, items, props, fx, geo), hud/ (Hud, Panels, MapView, map)
+                   roomLink.ts, client.ts (GameClient), input.ts, keys.ts (PC bindings),
+                   audio.ts, view.ts (scene), Game.tsx (canvas, frame loop), render/
+                   (terrain, nodes, actors, structures, items, props, fx, geo), hud/ (Hud,
+                   Panels, QuickPanel, Craft, Slots, drag, itemIcons, MapView, map)
 src/app/           community.ts (chat, votes, Dev area over UgcApi), localUgc.ts (dev stand-in),
                    usePolling.ts, appEvents.ts (host lifecycle → game pause/resume)
 src/screens/       Play, Intro (also the About tab), Vote, Chat, Dev (owner only)
@@ -270,7 +318,9 @@ rundot preflight --strict   # must be 0 warnings
 npm run dev                 # then, in another shell:
 npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, vote, chat, owner
                             # delete, Dev area), the game (walk, read, gather, craft, build, night
-                            # fight, death, save/continue) and local co-op; must print "clean"
+                            # fight, death, item pictures, quick panel, drag and drop, Mashbench,
+                            # research page, rebinding a key, save/continue) and local co-op;
+                            # must print "clean"
 ```
 
 The store thumbnail is the user's own art (`art/thumbnail-source.png`); don't replace it without

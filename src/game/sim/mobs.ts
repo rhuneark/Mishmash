@@ -51,6 +51,7 @@ export function spawnMob(
     hurt: 0,
     roamer: opts.roamer ?? false,
     nextSpawn: sim.time + 6,
+    heldUntil: 0,
   };
   sim.mobs.set(m.id, m);
   return m;
@@ -103,6 +104,7 @@ function killMob(sim: IslandSim, m: Mob): void {
       m.z,
       [
         { id: 'transmitter', n: 1 },
+        { id: 'bloom_heart', n: 1 },
         { id: 'sap', n: 8 },
       ],
       'Remains of the Mother Bloom',
@@ -111,7 +113,7 @@ function killMob(sim: IslandSim, m: Mob): void {
     sim.broadcast({
       type: 'event',
       e: 'dawn',
-      text: 'The Mother Bloom burns and collapses. Something glints in the roots: the transmitter.',
+      text: 'The Mother Bloom burns and collapses. In the roots: the transmitter, and her heart, still beating.',
     });
     sim.broadcastProgress();
     if (killer) killer.kills++;
@@ -126,8 +128,13 @@ function killMob(sim: IslandSim, m: Mob): void {
     got.push(`${drop.n} ${ITEMS[drop.item]?.name ?? drop.item}`);
   }
   if (got.length) sim.toast(killer.id, `+ ${got.join(', ')}`);
+  // The taken still carry pages of Dr. Kessler's research.
+  if (m.kind === 'husk' && sim.random() < PAGE_CHANCE) sim.findPage(killer);
   sim.dirty(killer);
 }
+
+/** Chance that a Husk drops the next research page. */
+export const PAGE_CHANCE = 0.3;
 
 function alivePlayer(sim: IslandSim, id: string | null): SimPlayer | null {
   if (!id || !sim.online.has(id)) return null;
@@ -135,12 +142,21 @@ function alivePlayer(sim: IslandSim, id: string | null): SimPlayer | null {
   return p && p.alive && !p.escaped ? p : null;
 }
 
-function nearestPlayer(sim: IslandSim, x: number, z: number, range: number): SimPlayer | null {
+/** Monsters notice a masked player only this close. */
+export const STEALTH_RANGE = 3;
+
+function nearestPlayer(
+  sim: IslandSim,
+  x: number,
+  z: number,
+  range: number,
+  sees: (p: SimPlayer) => boolean = () => true,
+): SimPlayer | null {
   let best: SimPlayer | null = null;
   let bd = range;
   for (const id of sim.online) {
     const p = alivePlayer(sim, id);
-    if (!p) continue;
+    if (!p || !sees(p)) continue;
     const d = dist(p.x, p.z, x, z);
     if (d < bd) {
       bd = d;
@@ -214,6 +230,27 @@ export function updateMobs(sim: IslandSim, dt: number): void {
       m.t -= dt;
       if (m.t <= 0) m.st = 'idle';
       continue;
+    }
+    if (m.heldUntil > sim.time) continue;
+    // The heart lantern: nothing of the Bloom stays in its light.
+    if (!def.rooted) {
+      const l = sim.repelAt(m.x, m.z, def.radius);
+      if (l) {
+        const dx = m.x - l.x;
+        const dz = m.z - l.z;
+        const d = Math.max(0.1, Math.sqrt(dx * dx + dz * dz));
+        m.st = 'flee';
+        stepToward(
+          sim,
+          m,
+          l.x + (dx / d) * (l.r + 3),
+          l.z + (dz / d) * (l.r + 3),
+          def.run,
+          dt,
+          0.2,
+        );
+        continue;
+      }
     }
     switch (m.kind) {
       case 'crab':
@@ -395,11 +432,13 @@ function walker(sim: IslandSim, m: Mob, dt: number, night: boolean): void {
     m.st = 'idle';
   }
 
-  // Pick or keep a target.
+  // Pick or keep a target. A petal mask hides you from all but the enraged.
   const aggro = (night || m.enraged ? def.aggroNight : def.aggroDay) * (m.enraged ? 1.5 : 1);
+  const sees = (p: SimPlayer) =>
+    m.enraged || !sim.hidden(p) || dist(p.x, p.z, m.x, m.z) < STEALTH_RANGE;
   let target = alivePlayer(sim, m.target);
-  if (target && dist(target.x, target.z, m.x, m.z) > aggro * 1.6) target = null;
-  if (!target) target = nearestPlayer(sim, m.x, m.z, aggro);
+  if (target && (dist(target.x, target.z, m.x, m.z) > aggro * 1.6 || !sees(target))) target = null;
+  if (!target) target = nearestPlayer(sim, m.x, m.z, aggro, sees);
   m.target = target?.id ?? null;
 
   // Fire: the taken keep out of the light (and back out of it).
@@ -433,7 +472,7 @@ function walker(sim: IslandSim, m: Mob, dt: number, night: boolean): void {
   const before = { x: m.x, z: m.z };
   m.st = 'chase';
   const s = stepToward(sim, m, target.x, target.z, speed, dt, def.reach * 0.8);
-  if (fears && sim.litAt(m.x, m.z, 0.3)) {
+  if ((fears && sim.litAt(m.x, m.z, 0.3)) || sim.repelAt(m.x, m.z, def.radius + 0.3)) {
     // Stop at the edge of the light and stare.
     m.x = before.x;
     m.z = before.z;
@@ -637,6 +676,7 @@ function spawnSpot(
     if (hitCollider(sim.island, x, z, 1)) continue;
     if (sim.blockingAt(x, z, 1)) continue;
     if (!ignoreLight && sim.litAt(x, z, 4)) continue;
+    if (sim.repelAt(x, z, 3)) continue;
     let tooClose = false;
     for (const id of sim.online) {
       const p = sim.players.get(id);

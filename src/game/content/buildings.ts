@@ -12,9 +12,13 @@ export interface BuildingDef {
   /** Light radius (campfire only while it has fuel). */
   light?: number;
   /** Crafting station it provides. */
-  station?: 'fire' | 'bench';
+  station?: 'fire' | 'bench' | 'mash';
   /** Damage per second to monsters touching it. */
   thorns?: number;
+  /** Bites the first monster that steps on it, holds it, then re-arms. */
+  trap?: { damage: number; stun: number; rearm: number };
+  /** No monster, even an enraged one, steps into its light. */
+  repels?: boolean;
 }
 
 const list: BuildingDef[] = [
@@ -37,6 +41,27 @@ const list: BuildingDef[] = [
   { id: 'storage', name: 'Storage box', hp: 150, w: 1.0, d: 0.8, blocks: true },
   { id: 'bedroll', name: 'Bedroll', hp: 60, w: 1.0, d: 2.0, blocks: false },
   { id: 'rain_collector', name: 'Rain collector', hp: 120, w: 1.2, d: 1.2, blocks: true },
+  { id: 'mashbench', name: 'Mashbench', hp: 220, w: 1.8, d: 1.1, blocks: true, station: 'mash' },
+  { id: 'thorn_wall', name: 'Thorn wall', hp: 650, w: 2.0, d: 0.55, blocks: true, thorns: 16 },
+  {
+    id: 'snap_trap',
+    name: 'Snap trap',
+    hp: 90,
+    w: 1.0,
+    d: 1.0,
+    blocks: false,
+    trap: { damage: 45, stun: 3, rearm: 15 },
+  },
+  {
+    id: 'heart_lantern',
+    name: 'Heart lantern',
+    hp: 400,
+    w: 0.9,
+    d: 0.9,
+    blocks: true,
+    light: 14,
+    repels: true,
+  },
 ];
 
 export const BUILDINGS: Record<string, BuildingDef> = Object.fromEntries(

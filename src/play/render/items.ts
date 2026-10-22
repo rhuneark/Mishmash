@@ -54,6 +54,46 @@ function geoFor(id: string): {
       ];
       glow = [sphere(0.04, 4, 3, 0xd6ff6a, { y: -0.1, z: 0.07 })];
       break;
+    case 'jawblade':
+      lit = [
+        handle(0.2, 0x3f8a35),
+        box(0.04, 0.72, 0.12, 0xc9d0d8, { y: -0.46, z: 0.03 }),
+        ...[0, 1, 2, 3].map((k) =>
+          cone(0.03, 0.1, 3, 0xf2efe0, { y: -0.25 - k * 0.15, z: 0.1, rx: Math.PI / 2 }),
+        ),
+      ];
+      break;
+    case 'thornmaul':
+      lit = [
+        handle(0.8),
+        box(0.28, 0.24, 0.36, 0x5a6a3a, { y: -0.75 }),
+        ...[-1, 1].flatMap((sx) =>
+          [-1, 1].map((sz) =>
+            cone(0.04, 0.16, 4, 0xd8c8a0, { x: sx * 0.15, y: -0.75, z: sz * 0.19, rz: sx * 1.2 }),
+          ),
+        ),
+      ];
+      break;
+    case 'spore_bomb':
+      lit = [
+        sphere(0.11, 6, 5, 0x9a6ac8, { y: -0.1 }),
+        box(0.04, 0.08, 0.04, 0xe8d8b0, { y: 0.03 }),
+      ];
+      glow = [sphere(0.03, 4, 3, 0xd6ff6a, { y: -0.08, z: 0.1 })];
+      break;
+    case 'bloom_tonic':
+      lit = [
+        cyl(0.05, 0.08, 0.18, 6, 0xff7ab8, { y: -0.1 }),
+        box(0.04, 0.05, 0.04, 0x8a5f3a, { y: 0.02 }),
+      ];
+      break;
+    case 'petal_mask':
+      lit = [
+        cone(0.2, 0.36, 7, 0xe85fa8, { y: 0.02, rx: Math.PI }),
+        box(0.06, 0.03, 0.02, 0x1b1a2b, { x: -0.06, y: 0.08, z: 0.1 }),
+        box(0.06, 0.03, 0.02, 0x1b1a2b, { x: 0.06, y: 0.08, z: 0.1 }),
+      ];
+      break;
     case 'radio':
       lit = [
         box(0.22, 0.3, 0.1, 0x3a3a3a, { y: -0.15 }),

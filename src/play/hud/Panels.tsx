@@ -1,17 +1,28 @@
 // Sheets over the game: bag and crafting, storage boxes, the cargo keypad,
-// the journal, notes and the menu.
+// the journal, notes, the menu and the PC controls.
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ITEMS } from '../../game/content/items';
-import { NOTES, noteText } from '../../game/content/notes';
+import { NOTES, PAGES, noteText } from '../../game/content/notes';
 import { POIS } from '../../game/content/pois';
-import { RECIPE_LIST, STATION_NAMES, type Station } from '../../game/content/recipes';
+import { STATION_NAMES, STATIONS, RECIPE_LIST } from '../../game/content/recipes';
 import { knownCode, objectives, tagsFound } from '../../game/objectives';
 import { HOTBAR, INV_SIZE } from '../../game/sim/inventory';
-import type { Slot } from '../../game/sim/protocol';
 import type { Sound } from '../audio';
 import type { GameClient } from '../client';
-import { SlotView } from './Hud';
+import type { Input } from '../input';
+import {
+  ACTIONS,
+  MAX_BINDS,
+  bind,
+  defaultBindings,
+  keyHint,
+  keyLabel,
+  unbind,
+  type Action,
+} from '../keys';
+import { RecipeRow, StationChips } from './Craft';
+import { ItemIcon, SlotButton, quickUse } from './Slots';
 
 function Sheet({
   title,
@@ -26,7 +37,11 @@ function Sheet({
 }) {
   return (
     <div className="sheet-backdrop" onClick={onClose}>
-      <div className={`sheet${wide ? ' wide' : ''}`} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`sheet${wide ? ' wide' : ''}`}
+        data-panel="sheet"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="sheet-head">
           <div className="sheet-title">{title}</div>
           <button className="round-btn" onClick={onClose} aria-label="Close">
@@ -46,10 +61,12 @@ export function BagSheet({
   client,
   onClose,
   tab: start,
+  pc,
 }: {
   client: GameClient;
   onClose: () => void;
   tab: 'bag' | 'craft';
+  pc: boolean;
 }) {
   const [tab, setTab] = useState(start);
   return (
@@ -70,57 +87,45 @@ export function BagSheet({
         </div>
       }
     >
-      {tab === 'bag' ? <BagTab client={client} /> : <CraftTab client={client} />}
+      {tab === 'bag' ? <BagTab client={client} pc={pc} /> : <CraftTab client={client} />}
     </Sheet>
   );
 }
 
-function BagTab({ client }: { client: GameClient }) {
+function BagTab({ client, pc }: { client: GameClient; pc: boolean }) {
   const me = client.me;
   const [sel, setSel] = useState<number | null>(null);
-  const [moving, setMoving] = useState(false);
   if (!me) return null;
   const slot = sel !== null ? (me.inv[sel] ?? null) : null;
   const def = slot ? ITEMS[slot.id] : undefined;
-  const tap = (i: number) => {
-    if (moving && sel !== null) {
-      client.moveSlot(sel, i);
-      setMoving(false);
-      setSel(i);
-      return;
-    }
-    setSel(sel === i ? null : i);
-  };
-  const toHotbar = () => {
-    if (sel === null) return;
-    let to = me.inv.findIndex((s, i) => i < HOTBAR && !s);
-    if (to < 0) to = me.held;
-    client.moveSlot(sel, to);
-    setSel(to);
-  };
+  const grid = (from: number, to: number) => (
+    <div className="slot-grid">
+      {Array.from({ length: to - from }, (_, k) => {
+        const i = from + k;
+        return (
+          <SlotButton
+            key={i}
+            client={client}
+            slotRef={{ area: 'inv', index: i }}
+            slot={me.inv[i] ?? null}
+            className={`${sel === i ? 'sel' : ''}${me.held === i ? ' held' : ''}`}
+            onTap={() => setSel(sel === i ? null : i)}
+            onContext={() => quickUse(client, i)}
+          />
+        );
+      })}
+    </div>
+  );
   return (
     <div className="bag">
       <div className="label">Hotbar</div>
-      <SlotGrid
-        slots={me.inv.slice(0, HOTBAR)}
-        offset={0}
-        sel={sel}
-        held={me.held}
-        onTap={tap}
-        moving={moving}
-      />
+      {grid(0, HOTBAR)}
       <div className="label">Bag</div>
-      <SlotGrid
-        slots={me.inv.slice(HOTBAR, INV_SIZE)}
-        offset={HOTBAR}
-        sel={sel}
-        onTap={tap}
-        moving={moving}
-      />
+      {grid(HOTBAR, INV_SIZE)}
       {slot && def && sel !== null ? (
         <div className="item-info">
           <div className="item-head">
-            <span className="item-icon">{def.icon}</span>
+            <ItemIcon id={def.id} className="item-icon" />
             <div>
               <div className="item-name">
                 {def.name}
@@ -144,16 +149,10 @@ function BagTab({ client }: { client: GameClient }) {
                 {me.held === sel ? 'In hand' : 'Hold'}
               </button>
             ) : (
-              <button className="btn small" onClick={toHotbar}>
+              <button className="btn small" onClick={() => quickUse(client, sel)}>
                 To hotbar
               </button>
             )}
-            <button
-              className={`btn small${moving ? ' primary' : ''}`}
-              onClick={() => setMoving(!moving)}
-            >
-              {moving ? 'Tap a slot…' : 'Move'}
-            </button>
             {!def.quest && (
               <button
                 className="btn small ghost"
@@ -169,7 +168,8 @@ function BagTab({ client }: { client: GameClient }) {
         </div>
       ) : (
         <p className="muted small-text">
-          Tap an item to eat it, hold it or move it. Things in the hotbar can be held.
+          Drag items to move them between slots. Tap one to eat it, hold it or drop it.
+          {pc ? ' Right-click eats, holds or sends it to the hotbar.' : ''}
         </p>
       )}
     </div>
@@ -186,88 +186,30 @@ function describe(id: string): string {
   return bits.join(' ');
 }
 
-function SlotGrid(props: {
-  slots: (Slot | null)[];
-  offset: number;
-  sel: number | null;
-  held?: number;
-  moving?: boolean;
-  onTap: (i: number) => void;
-}) {
-  return (
-    <div className="slot-grid">
-      {props.slots.map((s, k) => {
-        const i = props.offset + k;
-        return (
-          <button
-            key={i}
-            className={`slot${props.sel === i ? ' sel' : ''}${props.held === i ? ' held' : ''}${props.moving && props.sel !== i ? ' target' : ''}`}
-            onClick={() => props.onTap(i)}
-            aria-label={s ? ITEMS[s.id]?.name : 'Empty slot'}
-          >
-            <SlotView slot={s} />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function CraftTab({ client }: { client: GameClient }) {
   const st = client.stations();
-  const groups: Station[] = ['hand', 'fire', 'bench'];
   return (
     <div className="craft">
-      <div className="station-chips">
-        {groups.map((g) => (
-          <span key={g} className={`chip${st[g] ? ' ok' : ''}`}>
-            {st[g] ? '✓' : '✗'} {STATION_NAMES[g]}
-          </span>
-        ))}
-      </div>
-      {groups.map((g) => (
+      <StationChips client={client} />
+      {STATIONS.map((g) => (
         <div key={g} className="craft-group">
           <div className="label">
             {STATION_NAMES[g]}
             {!st[g] && (
               <span className="muted">
                 {' '}
-                · {g === 'fire' ? 'stand by a lit campfire' : 'stand by a workbench'}
+                ·{' '}
+                {g === 'fire'
+                  ? 'stand by a lit campfire'
+                  : g === 'mash'
+                    ? 'stand by a Mashbench (build one at a workbench)'
+                    : 'stand by a workbench'}
               </span>
             )}
           </div>
-          {RECIPE_LIST.filter((r) => r.station === g).map((r) => {
-            const out = ITEMS[r.out];
-            const ok = client.canCraft(r.id);
-            return (
-              <div key={r.id} className={`recipe${ok ? ' ok' : ''}`}>
-                <span className="recipe-icon">{out?.icon}</span>
-                <div className="recipe-text">
-                  <div className="recipe-name">
-                    {out?.name}
-                    {r.n > 1 ? ` ×${r.n}` : ''}
-                  </div>
-                  <div className="recipe-needs">
-                    {Object.entries(r.needs).map(([id, n]) => {
-                      const have = client.count(id);
-                      return (
-                        <span key={id} className={have >= n ? 'have' : 'need'}>
-                          {ITEMS[id]?.icon} {Math.min(have, n)}/{n}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-                <button
-                  className="btn small primary"
-                  disabled={!ok}
-                  onClick={() => client.craft(r.id)}
-                >
-                  Craft
-                </button>
-              </div>
-            );
-          })}
+          {RECIPE_LIST.filter((r) => r.station === g).map((r) => (
+            <RecipeRow key={r.id} client={client} r={r} />
+          ))}
         </div>
       ))}
     </div>
@@ -290,18 +232,36 @@ export function StorageSheet({ client, onClose }: { client: GameClient; onClose:
   return (
     <Sheet title="📦 Storage box" onClose={onClose} wide>
       <p className="muted small-text">
-        Tap to move things in or out. Everyone on the island can use this box.
+        Tap to move things in or out, or drag them where you want them. Everyone on the island can
+        use this box.
       </p>
       <div className="label">Box</div>
-      <SlotGrid slots={box.inv} offset={0} sel={null} onTap={(i) => client.take(i)} />
+      <div className="slot-grid">
+        {box.inv.map((s, i) => (
+          <SlotButton
+            key={i}
+            client={client}
+            slotRef={{ area: 'box', index: i }}
+            slot={s}
+            onTap={() => client.take(i)}
+            onContext={() => client.take(i)}
+          />
+        ))}
+      </div>
       <div className="label">Your bag</div>
-      <SlotGrid
-        slots={me.inv}
-        offset={0}
-        sel={null}
-        held={me.held}
-        onTap={(i) => client.store(i)}
-      />
+      <div className="slot-grid">
+        {me.inv.map((s, i) => (
+          <SlotButton
+            key={i}
+            client={client}
+            slotRef={{ area: 'inv', index: i }}
+            slot={s}
+            className={me.held === i ? 'held' : ''}
+            onTap={() => client.store(i)}
+            onContext={() => client.store(i)}
+          />
+        ))}
+      </div>
     </Sheet>
   );
 }
@@ -364,14 +324,23 @@ export function KeypadSheet({ client, onClose }: { client: GameClient; onClose: 
 
 const SPOTS = new Map(POIS.flatMap((p) => p.spots.map((s) => [s.id, s] as const)));
 
+/** The note behind something found: a spot on the island or a research page. */
+function noteFor(found: string) {
+  const spot = SPOTS.get(found);
+  if (spot) return { note: spot.note ? NOTES[spot.note] : undefined, spot };
+  return { note: NOTES[found], spot: undefined };
+}
+
 const TIPS = [
   'Pick up branches and loose stones, pull fiber from bushes. Twist fiber into rope.',
-  'A stone axe and pickaxe come first (Bag › Craft). Hold a tool in your hotbar to use it.',
+  'A stone axe and pickaxe come first (🎒 › Craft). Hold a tool in your hotbar to use it.',
   'Build a campfire before dark. The taken fear fire, it heals you, and it cooks food. Feed it wood.',
   "Every 7th night is a Bloom night: fire won't keep them away. Build walls, spikes and a door.",
   'Drink from freshwater pools, coconuts and rain collectors. Food and water keep you healing.',
   'Puffers burst into poison: hit them from range or back off. Bandages cure poison.',
   'Fire bombs and torches set the Bloom on fire. The Mother Bloom hates fire.',
+  'Monsters drop parts: Husk tendrils, Snapjaw teeth, Puffer spore sacs (kill it before it bursts), Thornback plates. Build a Mashbench at a workbench to turn them into special gear.',
+  "Husks still carry pages of Dr. Kessler's research. Collect all 8 to learn what the Bloom is.",
   'A bedroll sets where you wake up after you fall. Your bag stays where you dropped.',
 ];
 
@@ -383,7 +352,13 @@ export function JournalSheet({ client, onClose }: { client: GameClient; onClose:
     rescue: client.rescue,
   });
   const notes = [...client.notes].filter((id) => SPOTS.has(id));
+  const pages = PAGES.filter((id) => client.notes.has(id));
   const tags = tagsFound(client.notes);
+  const open = (id: string) => {
+    client.noteId = id;
+    client.noteBack = 'journal';
+    client.openPanel('note');
+  };
   return (
     <Sheet title="📖 Journal" onClose={onClose}>
       <div className="label">Getting off the island</div>
@@ -405,23 +380,27 @@ export function JournalSheet({ client, onClose }: { client: GameClient; onClose:
       )}
       <div className="note-list">
         {notes.map((id) => {
-          const spot = SPOTS.get(id);
-          const note = spot?.note ? NOTES[spot.note] : undefined;
+          const { note, spot } = noteFor(id);
           return (
-            <button
-              key={id}
-              className="note-row"
-              onClick={() => {
-                client.noteId = id;
-                client.noteBack = 'journal';
-                client.openPanel('note');
-              }}
-            >
+            <button key={id} className="note-row" onClick={() => open(id)}>
               📄 {note?.title ?? 'Note'}
               {spot?.kind === 'tag' && spot.digit !== undefined ? ` (${spot.digit + 1}/4)` : ''}
             </button>
           );
         })}
+      </div>
+      <div className="label">
+        Dr. Kessler's research ({pages.length}/{PAGES.length})
+      </div>
+      {pages.length === 0 && (
+        <p className="muted small-text">The Husks carry the pages. Some of them, anyway.</p>
+      )}
+      <div className="note-list">
+        {pages.map((id) => (
+          <button key={id} className="note-row" onClick={() => open(id)}>
+            🧪 {NOTES[id]?.title ?? 'Page'}
+          </button>
+        ))}
       </div>
       <div className="label">Survival tips</div>
       <ul className="tips">
@@ -434,10 +413,11 @@ export function JournalSheet({ client, onClose }: { client: GameClient; onClose:
 }
 
 export function NoteSheet({ client, onClose }: { client: GameClient; onClose: () => void }) {
-  const spot = client.noteId ? SPOTS.get(client.noteId) : undefined;
-  const note = spot?.note ? NOTES[spot.note] : undefined;
-  if (!spot || !note) return null;
-  const text = noteText(note.id, client.seed, spot.kind === 'tag' ? spot.digit : undefined);
+  const { note, spot } = client.noteId
+    ? noteFor(client.noteId)
+    : { note: undefined, spot: undefined };
+  if (!note) return null;
+  const text = noteText(note.id, client.seed, spot?.kind === 'tag' ? spot.digit : undefined);
   return (
     <Sheet title={`📄 ${note.title}`} onClose={onClose}>
       <div className="note-paper">
@@ -458,6 +438,7 @@ export function NoteSheet({ client, onClose }: { client: GameClient; onClose: ()
 export function MenuSheet(props: {
   client: GameClient;
   sound: Sound;
+  pc: boolean;
   onClose: () => void;
   onLeave: () => void;
   onHost: () => void;
@@ -524,25 +505,31 @@ export function MenuSheet(props: {
         >
           {muted ? '🔇 Sound off' : '🔊 Sound on'}
         </button>
+        <button className="btn" onClick={() => client.openPanel('controls')}>
+          ⌨️ Controls
+        </button>
         <button className="btn" onClick={() => setHowTo(!howTo)}>
           ❓ How to play
         </button>
       </div>
       {howTo && (
         <ul className="tips">
-          <li>Move with the stick on the left (or WASD / arrow keys). 🏃 sprints (Shift).</li>
+          <li>
+            Move with the stick on the left{props.pc ? ' or WASD / arrow keys' : ''}. 🏃 sprints.
+          </li>
           <li>
             The big button does whatever is in front of you: chop, mine, pick up, attack, open, read
-            (Space or E).
+            {props.pc ? ' (Space, E or left click on the island)' : ''}.
           </li>
           <li>
-            Pick what you hold from the hotbar (keys 1–6). Hold a building to place it; 🔄 turns it
-            (R).
+            Pick what you hold from the hotbar{props.pc ? ' (1–6 or the mouse wheel)' : ''}. Hold a
+            building to place it; 🔄 turns it.
           </li>
           <li>
-            🎒 opens your bag and crafting (I). 📖 is your journal (J), the minimap opens the map
-            (M).
+            🎒 opens the quick bag and craft panel{props.pc ? ' (Tab)' : ''}: it stays open while
+            you move and fight. Drag items between slots, or onto the island to drop them.
           </li>
+          <li>Every key can be changed under ⌨️ Controls.</li>
           <li>
             Find the three parts of the emergency radio and call for rescue. The journal says where
             to go.
@@ -559,3 +546,116 @@ export function MenuSheet(props: {
     </Sheet>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Controls (PC): rebind every action.
+
+const GROUPS = ['Move', 'Act', 'Screens', 'Hotbar'] as const;
+
+export function ControlsSheet({ input, onClose }: { input: Input; onClose: () => void }) {
+  const [b, setB] = useState(input.bindings);
+  const [wait, setWait] = useState<{ action: Action; index: number } | null>(null);
+  const [note, setNote] = useState('');
+  const label = (a: Action) => ACTIONS.find((x) => x.id === a)?.label ?? a;
+
+  const apply = (next: typeof b) => {
+    setB(next);
+    input.setBindings(next);
+    input.onBindingsChanged?.(next);
+  };
+
+  useEffect(() => {
+    if (!wait) return;
+    input.capture((code) => {
+      setWait(null);
+      if (code === null) return;
+      if (code === 'Backspace' || code === 'Delete') {
+        apply(unbind(b, wait.action, wait.index));
+        setNote(`Cleared a key from "${label(wait.action)}".`);
+        return;
+      }
+      const { bindings, took } = bind(b, wait.action, wait.index, code);
+      if (bindings === b) {
+        setNote(`${keyLabel(code)} can't be used.`);
+        return;
+      }
+      apply(bindings);
+      setNote(
+        took
+          ? `${keyLabel(code)} now does "${label(wait.action)}" (it was "${label(took)}").`
+          : `${keyLabel(code)} → ${label(wait.action)}.`,
+      );
+    });
+    return () => input.capture(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wait]);
+
+  return (
+    <Sheet title="⌨️ Controls" onClose={onClose}>
+      <p className="muted small-text">
+        Click a key to change it, then press the new key or mouse button. Backspace clears it, Esc
+        cancels. Esc always closes screens. Touch controls stay as they are.
+      </p>
+      {note && <div className="chip ok note-chip">{note}</div>}
+      {GROUPS.map((g) => (
+        <div key={g} className="controls-group">
+          <div className="label">{g}</div>
+          {ACTIONS.filter((a) => a.group === g).map((a) => (
+            <div key={a.id} className="control-row">
+              <div className="control-name">{a.label}</div>
+              <div className="control-keys">
+                {Array.from({ length: MAX_BINDS }, (_, i) => {
+                  const code = b[a.id][i];
+                  const waiting = wait?.action === a.id && wait.index === i;
+                  return (
+                    <button
+                      key={i}
+                      className={`key-btn${waiting ? ' waiting' : ''}${code ? '' : ' empty'}`}
+                      onClick={() => setWait({ action: a.id, index: Math.min(i, b[a.id].length) })}
+                      aria-label={`${a.label}, key ${i + 1}`}
+                    >
+                      {waiting ? 'Press…' : code ? keyLabel(code) : '+'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+      <button
+        className="btn"
+        onClick={() => {
+          apply(defaultBindings());
+          setNote('Back to the default keys.');
+        }}
+      >
+        Reset to defaults
+      </button>
+      {wait && <CaptureOverlay input={input} what={label(wait.action)} />}
+    </Sheet>
+  );
+}
+
+/** While rebinding: catches mouse buttons and the wheel too. */
+function CaptureOverlay({ input, what }: { input: Input; what: string }) {
+  return (
+    <div
+      className="capture"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.pointerType === 'mouse') input.captured(`Mouse${e.button}`);
+      }}
+      onContextMenu={(e) => e.preventDefault()}
+      onWheel={(e) => input.captured(e.deltaY > 0 ? 'WheelDown' : 'WheelUp')}
+    >
+      <div className="capture-card">
+        <div className="capture-title">Press a key or a mouse button</div>
+        <div className="muted small-text">for "{what}". Esc cancels, Backspace clears.</div>
+      </div>
+    </div>
+  );
+}
+
+export { keyHint };

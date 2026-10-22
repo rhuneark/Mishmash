@@ -355,6 +355,18 @@ export class View {
         });
         this.sfx('burst', x, z);
         break;
+      case 'spore':
+        this.fx.ring(x, y, z, e.r ?? 4.5, 0xb6ff5a, 0.9, { grow: true });
+        this.fx.burst(x, y + 0.6, z, 40, FX_COLORS.spore, {
+          speed: 5,
+          up: 2,
+          grav: 0.5,
+          glow: true,
+          life: 1.6,
+          size: 1.4,
+        });
+        this.sfx('burst', x, z);
+        break;
       case 'boom':
         this.fx.ring(x, y, z, e.r ?? 3.5, 0xff8a3a, 0.6, { grow: true });
         this.fx.burst(x, y + 0.5, z, 34, FX_COLORS.fire, {
@@ -561,6 +573,15 @@ export class View {
       }
       if (v.door)
         v.door.rotation.y += ((net.v === 1 ? -1.45 : 0) - v.door.rotation.y) * Math.min(1, dt * 8);
+      if (v.jaws) {
+        // Open while armed, snapped shut while re-arming.
+        const shut = (net.v ?? 0) > 0;
+        v.jaws.forEach((j, k) => {
+          const want = shut ? 0 : (k === 0 ? -1 : 1) * 1.1;
+          j.rotation.x += (want - j.rotation.x) * Math.min(1, dt * (shut ? 30 : 4));
+        });
+      }
+      if (v.heart) v.heart.scale.setScalar(1 + Math.max(0, Math.sin(this.t * 5)) * 0.18);
       if (v.water) {
         const k = (net.v ?? 0) / RAIN_MAX;
         v.water.visible = k > 0;
@@ -723,7 +744,7 @@ export class View {
     this.terrain.setWaterTint(day, bloom);
     this.sound.setMood(1 - day, bloom);
     // Fire light: the nearest fires and torches get the four point lights.
-    const sources: { x: number; z: number; y: number; r: number; d: number }[] = [];
+    const sources: { x: number; z: number; y: number; r: number; d: number; color?: number }[] = [];
     for (const b of c.buildings.values()) {
       const light = BUILDINGS[b.kind]?.light;
       if (!light) continue;
@@ -731,9 +752,10 @@ export class View {
       sources.push({
         x: b.x,
         z: b.z,
-        y: b.kind === 'torch_post' ? 2.2 : 1,
+        y: b.kind === 'torch_post' ? 2.2 : b.kind === 'heart_lantern' ? 1.9 : 1,
         r: light,
         d: this.dist(b.x, b.z),
+        ...(b.kind === 'heart_lantern' ? { color: 0xff7ab8 } : {}),
       });
     }
     const torch = ITEMS['torch']?.light ?? 8;
@@ -751,6 +773,7 @@ export class View {
         l.intensity = 0;
         return;
       }
+      l.color.setHex(s.color ?? 0xffa04a);
       l.position.set(s.x, this.y(s.x, s.z) + s.y, s.z);
       l.distance = s.r * 2;
       const flicker = 1 + Math.sin(this.t * 11 + i * 3) * 0.06 + Math.sin(this.t * 17 + i) * 0.04;

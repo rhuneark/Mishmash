@@ -52,6 +52,41 @@ export function add(inv: Inv, id: string, n: number, d?: number): number {
   return left;
 }
 
+/**
+ * Moves slot `fi` of `from` into `to`: into slot `ti` when it's empty or holds the same
+ * stackable item, the rest wherever it fits. Returns how many moved.
+ */
+export function transfer(from: Inv, fi: number, to: Inv, ti?: number): number {
+  const s = from[fi];
+  if (!s) return 0;
+  let moved = 0;
+  if (ti !== undefined && ti >= 0 && ti < to.length) {
+    const t = to[ti];
+    if (!t) {
+      to[ti] = { ...s };
+      from[fi] = null;
+      return s.n;
+    }
+    if (t.id === s.id && t.d === undefined && s.d === undefined) {
+      const k = Math.min(stackOf(s.id) - t.n, s.n);
+      if (k > 0) {
+        t.n += k;
+        s.n -= k;
+        moved += k;
+      }
+      if (s.n <= 0) {
+        from[fi] = null;
+        return moved;
+      }
+    }
+  }
+  const rest = add(to, s.id, s.n, s.d);
+  moved += s.n - rest;
+  if (rest > 0) s.n = rest;
+  else from[fi] = null;
+  return moved;
+}
+
 /** Can all of these fit at once? */
 export function fits(inv: Inv, items: { id: string; n: number }[]): boolean {
   const copy = inv.map((s) => (s ? { ...s } : null));

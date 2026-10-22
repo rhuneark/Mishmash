@@ -14,8 +14,12 @@ export interface ItemDef {
   tool?: { kind: ToolKind; power: number };
   /** Melee stats when held. */
   weapon?: { damage: number; reach: number; cooldown: number; burn?: number };
-  /** Uses before it breaks (torches: seconds of burning while held). */
+  /** Uses before it breaks (items that `wear`: seconds while held). */
   durability?: number;
+  /** Durability runs down every second it's held (torch, petal mask). */
+  wears?: boolean;
+  /** While held, roaming monsters only notice you up close (not on Bloom nights). */
+  stealth?: boolean;
   food?: { food: number; water: number };
   heal?: { hp: number; seconds: number };
   /** Building it places (buildings.ts). */
@@ -235,6 +239,7 @@ const list: ItemDef[] = [
     icon: '🔦',
     stack: 5,
     durability: 240,
+    wears: true,
     light: 8,
     weapon: { damage: 7, reach: 2.0, cooldown: 0.7, burn: 4 },
     desc: 'Lights the dark. The taken fear fire. Burns for 4 minutes in hand.',
@@ -327,6 +332,119 @@ const list: ItemDef[] = [
     stack: 5,
     place: 'rain_collector',
     desc: 'Fills with clean water over time.',
+  },
+  // Monster parts (drops) and what the Mashbench makes of them
+  {
+    id: 'bloom_tendril',
+    name: 'Husk tendril',
+    icon: '🌿',
+    stack: 20,
+    desc: 'Root threads pulled from a Husk. Tough as rope, and still twitching.',
+  },
+  {
+    id: 'snap_tooth',
+    name: 'Snapjaw tooth',
+    icon: '🦷',
+    stack: 20,
+    desc: 'A curved thorn-tooth from a Snapjaw. Sharper than steel.',
+  },
+  {
+    id: 'spore_sac',
+    name: 'Spore sac',
+    icon: '🫧',
+    stack: 10,
+    desc: "A Puffer's spore bag, taken before it could burst. Handle gently.",
+  },
+  {
+    id: 'thorn_plate',
+    name: 'Thorn plate',
+    icon: '🛡️',
+    stack: 10,
+    desc: "A slab of a Thornback's armoured hide, bristling with spines.",
+  },
+  {
+    id: 'bloom_heart',
+    name: 'Heart of the Bloom',
+    icon: '💗',
+    stack: 1,
+    desc: "The Mother Bloom's heart. It still beats. A Mashbench can make it into a lantern the Bloom won't come near.",
+  },
+  {
+    id: 'mashbench',
+    name: 'Mashbench',
+    icon: '⚗️',
+    stack: 1,
+    place: 'mashbench',
+    desc: 'Salvage and Bloom parts mashed together. Turns monster parts into special gear.',
+  },
+  {
+    id: 'jawblade',
+    name: 'Jawblade',
+    icon: '🗡️',
+    stack: 1,
+    durability: 320,
+    tool: { kind: 'machete', power: 45 },
+    weapon: { damage: 34, reach: 2.4, cooldown: 0.55 },
+    desc: 'Snapjaw teeth set in scrap. Fast, vicious, and it cuts Bloom vines too.',
+  },
+  {
+    id: 'thornmaul',
+    name: 'Thornmaul',
+    icon: '🔨',
+    stack: 1,
+    durability: 260,
+    weapon: { damage: 46, reach: 2.3, cooldown: 0.95 },
+    desc: 'Thornback plates on a heavy handle. Slow, and it hits like a falling tree.',
+  },
+  {
+    id: 'spore_bomb',
+    name: 'Spore bomb',
+    icon: '🦠',
+    stack: 5,
+    throwable: { damage: 14, radius: 4.5, range: 12, burn: 9 },
+    desc: 'Their own spores, turned on them: a wide cloud that rots the Bloom from inside.',
+  },
+  {
+    id: 'petal_mask',
+    name: 'Petal mask',
+    icon: '🎭',
+    stack: 1,
+    durability: 300,
+    wears: true,
+    stealth: true,
+    desc: "Wear the Bloom's smell. Hold it and roaming monsters only notice you up close. Useless on Bloom nights. Wilts in 5 minutes of wearing.",
+  },
+  {
+    id: 'bloom_tonic',
+    name: 'Bloom tonic',
+    icon: '🧉',
+    stack: 5,
+    heal: { hp: 80, seconds: 4 },
+    desc: 'Spores boiled clean. Heals 80 and clears poison.',
+  },
+  {
+    id: 'thorn_wall',
+    name: 'Thorn wall',
+    icon: '🌵',
+    stack: 10,
+    place: 'thorn_wall',
+    desc: 'A wall of Thornback plates. Very hard to break, and it cuts whatever pushes on it.',
+  },
+  {
+    id: 'snap_trap',
+    name: 'Snap trap',
+    icon: '🪤',
+    stack: 5,
+    place: 'snap_trap',
+    desc: 'Snapjaw teeth on a spring. Bites the first monster to step on it and holds it in place. Re-arms itself.',
+  },
+  {
+    id: 'heart_lantern',
+    name: 'Heart lantern',
+    icon: '🏮',
+    stack: 1,
+    place: 'heart_lantern',
+    desc: "The Mother's heart in a cage. No Bloom will step into its light, not even on a Bloom night.",
   },
   // Escape
   {

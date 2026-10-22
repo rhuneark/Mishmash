@@ -1114,16 +1114,46 @@ button:disabled {
   white-space: nowrap;
 }
 
-.hud-feed {
+.hud-left {
   position: absolute;
   top: calc(100px + var(--safe-top));
   left: 8px;
   right: 116px;
+  bottom: calc(232px + var(--safe-bottom));
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 5px;
   max-width: 320px;
+  pointer-events: none;
+}
+
+.hud-left > * {
+  pointer-events: auto;
+  flex: none;
+}
+
+/* Phones: the quick panel takes the full width under the minimap buttons. */
+.hud-left.with-quick {
+  top: calc(160px + var(--safe-top));
+  right: 8px;
+  max-width: none;
+}
+
+.hud-left.with-quick .objective {
+  display: none;
+}
+
+@media (min-width: 700px) {
+  .hud-left.with-quick {
+    top: calc(100px + var(--safe-top));
+    right: auto;
+    width: 380px;
+  }
+
+  .hud-left.with-quick .objective {
+    display: block;
+  }
 }
 
 .objective {
@@ -1368,11 +1398,6 @@ button:disabled {
   border-style: dashed;
 }
 
-.slot-icon {
-  font-size: 27px;
-  line-height: 1;
-}
-
 .slot-n {
   position: absolute;
   right: 3px;
@@ -1504,10 +1529,6 @@ button:disabled {
   gap: 10px;
 }
 
-.item-icon {
-  font-size: 34px;
-}
-
 .item-name {
   font-weight: 800;
 }
@@ -1555,12 +1576,6 @@ button:disabled {
 .recipe.ok {
   border-color: rgba(61, 220, 151, 0.45);
   opacity: 1;
-}
-
-.recipe-icon {
-  width: 34px;
-  font-size: 28px;
-  text-align: center;
 }
 
 .recipe-text {
@@ -1778,4 +1793,321 @@ button:disabled {
 .win-stats b {
   display: block;
   font-size: 22px;
+}
+
+/* Item pictures */
+
+.icon,
+.slot-icon,
+.recipe-icon,
+.need-icon,
+.item-icon,
+.drag-icon,
+.btn-icon,
+.quick-info-icon {
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.slot-icon {
+  width: 72%;
+  height: 72%;
+}
+
+.slot {
+  touch-action: none;
+}
+
+.slot.hot {
+  box-shadow: inset 0 -3px 0 rgba(255, 193, 69, 0.45);
+}
+
+.slot.drop-over {
+  border-color: var(--tile-2);
+  background: rgba(61, 220, 151, 0.25);
+}
+
+.recipe-icon {
+  width: 34px;
+  height: 34px;
+  flex: none;
+}
+
+.need-icon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  vertical-align: -4px;
+}
+
+.item-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.btn-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.recipe-where {
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+/* Drag and drop */
+
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.drag-icon {
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.6));
+}
+
+.drag-ghost .slot-n {
+  right: auto;
+  left: 10px;
+  bottom: -20px;
+}
+
+.drag-hint {
+  position: absolute;
+  left: 30px;
+  top: -10px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Quick bag and craft panel (stays open while you play) */
+
+.quick-panel {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  flex: 0 1 auto;
+  min-height: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(26, 24, 44, 0.86);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.hud-left > .quick-panel {
+  flex: 0 1 auto;
+}
+
+.quick-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.quick-head-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.tab-btn.small {
+  min-height: 44px;
+  padding: 6px 14px;
+  font-size: 15px;
+}
+
+.quick-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 8px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.quick-grid {
+  gap: 5px;
+}
+
+.quick-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-info-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.quick-info-name {
+  flex: 1;
+  font-weight: 800;
+}
+
+.quick-info-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.quick-hint,
+.quick-note {
+  font-size: 14px;
+  color: var(--text-soft);
+}
+
+.quick-recipes {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.recipe.compact {
+  padding: 5px 6px;
+  gap: 8px;
+}
+
+.recipe.compact .recipe-icon {
+  width: 30px;
+  height: 30px;
+}
+
+/* Key hints and controls */
+
+.key-cap {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  border-radius: 5px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.controls-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.control-name {
+  flex: 1;
+  font-size: 15px;
+}
+
+.control-keys {
+  display: flex;
+  gap: 4px;
+}
+
+.key-btn {
+  min-width: 58px;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.key-btn.empty {
+  border-style: dashed;
+  color: var(--text-soft);
+}
+
+.key-btn.waiting {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.note-chip {
+  align-self: stretch;
+  border-radius: 10px;
+  white-space: normal;
+}
+
+.capture {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.capture-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 22px;
+  border: 2px solid var(--accent);
+  border-radius: 14px;
+  background: var(--panel);
+  text-align: center;
+}
+
+.capture-title {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.banner-toast {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.banner-toast.bloom {
+  border-color: #ff4aa0;
+  color: #ff9ad0;
+}
+
+.banner-toast.night {
+  color: #b8c8ff;
+}
+
+.banner-toast.dawn {
+  color: #ffe08a;
+}
+
+.banner-toast.dusk {
+  color: #ffb27a;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .joy-hint {
+    display: none;
+  }
+}
+
+@media (min-width: 700px) and (hover: hover) and (pointer: fine) {
+  .hud-left {
+    bottom: calc(96px + var(--safe-bottom));
+  }
 }

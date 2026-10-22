@@ -380,3 +380,159 @@ describe('island sim', () => {
     expect(h.sim.flags.has('seen:tail')).toBe(true);
   });
 });
+
+describe('monster parts, the Mashbench and the lore', () => {
+  /** A flat, open spot away from landmarks to build on. */
+  function openSpot(h: ReturnType<typeof harness>): { x: number; z: number } {
+    for (let r = 40; r < 160; r += 4) {
+      for (let a = 0; a < 16; a++) {
+        const x = SPAWN.x + Math.round(Math.sin((a / 16) * Math.PI * 2) * r);
+        const z = SPAWN.z - 20 + Math.round(Math.cos((a / 16) * Math.PI * 2) * r);
+        const free =
+          !h.sim.placeProblem('mashbench', x, z, 0) &&
+          !h.sim.placeProblem('mashbench', x, z + 5, 0) &&
+          !h.sim.placeProblem('snap_trap', x + 4, z, 0);
+        if (free) return { x, z };
+      }
+    }
+    throw new Error('no open spot');
+  }
+
+  it('drops monster parts and builds a Mashbench that crafts special gear', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const spot = openSpot(h);
+    walkTo(h, 'a', spot.x, spot.z + 2.5);
+    // A Snapjaw always drops teeth.
+    const jaw = spawnMob(h.sim, 'snapjaw', p.x + 30, p.z, {});
+    jaw.lastHitBy = 'a';
+    for (let k = 0; k < 10 && h.sim.mobs.has(jaw.id); k++) {
+      jaw.hp = 1;
+      h.sim.tick(0.1);
+      jaw.burnUntil = h.sim.time + 1;
+      jaw.burnDps = 50;
+      h.sim.tick(0.1);
+    }
+    expect(count(p.inv, 'snap_tooth')).toBe(2);
+    // Build a workbench, then a Mashbench next to it.
+    h.sim.give(p, 'workbench', 1);
+    h.sim.give(p, 'wood', 20);
+    h.sim.give(p, 'scrap', 8);
+    h.sim.give(p, 'bloom_tendril', 6);
+    h.sim.give(p, 'snap_tooth', 4);
+    const slot = (id: string) => p.inv.findIndex((s) => s?.id === id);
+    h.sim.handle('a', { type: 'place', slot: slot('workbench'), x: spot.x, z: spot.z, rot: 0 });
+    h.sim.handle('a', { type: 'craft', recipe: 'mashbench' });
+    expect(count(p.inv, 'mashbench')).toBe(1);
+    // Jawblades need a Mashbench, not a workbench.
+    h.sim.handle('a', { type: 'craft', recipe: 'jawblade' });
+    expect(count(p.inv, 'jawblade')).toBe(0);
+    expect(h.toasts('a').slice(-1)[0]).toContain('Mashbench');
+    h.sim.handle('a', { type: 'place', slot: slot('mashbench'), x: spot.x, z: spot.z + 5, rot: 0 });
+    walkTo(h, 'a', spot.x + 1.5, spot.z + 3);
+    h.sim.handle('a', { type: 'craft', recipe: 'jawblade' });
+    expect(count(p.inv, 'jawblade')).toBe(1);
+  });
+
+  it('snap traps bite and hold the first monster, then re-arm', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const spot = openSpot(h);
+    walkTo(h, 'a', spot.x + 4, spot.z + 2.5);
+    h.sim.give(p, 'snap_trap', 1);
+    h.sim.handle('a', {
+      type: 'place',
+      slot: p.inv.findIndex((s) => s?.id === 'snap_trap'),
+      x: spot.x + 4,
+      z: spot.z,
+      rot: 0,
+    });
+    const trap = [...h.sim.buildings.values()].find((b) => b.kind === 'snap_trap')!;
+    expect(trap).toBeDefined();
+    const husk = spawnMob(h.sim, 'husk', trap.x, trap.z, {});
+    h.sim.tick(0.1);
+    expect(husk.hp).toBeLessThan(60);
+    expect(husk.heldUntil).toBeGreaterThan(h.sim.time);
+    expect(trap.v).toBeGreaterThan(0);
+    h.sim.mobs.delete(husk.id);
+    h.run(16);
+    expect(trap.v).toBe(0);
+  });
+
+  it('the heart lantern keeps even enraged monsters out of its light', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const spot = openSpot(h);
+    walkTo(h, 'a', spot.x, spot.z + 2);
+    h.sim.give(p, 'heart_lantern', 1);
+    h.sim.handle('a', {
+      type: 'place',
+      slot: p.inv.findIndex((s) => s?.id === 'heart_lantern'),
+      x: spot.x,
+      z: spot.z,
+      rot: 0,
+    });
+    p.hp = 100;
+    const m = spawnMob(h.sim, 'thornback', spot.x + 20, spot.z, { enraged: true });
+    m.target = 'a';
+    for (let t = 0; t < 15; t += 0.1) {
+      p.hp = 100;
+      h.sim.tick(0.1);
+    }
+    expect(Math.hypot(m.x - spot.x, m.z - spot.z)).toBeGreaterThan(13);
+  });
+
+  it('a petal mask hides you from roaming monsters (not up close)', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    h.sim.give(p, 'petal_mask', 1);
+    const i = p.inv.findIndex((s) => s?.id === 'petal_mask');
+    h.sim.handle('a', { type: 'move', from: i, to: 0 });
+    h.sim.handle('a', { type: 'equip', slot: 0 });
+    expect(h.sim.hidden(p)).toBe(true);
+    const m = spawnMob(h.sim, 'husk', p.x + 8, p.z, {});
+    h.sim.tick(0.1);
+    expect(m.target).toBeNull();
+    // The mask wilts while worn.
+    const before = p.inv[0]?.d ?? 0;
+    h.run(3);
+    expect(p.inv[0]?.d ?? 0).toBeLessThan(before);
+  });
+
+  it("Husks carry Dr. Kessler's research pages, in order", () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    h.sim.findPage(p);
+    h.sim.findPage(p);
+    expect([...h.sim.notes]).toEqual(['page_1', 'page_2']);
+    const events = (h.inbox.get('a') ?? []).filter((m) => m.type === 'event' && m.e === 'note');
+    expect(events.length).toBe(2);
+  });
+
+  it('drag and drop into a storage box lands in the slot you chose', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const spot = openSpot(h);
+    walkTo(h, 'a', spot.x, spot.z + 2);
+    h.sim.give(p, 'storage', 1);
+    h.sim.handle('a', {
+      type: 'place',
+      slot: p.inv.findIndex((s) => s?.id === 'storage'),
+      x: spot.x,
+      z: spot.z,
+      rot: 0,
+    });
+    const box = [...h.sim.buildings.values()].find((b) => b.kind === 'storage')!;
+    const ration = p.inv.findIndex((s) => s?.id === 'ration');
+    h.sim.handle('a', { type: 'store', id: box.id, slot: ration, to: 7 });
+    expect(box.inv?.[7]?.id).toBe('ration');
+    h.sim.handle('a', { type: 'take', id: box.id, slot: 7, to: 20 });
+    expect(p.inv[20]?.id).toBe('ration');
+  });
+});

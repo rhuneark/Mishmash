@@ -23,8 +23,8 @@ export type C2S =
   | { type: 'demolish'; id: number }
   | { type: 'move'; from: number; to: number }
   | { type: 'drop'; slot: number }
-  | { type: 'store'; id: number; slot: number }
-  | { type: 'take'; id: number; slot: number }
+  | { type: 'store'; id: number; slot: number; to?: number }
+  | { type: 'take'; id: number; slot: number; to?: number }
   | { type: 'code'; code: string }
   | { type: 'respawn' }
   /** Leaving a co-op island: the host gets a last save first. */
@@ -136,7 +136,8 @@ export type FxKind =
   | 'unlock'
   | 'pickup'
   | 'drink'
-  | 'throw';
+  | 'throw'
+  | 'spore';
 
 export type S2C =
   | { type: 'welcome'; you: string; part: number; parts: number; data: string }

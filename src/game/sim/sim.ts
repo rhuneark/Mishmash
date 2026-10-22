@@ -14,12 +14,22 @@ import {
 } from '../content/buildings';
 import { ITEMS, powerFor, type ItemDef } from '../content/items';
 import { LUGGAGE_LOOT, NODE, NODES } from '../content/nodes';
-import { NOTES } from '../content/notes';
+import { NOTES, PAGES } from '../content/notes';
 import { POIS, RESCUE_SECONDS, SPAWN, type PoiDef, type Spot } from '../content/pois';
-import { RECIPES } from '../content/recipes';
+import { RECIPES, type Station } from '../content/recipes';
 import { hash01 } from '../rng';
 import { HALF, poolNear, type Island } from '../world';
-import { add, cleanInv, emptyInv, HOTBAR, moveSlot, remove, removeAll, wear } from './inventory';
+import {
+  add,
+  cleanInv,
+  emptyInv,
+  HOTBAR,
+  moveSlot,
+  remove,
+  removeAll,
+  transfer,
+  wear,
+} from './inventory';
 import { burrowAll, damageMob, runDirector, updateMobs } from './mobs';
 import { placementProblem } from './place';
 import {
@@ -57,6 +67,8 @@ export interface Light {
   x: number;
   z: number;
   r: number;
+  /** Nothing of the Bloom enters it (heart lantern). */
+  repel?: boolean;
 }
 
 export const FOOD_DECAY = 100 / 700;
@@ -99,7 +111,7 @@ export class IslandSim {
   private readonly meDirty = new Set<string>();
   private readonly meAt = new Map<string, number>();
   private readonly lastMe = new Map<string, string>();
-  private readonly booms: { x: number; z: number; at: number; by: string }[] = [];
+  private readonly booms: { x: number; z: number; at: number; by: string; item: string }[] = [];
 
   constructor(island: Island, save: IslandSave, out: Out, random: () => number) {
     this.island = island;
@@ -354,9 +366,9 @@ export class IslandSim {
       case 'drop':
         return this.onDropSlot(p, msg.slot);
       case 'store':
-        return this.onStore(p, msg.id, msg.slot);
+        return this.onStore(p, msg.id, msg.slot, msg.to);
       case 'take':
-        return this.onTake(p, msg.id, msg.slot);
+        return this.onTake(p, msg.id, msg.slot, msg.to);
       case 'code':
         return this.onCode(p, msg.code);
       case 'respawn':
@@ -692,7 +704,7 @@ export class IslandSim {
       dz = (dz / d) * range;
     }
     remove(p.inv, s.id, 1);
-    this.booms.push({ x: p.x + dx, z: p.z + dz, at: this.time + 0.55, by: p.id });
+    this.booms.push({ x: p.x + dx, z: p.z + dz, at: this.time + 0.55, by: p.id, item: s.id });
     this.fx('throw', p.x + dx, p.z + dz, p.id);
     this.dirty(p);
   }
@@ -717,7 +729,7 @@ export class IslandSim {
     this.dirty(p);
   }
 
-  stationNear(x: number, z: number, station: 'fire' | 'bench'): boolean {
+  stationNear(x: number, z: number, station: Exclude<Station, 'hand'>): boolean {
     for (const b of this.buildings.values()) {
       if (BUILDINGS[b.kind]?.station !== station) continue;
       if (station === 'fire' && b.v <= 0) continue;
@@ -732,7 +744,11 @@ export class IslandSim {
     if (r.station !== 'hand' && !this.stationNear(p.x, p.z, r.station)) {
       this.toast(
         p.id,
-        r.station === 'fire' ? 'Stand next to a lit campfire.' : 'Stand next to a workbench.',
+        r.station === 'fire'
+          ? 'Stand next to a lit campfire.'
+          : r.station === 'mash'
+            ? 'Stand next to a Mashbench.'
+            : 'Stand next to a workbench.',
       );
       return;
     }
@@ -824,32 +840,26 @@ export class IslandSim {
     this.dirty(p);
   }
 
-  private onStore(p: SimPlayer, id: number, slot: number): void {
+  private onStore(p: SimPlayer, id: number, slot: number, to?: number): void {
     const b = this.buildings.get(id);
     const s = p.inv[slot];
     if (!b?.inv || !s || dist(p.x, p.z, b.x, b.z) > REACH + 1.5) return;
-    const rest = add(b.inv, s.id, s.n, s.d);
-    if (rest === s.n) {
+    if (transfer(p.inv, slot, b.inv, cleanIndex(to, b.inv.length)) === 0) {
       this.toast(p.id, 'The box is full.');
       return;
     }
-    if (rest > 0) s.n = rest;
-    else p.inv[slot] = null;
     this.broadcast({ type: 'build', b: buildingNet(b) });
     this.dirty(p);
   }
 
-  private onTake(p: SimPlayer, id: number, slot: number): void {
+  private onTake(p: SimPlayer, id: number, slot: number, to?: number): void {
     const b = this.buildings.get(id);
     const s = b?.inv?.[slot];
     if (!b?.inv || !s || dist(p.x, p.z, b.x, b.z) > REACH + 1.5) return;
-    const rest = add(p.inv, s.id, s.n, s.d);
-    if (rest === s.n) {
+    if (transfer(b.inv, slot, p.inv, cleanIndex(to, p.inv.length)) === 0) {
       this.toast(p.id, 'Your bag is full.');
       return;
     }
-    if (rest > 0) s.n = rest;
-    else b.inv[slot] = null;
     this.broadcast({ type: 'build', b: buildingNet(b) });
     this.dirty(p);
   }
@@ -970,6 +980,34 @@ export class IslandSim {
     }
   }
 
+  /** The repelling light (heart lantern) that (x, z) is inside, if any. */
+  repelAt(x: number, z: number, extra = 0): Light | null {
+    for (const l of this.lights) {
+      if (l.repel && dist(l.x, l.z, x, z) < l.r + extra) return l;
+    }
+    return null;
+  }
+
+  /** Is this player hidden by a petal mask (never on a Bloom night)? */
+  hidden(p: SimPlayer): boolean {
+    const s = p.inv[p.held];
+    return !!s && ITEMS[s.id]?.stealth === true && !this.lastInfo.bloom;
+  }
+
+  /** The next research page a Husk had on it (shared progress). */
+  findPage(p: SimPlayer): void {
+    const page = PAGES.find((id) => !this.notes.has(id));
+    if (!page) return;
+    this.notes.add(page);
+    const n = PAGES.indexOf(page) + 1;
+    this.send(p.id, { type: 'event', e: 'note', id: page });
+    this.broadcast({
+      type: 'toast',
+      text: `${p.name} found a page of Dr. Kessler's research (${n}/${PAGES.length}).`,
+    });
+    this.broadcastProgress();
+  }
+
   /** Is (x, z) lit by fire (keeps fire-fearing monsters out)? */
   litAt(x: number, z: number, extra = 0): boolean {
     for (const l of this.lights) {
@@ -1048,8 +1086,9 @@ export class IslandSim {
   private updateLights(): void {
     const lights: Light[] = [];
     for (const b of this.buildings.values()) {
-      if (b.kind === 'campfire' && b.v > 0) lights.push({ x: b.x, z: b.z, r: 9 });
-      else if (b.kind === 'torch_post') lights.push({ x: b.x, z: b.z, r: 7 });
+      const def = BUILDINGS[b.kind];
+      if (!def?.light || (b.kind === 'campfire' && b.v <= 0)) continue;
+      lights.push({ x: b.x, z: b.z, r: def.light, ...(def.repels ? { repel: true } : {}) });
     }
     for (const id of this.online) {
       const p = this.players.get(id);
@@ -1079,12 +1118,21 @@ export class IslandSim {
         }
       }
       p.hp = Math.min(100, p.hp);
+      // Torches burn and masks wilt while held.
       const held = p.inv[p.held];
-      if (held?.id === 'torch') {
+      const heldDef = held ? ITEMS[held.id] : undefined;
+      if (heldDef?.wears) {
         p.torchAcc += dt;
         if (p.torchAcc >= 1) {
           p.torchAcc -= 1;
-          if (wear(p.inv, p.held)) this.toast(p.id, 'Your torch burned out.');
+          if (wear(p.inv, p.held)) {
+            this.toast(
+              p.id,
+              heldDef.id === 'torch'
+                ? 'Your torch burned out.'
+                : `Your ${heldDef.name.toLowerCase()} fell apart.`,
+            );
+          }
           this.dirty(p);
         }
       }
@@ -1106,18 +1154,50 @@ export class IslandSim {
           b.v += 1;
           this.broadcast({ type: 'build', b: buildingNet(b) });
         }
+      } else if (BUILDINGS[b.kind]?.trap) {
+        this.updateTrap(b, dt);
       }
+    }
+  }
+
+  /** Snap traps: v is seconds until re-armed (0 = armed). */
+  private updateTrap(b: Building, dt: number): void {
+    const trap = BUILDINGS[b.kind]?.trap;
+    if (!trap) return;
+    if (b.v > 0) {
+      b.v = Math.max(0, b.v - dt);
+      if (b.v === 0) this.broadcast({ type: 'build', b: buildingNet(b) });
+      return;
+    }
+    for (const m of this.mobs.values()) {
+      if (m.kind === 'mother' || m.kind === 'crab' || m.hp <= 0 || m.st === 'burrow') continue;
+      if (Math.abs(m.x - b.x) > 1.2 || Math.abs(m.z - b.z) > 1.2) continue;
+      if (dist(m.x, m.z, b.x, b.z) > 0.6 + (MONSTER_RADIUS[m.kind] ?? 0.5)) continue;
+      b.v = trap.rearm;
+      this.fx('bite', b.x, b.z);
+      m.heldUntil = this.time + trap.stun;
+      m.st = 'idle';
+      damageMob(this, m, trap.damage, b.owner || null, 0);
+      this.broadcast({ type: 'build', b: buildingNet(b) });
+      return;
     }
   }
 
   private updateBooms(): void {
     for (let i = this.booms.length - 1; i >= 0; i--) {
-      const boom = this.booms[i] as { x: number; z: number; at: number; by: string };
+      const boom = this.booms[i] as (typeof this.booms)[number];
       if (this.time < boom.at) continue;
       this.booms.splice(i, 1);
-      const bomb = ITEMS['firebomb']?.throwable;
+      const bomb = ITEMS[boom.item]?.throwable;
       if (!bomb) continue;
-      this.fx('boom', boom.x, boom.z, boom.by, undefined, bomb.radius);
+      this.fx(
+        boom.item === 'spore_bomb' ? 'spore' : 'boom',
+        boom.x,
+        boom.z,
+        boom.by,
+        undefined,
+        bomb.radius,
+      );
       for (const m of [...this.mobs.values()]) {
         if (dist(m.x, m.z, boom.x, boom.z) <= bomb.radius + (MONSTER_RADIUS[m.kind] ?? 0.5)) {
           damageMob(this, m, bomb.damage, boom.by, bomb.burn);
@@ -1321,6 +1401,11 @@ export function dist(ax: number, az: number, bx: number, bz: number): number {
   const dx = ax - bx;
   const dz = az - bz;
   return Math.sqrt(dx * dx + dz * dz);
+}
+
+/** A slot index from a message, or undefined when it's missing or out of range. */
+function cleanIndex(v: unknown, length: number): number | undefined {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < length ? v : undefined;
 }
 
 function clampWorld(v: number): number {

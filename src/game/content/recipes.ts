@@ -1,7 +1,9 @@
 // Crafting recipes. `station`: 'hand' anywhere, 'fire' near a lit campfire,
-// 'bench' near a workbench.
+// 'bench' near a workbench, 'mash' near a Mashbench (monster parts).
 
-export type Station = 'hand' | 'fire' | 'bench';
+export type Station = 'hand' | 'fire' | 'bench' | 'mash';
+
+export const STATIONS: Station[] = ['hand', 'fire', 'bench', 'mash'];
 
 export interface Recipe {
   id: string;
@@ -14,6 +16,7 @@ export interface Recipe {
 const list: Recipe[] = [
   // By hand
   { id: 'rope', out: 'rope', n: 1, station: 'hand', needs: { fiber: 3 } },
+  { id: 'rope_tendril', out: 'rope', n: 2, station: 'hand', needs: { bloom_tendril: 1 } },
   {
     id: 'axe_stone',
     out: 'axe_stone',
@@ -88,6 +91,64 @@ const list: Recipe[] = [
   { id: 'firebomb', out: 'firebomb', n: 2, station: 'bench', needs: { sap: 2, cloth: 1 } },
   { id: 'medkit', out: 'medkit', n: 1, station: 'bench', needs: { bandage: 1, sap: 2 } },
   {
+    id: 'mashbench',
+    out: 'mashbench',
+    n: 1,
+    station: 'bench',
+    needs: { wood: 10, scrap: 4, bloom_tendril: 3, snap_tooth: 2 },
+  },
+  // At a Mashbench: monster parts
+  {
+    id: 'jawblade',
+    out: 'jawblade',
+    n: 1,
+    station: 'mash',
+    needs: { snap_tooth: 4, scrap: 2, bloom_tendril: 2 },
+  },
+  {
+    id: 'thornmaul',
+    out: 'thornmaul',
+    n: 1,
+    station: 'mash',
+    needs: { thorn_plate: 3, wood: 4, bloom_tendril: 2 },
+  },
+  { id: 'spore_bomb', out: 'spore_bomb', n: 2, station: 'mash', needs: { spore_sac: 2, cloth: 1 } },
+  {
+    id: 'petal_mask',
+    out: 'petal_mask',
+    n: 1,
+    station: 'mash',
+    needs: { bloom_tendril: 3, cloth: 2, sap: 2 },
+  },
+  {
+    id: 'bloom_tonic',
+    out: 'bloom_tonic',
+    n: 1,
+    station: 'mash',
+    needs: { spore_sac: 1, sap: 2, bandage: 1 },
+  },
+  {
+    id: 'thorn_wall',
+    out: 'thorn_wall',
+    n: 1,
+    station: 'mash',
+    needs: { thorn_plate: 2, wood: 6 },
+  },
+  {
+    id: 'snap_trap',
+    out: 'snap_trap',
+    n: 1,
+    station: 'mash',
+    needs: { snap_tooth: 2, scrap: 2, rope: 1 },
+  },
+  {
+    id: 'heart_lantern',
+    out: 'heart_lantern',
+    n: 1,
+    station: 'mash',
+    needs: { bloom_heart: 1, scrap: 4, sap: 4 },
+  },
+  {
     id: 'radio',
     out: 'radio',
     n: 1,
@@ -103,4 +164,5 @@ export const STATION_NAMES: Record<Station, string> = {
   hand: 'By hand',
   fire: 'Campfire',
   bench: 'Workbench',
+  mash: 'Mashbench',
 };

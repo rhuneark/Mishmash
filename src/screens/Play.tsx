@@ -146,6 +146,10 @@ export function Play({
             </li>
             <li>Every 7th night is a Bloom night. Fire won't save you then: build walls.</li>
             <li>
+              Monster parts make special gear at a Mashbench. The Husks carry pages of the story of
+              how all this started.
+            </li>
+            <li>
               Find the three radio parts, call for rescue and hold out until the helicopter lands.
             </li>
           </ul>

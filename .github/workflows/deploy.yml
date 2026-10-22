@@ -21,8 +21,8 @@ env:
   # Store listing, applied after each deploy when set. Keywords (tags) drive RUN
   # search and recommendations; each deploy replaces the whole list. Both are
   # first versions, to update as the game takes shape.
-  GAME_DESCRIPTION: "Mishmash is a community build: a game made by its players. Suggest features, vote on what comes next, and watch it grow one update at a time into a mishmash of everyone's ideas. First up: vote on what kind of game it should be, then chat about it in the Town Square!"
-  GAME_KEYWORDS: 'community,community-build,player-made,voting,chat,social,multiplayer,casual,halloween,spooky,monsters'
+  GAME_DESCRIPTION: "Your plane goes down on a huge island, and the other passengers are turning into plants. Gather, craft tools, build a camp, keep your fire burning and survive the nights while the Bloom hunts you. Find the three radio parts, solve your way off the island and call for rescue. Play solo or with up to 3 friends. Mishmash is built by its players: vote on what gets added next and chat in the Town Square!"
+  GAME_KEYWORDS: 'survival,crafting,base-building,horror,island,co-op,multiplayer,open-world,exploration,monsters,community-build,voting,halloween,spooky'
 
 jobs:
   deploy:

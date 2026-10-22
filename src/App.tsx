@@ -8,10 +8,15 @@ import { Intro } from './screens/Intro';
 import { Vote } from './screens/Vote';
 import { Chat } from './screens/Chat';
 import { Dev } from './screens/Dev';
+import { Play, type PlayChoice } from './screens/Play';
+import { Game } from './play/Game';
+import type { GameClient } from './play/client';
+import { FAIL_TEXT, startHost, startJoin, startSolo } from './play/session';
 
-type Tab = 'vote' | 'chat' | 'about' | 'dev';
+type Tab = 'play' | 'vote' | 'chat' | 'about' | 'dev';
 
 const TABS: { id: Tab; icon: string; label: string; ownerOnly?: boolean }[] = [
+  { id: 'play', icon: '🏝️', label: 'Play' },
   { id: 'vote', icon: '🗳️', label: 'Vote' },
   { id: 'chat', icon: '💬', label: 'Chat' },
   { id: 'about', icon: '❓', label: 'About' },
@@ -22,7 +27,10 @@ const REPORT_CHECK_MS = 5 * 60_000;
 
 export default function App() {
   const [save, setSave] = useState<SaveData | null>(null);
-  const [tab, setTab] = useState<Tab>('vote');
+  const [tab, setTab] = useState<Tab>('play');
+  const [game, setGame] = useState<GameClient | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [playError, setPlayError] = useState<string | null>(null);
   // The Dev tab only exists for the game's owner (RUN checks the account).
   const [owner, setOwner] = useState(false);
   const [openReports, setOpenReports] = useState(0);
@@ -57,6 +65,56 @@ export default function App() {
     setTab(next);
   };
 
+  const start = async (choice: PlayChoice) => {
+    setPlayError(null);
+    setStarting(true);
+    const res =
+      choice.kind === 'solo'
+        ? await startSolo(choice.fresh)
+        : choice.kind === 'host'
+          ? await startHost()
+          : await startJoin(choice.code);
+    setStarting(false);
+    if (!res.ok) {
+      setPlayError(FAIL_TEXT[res.reason]);
+      setTab('play');
+      return;
+    }
+    setGame(res.client);
+  };
+
+  const leave = async () => {
+    const g = game;
+    setGame(null);
+    setStarting(true);
+    await g?.close();
+    setStarting(false);
+  };
+
+  if (game) {
+    return (
+      <div className="app game-app">
+        <Game
+          client={game}
+          onLeave={() => void leave()}
+          onHost={() => void leave().then(() => start({ kind: 'host' }))}
+          onNewIsland={() => void leave().then(() => start({ kind: 'solo', fresh: true }))}
+        />
+      </div>
+    );
+  }
+
+  if (starting) {
+    return (
+      <div className="app">
+        <div className="game-loading">
+          <div className="loading-island">🏝️</div>
+          <div className="loading-text">Getting the island ready…</div>
+        </div>
+      </div>
+    );
+  }
+
   if (!save) {
     return (
       <div className="app">
@@ -70,7 +128,12 @@ export default function App() {
   if (!save.introSeen) {
     return (
       <div className="app">
-        <Intro first onVote={() => go('vote')} onChat={() => go('chat')} />
+        <Intro
+          first
+          onPlay={() => go('play')}
+          onVote={() => go('vote')}
+          onChat={() => go('chat')}
+        />
       </div>
     );
   }
@@ -79,9 +142,18 @@ export default function App() {
     <div className="app">
       {owner && <ReportWatch onCount={setOpenReports} />}
       <main className="tab-body">
+        {tab === 'play' && (
+          <Play onStart={(c) => void start(c)} onVote={() => setTab('vote')} error={playError} />
+        )}
         {tab === 'vote' && <Vote onChat={() => setTab('chat')} />}
         {tab === 'chat' && <Chat />}
-        {tab === 'about' && <Intro onVote={() => setTab('vote')} onChat={() => setTab('chat')} />}
+        {tab === 'about' && (
+          <Intro
+            onPlay={() => setTab('play')}
+            onVote={() => setTab('vote')}
+            onChat={() => setTab('chat')}
+          />
+        )}
         {tab === 'dev' && owner && <Dev onOpenCount={setOpenReports} />}
       </main>
       <nav className="tabbar">

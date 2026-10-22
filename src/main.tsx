@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import * as run from './sdk/run';
+import { appEvents } from './app/appEvents';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) throw new Error('[mishmash] Root element not found');
@@ -17,7 +18,12 @@ void run.ready().then(() => {
   root.setProperty('--fs', String(run.fontScale()));
 });
 
-run.onLifecycle({});
+run.onLifecycle({
+  pause: () => appEvents.emit('pause'),
+  resume: () => appEvents.emit('resume'),
+  sleep: () => appEvents.emit('sleep'),
+  quit: () => appEvents.emit('quit'),
+});
 
 createRoot(rootElement).render(
   <StrictMode>

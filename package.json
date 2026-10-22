@@ -27,11 +27,13 @@
   "devDependencies": {
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
+    "@types/three": "^0.183.1",
     "@vitejs/plugin-react": "^4.3.4",
     "cross-env": "^7.0.3",
     "firebase": "^12.12.1",
     "playwright": "~1.56.1",
     "prettier": "^3.4.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.3",
     "vite": "^6.3.5",
     "vitest": "^3.2.7"
@@ -39,7 +41,8 @@
   "dependencies": {
     "@series-inc/rundot-game-sdk": "5.28.1",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "three": "0.183.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

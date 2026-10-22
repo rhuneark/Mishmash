@@ -18,11 +18,12 @@ export interface Poll {
   options: readonly PollOption[];
 }
 
+/** Round 1, closed: the base became the island survival game. */
 export const BASE_POLL: Poll = {
   id: 'base',
   title: 'Round 1: Pick the base',
   question: 'What kind of game should Mishmash be at its core?',
-  open: true,
+  open: false,
   options: [
     { id: 'arpg', name: 'Action RPG', blurb: 'Hack, slash and loot', icon: '⚔️' },
     { id: 'platformer', name: 'Platformer', blurb: 'Run, jump, explore', icon: '🏃' },
@@ -34,6 +35,36 @@ export const BASE_POLL: Poll = {
     { id: 'idle', name: 'Idle tycoon', blurb: 'Grow an empire, even offline', icon: '💰' },
   ],
 };
+
+export const NEXT_POLL: Poll = {
+  id: 'next1',
+  title: 'Round 2: What gets added next?',
+  question: 'The island is live. What should we build into it next?',
+  open: true,
+  options: [
+    {
+      id: 'boats',
+      name: 'Boats & a second island',
+      blurb: 'Build a raft, sail somewhere new',
+      icon: '🛶',
+    },
+    { id: 'farming', name: 'Farming & cooking', blurb: 'Grow crops, cook real meals', icon: '🌾' },
+    { id: 'pets', name: 'Tame animals', blurb: 'Pets that fight, mounts that carry', icon: '🐕' },
+    { id: 'weather', name: 'Storms & weather', blurb: 'Rain, fog, lightning, tides', icon: '⛈️' },
+    { id: 'ranged', name: 'Bows & ranged weapons', blurb: 'Hit the Bloom from afar', icon: '🏹' },
+    { id: 'monsters', name: 'New Bloom monsters', blurb: 'Nastier things in the dark', icon: '👹' },
+    { id: 'bases', name: 'Bigger bases', blurb: 'Floors, roofs, furniture, traps', icon: '🏠' },
+    {
+      id: 'secrets',
+      name: 'Puzzles & secrets',
+      blurb: 'Hidden bunkers, codes, more story',
+      icon: '🧩',
+    },
+  ],
+};
+
+/** The poll the Vote tab shows. */
+export const CURRENT_POLL = NEXT_POLL;
 
 /** UGC content type for a vote on one option. */
 export function voteType(pollId: string, optionId: string): string {

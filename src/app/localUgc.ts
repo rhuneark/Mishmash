@@ -6,7 +6,7 @@
 // host. `owner` plays the game's owner (dev URL `?owner`).
 
 import type { ReportRow, UgcApi, UgcRow } from '../sdk/run';
-import { BASE_POLL, voteType } from '../game/poll';
+import { CURRENT_POLL, voteType } from '../game/poll';
 import { CHAT_TYPE } from '../game/chat';
 
 const ME = 'local-you';
@@ -89,20 +89,20 @@ export function createLocalUgc(owner = false, now: () => number = Date.now): Ugc
   for (const r of reports) if (r.entryId === nova.id) r.status = 'dismissed';
 
   const seedVotes: Record<string, number> = {
-    arpg: 5,
-    roguelike: 3,
-    platformer: 2,
-    story: 2,
-    idle: 1,
+    boats: 5,
+    pets: 3,
+    farming: 2,
+    weather: 2,
+    secrets: 1,
   };
   for (const [option, n] of Object.entries(seedVotes)) {
     for (let i = 0; i < n; i++) {
       const voter = `local-voter-${option}-${i}`;
-      add(voteType(BASE_POLL.id, option), voter, 'Voter', { v: 1, option }, 60 * min);
+      add(voteType(CURRENT_POLL.id, option), voter, 'Voter', { v: 1, option }, 60 * min);
     }
   }
-  // A voter with a second, newer vote: only that one counts (roguelike, not arpg).
-  add(voteType(BASE_POLL.id, 'roguelike'), 'local-voter-arpg-0', 'Voter', { v: 1 }, 5 * min);
+  // A voter with a second, newer vote: only that one counts (pets, not boats).
+  add(voteType(CURRENT_POLL.id, 'pets'), 'local-voter-boats-0', 'Voter', { v: 1 }, 5 * min);
 
   const denied = { ok: false as const, reason: 'error' as const };
 

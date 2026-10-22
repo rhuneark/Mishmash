@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import * as run from '../sdk/run';
-import { BASE_POLL, moveVote, tally, type Counts } from '../game/poll';
+import { BASE_POLL, CURRENT_POLL, moveVote, tally, type Counts } from '../game/poll';
 import { castVote, isLocalPreview, loadPoll, type MyVote } from '../app/community';
 import { usePolling } from '../app/usePolling';
 import { Notice, type NoticeState } from '../ui/Notice';
@@ -8,7 +8,8 @@ import { Notice, type NoticeState } from '../ui/Notice';
 const REFRESH_MS = 60_000;
 
 export function Vote({ onChat }: { onChat: () => void }) {
-  const poll = BASE_POLL;
+  const poll = CURRENT_POLL;
+  const base = BASE_POLL.options.find((o) => o.id === 'survival');
   const [counts, setCounts] = useState<Counts | null>(null);
   const [mine, setMine] = useState<MyVote | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -68,6 +69,13 @@ export function Vote({ onChat }: { onChat: () => void }) {
         </header>
 
         {notice && <Notice state={notice} onClose={() => setNotice(null)} />}
+
+        {base && (
+          <div className="card round-done">
+            <span aria-hidden="true">{base.icon}</span> Round 1 is closed: Mishmash is a{' '}
+            <b>{base.name.toLowerCase()}</b> game. Play it in the Play tab.
+          </div>
+        )}
 
         <div className="options">
           {rows.map((row, i) => {

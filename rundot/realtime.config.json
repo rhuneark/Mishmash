@@ -1,0 +1,9 @@
+{
+  "rooms": [
+    {
+      "type": "island",
+      "file": "src/server/IslandRoom.ts",
+      "config": { "maxPlayers": 4, "allowReconnect": true, "reconnectTimeout": 60 }
+    }
+  ]
+}

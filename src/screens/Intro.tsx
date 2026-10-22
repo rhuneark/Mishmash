@@ -3,6 +3,7 @@ import { Logo } from '../ui/Logo';
 interface Props {
   /** First launch: the full-screen welcome. Otherwise the About tab. */
   first?: boolean;
+  onPlay: () => void;
   onVote: () => void;
   onChat: () => void;
 }
@@ -13,15 +14,19 @@ const STEPS = [
   { icon: '🔨', name: 'We build it', text: 'The winner lands in the next update.' },
 ];
 
-export function Intro({ first = false, onVote, onChat }: Props) {
+export function Intro({ first = false, onPlay, onVote, onChat }: Props) {
   return (
     <div className={`intro-screen${first ? ' first' : ''}`}>
       <div className="scroll">
         <div className="intro">
           <Logo size={first ? 'big' : 'small'} />
           <div>
-            <h2 className="intro-title">This game doesn't exist yet.</h2>
-            <p className="intro-lead">You're going to help build it.</p>
+            <h2 className="intro-title">A game the players build.</h2>
+            <p className="intro-lead">
+              It starts as a survival game: your plane goes down on an island overrun by the Bloom.
+              Craft, build, survive the nights and find a way off, alone or with friends. What gets
+              added next is up to you.
+            </p>
           </div>
           <ol className="steps">
             {STEPS.map((s, i) => (
@@ -40,18 +45,19 @@ export function Intro({ first = false, onVote, onChat }: Props) {
           </ol>
           <p className="intro-lead">Update by update, it becomes a mishmash of everyone's ideas.</p>
           <div className="card callout">
-            <div className="label">First up</div>
-            <p>
-              What should Mishmash be at its core? An action RPG? A story? A platformer? You decide.
-            </p>
+            <div className="label">Now voting</div>
+            <p>What should we add to the island next? Boats? Farming? Pets? Storms? You decide.</p>
           </div>
         </div>
       </div>
       <div className="actions">
-        <button className="btn primary" onClick={onVote}>
-          Vote on the base
+        <button className="btn primary" onClick={onPlay}>
+          Play
         </button>
-        <button className="btn" onClick={onChat}>
+        <button className="btn" onClick={onVote}>
+          Vote on what's next
+        </button>
+        <button className="btn ghost" onClick={onChat}>
           Say hi in chat
         </button>
       </div>

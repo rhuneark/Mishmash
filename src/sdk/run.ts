@@ -446,6 +446,102 @@ export const ugc: UgcApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Realtime rooms (co-op islands). The server side is src/server/IslandRoom.ts.
+
+export type RoomStatus = 'ok' | 'reconnecting' | 'lost';
+
+export interface RoomConn {
+  code: string;
+  playerId: string;
+  send(msg: object): void;
+  onMessage(cb: (msg: unknown) => void): void;
+  onStatus(cb: (status: RoomStatus) => void): void;
+  leave(): void;
+}
+
+export type RoomResult =
+  { ok: true; room: RoomConn } | { ok: false; reason: 'login' | 'notfound' | 'full' | 'error' };
+
+type ServerRoomLike = Awaited<ReturnType<typeof RundotGameAPI.realtime.createRoom>>;
+
+function wrapRoom(room: ServerRoomLike): RoomConn {
+  const handlers: ((msg: unknown) => void)[] = [];
+  const statusHandlers: ((s: RoomStatus) => void)[] = [];
+  const early: unknown[] = [];
+  const deliver = (msg: unknown) => {
+    if (!handlers.length) early.push(msg);
+    for (const h of handlers) h(msg);
+  };
+  const status = (s: RoomStatus) => {
+    for (const h of statusHandlers) h(s);
+  };
+  room.on({
+    onMessage: deliver,
+    onPrivateMessage: deliver,
+    onReconnecting: () => status('reconnecting'),
+    onReconnected: () => status('ok'),
+    onDisconnect: () => status('lost'),
+    onError: (err: string) => warn('room', err),
+  });
+  return {
+    code: room.roomCode,
+    playerId: room.playerId,
+    send: (msg) => {
+      try {
+        room.send(msg as never);
+      } catch (err) {
+        warn('room.send', err);
+      }
+    },
+    onMessage: (cb) => {
+      handlers.push(cb);
+      for (const m of early.splice(0)) cb(m);
+    },
+    onStatus: (cb) => {
+      statusHandlers.push(cb);
+    },
+    leave: () => {
+      try {
+        room.leave();
+      } catch (err) {
+        warn('room.leave', err);
+      }
+    },
+  };
+}
+
+function roomFail(err: unknown): RoomResult {
+  warn('room', err);
+  const f = failOf(err);
+  if (f.reason === 'login') return { ok: false, reason: 'login' };
+  const msg = String((err as { message?: unknown })?.message ?? err).toLowerCase();
+  if (/not found|no room|unknown code/.test(msg)) return { ok: false, reason: 'notfound' };
+  if (/full|locked/.test(msg)) return { ok: false, reason: 'full' };
+  return { ok: false, reason: 'error' };
+}
+
+export async function createRoom(type: string): Promise<RoomResult> {
+  await ready();
+  try {
+    return { ok: true, room: wrapRoom(await RundotGameAPI.realtime.createRoom(type)) };
+  } catch (err) {
+    return roomFail(err);
+  }
+}
+
+export async function joinRoom(code: string): Promise<RoomResult> {
+  await ready();
+  try {
+    return {
+      ok: true,
+      room: wrapRoom(await RundotGameAPI.realtime.joinRoomByCode(code.trim().toUpperCase())),
+    };
+  } catch (err) {
+    return roomFail(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Analytics and lifecycle.
 
 export function track(event: string, payload?: Record<string, string | number | boolean>): void {

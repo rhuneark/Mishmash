@@ -1,0 +1,590 @@
+// Buildings players place, landmark structures and their interactive spots.
+
+import * as THREE from 'three';
+import { POIS, type PoiDef, type Spot } from '../../game/content/pois';
+import { MAT, box, cone, cyl, disc, dodeca, mesh, sphere, torus } from './geo';
+
+export interface BuildingView {
+  group: THREE.Group;
+  /** Flame parts (campfire, torch post). */
+  flame?: THREE.Object3D;
+  /** Door leaf (rotates open). */
+  door?: THREE.Object3D;
+  /** Rain collector water surface. */
+  water?: THREE.Object3D;
+}
+
+const WOOD = 0x8a5f3a;
+const WOOD2 = 0x7a5232;
+const STONE = 0x8f9196;
+
+function flameGroup(scale = 1): THREE.Group {
+  const g = new THREE.Group();
+  g.add(
+    mesh(
+      [
+        cone(0.32 * scale, 0.9 * scale, 6, 0xff7a2a, { y: 0.45 * scale }),
+        cone(0.2 * scale, 0.7 * scale, 6, 0xffc04a, { y: 0.45 * scale, x: 0.08 * scale }),
+        cone(0.12 * scale, 0.5 * scale, 5, 0xfff0a0, { y: 0.35 * scale }),
+      ],
+      MAT.glowAdd,
+    ),
+  );
+  return g;
+}
+
+export function buildingModel(kind: string): BuildingView {
+  const group = new THREE.Group();
+  const view: BuildingView = { group };
+  switch (kind) {
+    case 'campfire': {
+      const stones = Array.from({ length: 8 }, (_, k) => {
+        const a = (k / 8) * Math.PI * 2;
+        return dodeca(0.17, k % 2 ? STONE : 0x7a7c80, {
+          x: Math.sin(a) * 0.55,
+          y: 0.1,
+          z: Math.cos(a) * 0.55,
+        });
+      });
+      group.add(
+        mesh([
+          ...stones,
+          cyl(0.07, 0.08, 1.0, 5, 0x5b3a22, { y: 0.12, rz: Math.PI / 2, ry: 0.6 }),
+          cyl(0.07, 0.08, 1.0, 5, 0x4a2f1a, { y: 0.16, rz: Math.PI / 2, ry: -0.6 }),
+          disc(0.45, 8, 0x2a2420, { y: 0.03 }),
+        ]),
+      );
+      const flame = flameGroup(1);
+      flame.position.y = 0.1;
+      group.add(flame);
+      view.flame = flame;
+      break;
+    }
+    case 'workbench':
+      group.add(
+        mesh([
+          box(1.8, 0.1, 1.0, WOOD, { y: 0.85 }),
+          ...[-0.8, 0.8].flatMap((x) =>
+            [-0.42, 0.42].map((z) => box(0.1, 0.85, 0.1, WOOD2, { x, y: 0.42, z })),
+          ),
+          box(1.6, 0.06, 0.8, WOOD2, { y: 0.3 }),
+          box(0.5, 0.04, 0.12, 0xb0b6bd, { x: 0.3, y: 0.92, z: 0.1, ry: 0.4 }),
+          box(0.12, 0.2, 0.12, 0x6b4a2a, { x: -0.5, y: 1.0, z: -0.2 }),
+          cyl(0.03, 0.03, 0.4, 4, 0x7a5232, { x: -0.1, y: 0.93, z: -0.2, rz: Math.PI / 2 }),
+        ]),
+      );
+      break;
+    case 'wall_wood':
+      group.add(
+        mesh([
+          ...Array.from({ length: 5 }, (_, k) =>
+            box(0.38, 2.2 + (k % 2) * 0.15, 0.3, k % 2 ? WOOD : WOOD2, {
+              x: -0.8 + k * 0.4,
+              y: 1.1 + (k % 2) * 0.07,
+            }),
+          ),
+          box(2.0, 0.14, 0.12, 0x5b3a22, { y: 0.6, z: 0.18 }),
+          box(2.0, 0.14, 0.12, 0x5b3a22, { y: 1.7, z: 0.18 }),
+        ]),
+      );
+      break;
+    case 'door_wood': {
+      group.add(
+        mesh([
+          box(0.18, 2.4, 0.34, 0x5b3a22, { x: -0.92, y: 1.2 }),
+          box(0.18, 2.4, 0.34, 0x5b3a22, { x: 0.92, y: 1.2 }),
+          box(2.0, 0.18, 0.34, 0x5b3a22, { y: 2.35 }),
+        ]),
+      );
+      const leaf = new THREE.Group();
+      leaf.position.set(-0.83, 0, 0);
+      leaf.add(
+        mesh([
+          box(1.66, 2.1, 0.12, WOOD, { x: 0.83, y: 1.08 }),
+          box(1.5, 0.12, 0.06, 0x5b3a22, { x: 0.83, y: 0.6, z: 0.08 }),
+          box(1.5, 0.12, 0.06, 0x5b3a22, { x: 0.83, y: 1.6, z: 0.08 }),
+          sphere(0.05, 4, 3, 0xd0c060, { x: 1.45, y: 1.1, z: 0.1 }),
+        ]),
+      );
+      group.add(leaf);
+      view.door = leaf;
+      break;
+    }
+    case 'wall_stone':
+      group.add(
+        mesh(
+          Array.from({ length: 10 }, (_, k) => {
+            const row = Math.floor(k / 3.34);
+            return box(
+              0.66,
+              0.6,
+              0.45,
+              k % 3 === 0 ? 0x8f9196 : k % 3 === 1 ? 0x7f8186 : 0x9a9ca1,
+              { x: -0.66 + (k % 3) * 0.66 + (row % 2) * 0.1, y: 0.3 + row * 0.62 },
+            );
+          }),
+        ),
+      );
+      break;
+    case 'spikes':
+      group.add(
+        mesh([
+          box(2.0, 0.12, 0.12, 0x5b3a22, { y: 0.4 }),
+          ...Array.from({ length: 5 }, (_, k) => [
+            cyl(0.06, 0.08, 1.4, 5, WOOD2, { x: -0.8 + k * 0.4, y: 0.6, z: 0.15, rx: 0.6 }),
+            cone(0.08, 0.3, 4, 0xd8c8a0, { x: -0.8 + k * 0.4, y: 1.15, z: 0.55, rx: 0.6 }),
+            cyl(0.06, 0.08, 1.4, 5, WOOD2, { x: -0.6 + k * 0.4, y: 0.6, z: -0.15, rx: -0.6 }),
+            cone(0.08, 0.3, 4, 0xd8c8a0, { x: -0.6 + k * 0.4, y: 1.15, z: -0.55, rx: -0.6 }),
+          ]).flat(),
+        ]),
+      );
+      break;
+    case 'torch_post': {
+      group.add(
+        mesh([
+          cyl(0.07, 0.1, 1.8, 6, WOOD2, { y: 0.9 }),
+          cyl(0.14, 0.1, 0.25, 6, 0x3a3a3a, { y: 1.85 }),
+        ]),
+      );
+      const flame = flameGroup(0.6);
+      flame.position.y = 1.92;
+      group.add(flame);
+      view.flame = flame;
+      break;
+    }
+    case 'storage':
+      group.add(
+        mesh([
+          box(1.0, 0.7, 0.8, WOOD, { y: 0.35 }),
+          box(1.04, 0.1, 0.84, 0x5b3a22, { y: 0.72 }),
+          box(0.06, 0.72, 0.06, 0x6d737a, { x: 0.47, y: 0.36, z: 0.37 }),
+          box(0.06, 0.72, 0.06, 0x6d737a, { x: -0.47, y: 0.36, z: 0.37 }),
+          box(0.15, 0.12, 0.04, 0xd0c060, { y: 0.55, z: 0.42 }),
+        ]),
+      );
+      break;
+    case 'bedroll':
+      group.add(
+        mesh([
+          box(0.9, 0.08, 1.8, 0x4a6a8a, { y: 0.05 }),
+          box(0.85, 0.06, 0.6, 0x3a5a7a, { y: 0.11, z: 0.55 }),
+          cyl(0.16, 0.16, 0.8, 7, 0xd8d0c0, { y: 0.17, z: -0.75, rz: Math.PI / 2 }),
+        ]),
+      );
+      break;
+    case 'rain_collector': {
+      group.add(
+        mesh([
+          ...[-0.5, 0.5].flatMap((x) =>
+            [-0.5, 0.5].map((z) => cyl(0.05, 0.05, 1.5, 4, WOOD2, { x, y: 0.75, z })),
+          ),
+          cyl(0.5, 0.45, 0.5, 8, 0x6a5a4a, { y: 0.3 }),
+          cone(0.8, 0.5, 8, 0xd8d0c0, { y: 1.35, rx: Math.PI }),
+        ]),
+      );
+      const water = mesh([disc(0.42, 8, 0x5ab0d8)]);
+      water.position.y = 0.1;
+      group.add(water);
+      view.water = water;
+      break;
+    }
+  }
+  return view;
+}
+
+/** Glow halo for something worth walking to. */
+function halo(color: number, r = 0.6): THREE.Mesh {
+  return mesh([torus(r, 0.04, color, { y: 0.05, rx: Math.PI / 2 })], MAT.glowAdd);
+}
+
+export interface SpotView {
+  spot: Spot;
+  group: THREE.Group;
+  halo: THREE.Mesh | null;
+  /** Things that disappear once used/taken. */
+  item: THREE.Object3D | null;
+  light?: THREE.Mesh;
+}
+
+function spotModel(spot: Spot): SpotView {
+  const group = new THREE.Group();
+  let h: THREE.Mesh | null = null;
+  let item: THREE.Object3D | null = null;
+  let light: THREE.Mesh | undefined;
+  switch (spot.kind) {
+    case 'note':
+      item = mesh([
+        box(0.32, 0.02, 0.42, 0xf2ecd8, { y: 0.06, ry: 0.4 }),
+        box(0.22, 0.021, 0.02, 0x555555, { y: 0.07, z: 0.05, ry: 0.4 }),
+        box(0.22, 0.021, 0.02, 0x555555, { y: 0.07, z: -0.05, ry: 0.4 }),
+      ]);
+      h = halo(0xfff2a0);
+      break;
+    case 'tag':
+      item = mesh([
+        box(0.18, 0.02, 0.1, 0xd8b070, { y: 0.05, ry: 1.1 }),
+        cyl(0.008, 0.008, 0.25, 3, 0xcc3333, { y: 0.05, x: 0.1, rz: Math.PI / 2 }),
+      ]);
+      h = halo(0xffd080, 0.45);
+      break;
+    case 'loot':
+      item = mesh([
+        box(0.8, 0.5, 0.55, 0x6b4a2a, { y: 0.25 }),
+        box(0.84, 0.06, 0.59, 0x4a3420, { y: 0.48 }),
+        box(0.06, 0.52, 0.6, 0x6d737a, { x: 0.3, y: 0.25 }),
+        box(0.06, 0.52, 0.6, 0x6d737a, { x: -0.3, y: 0.25 }),
+      ]);
+      h = halo(0x9fe8ff, 0.8);
+      break;
+    case 'lock':
+      group.add(
+        mesh([
+          box(0.4, 0.5, 0.08, 0x3a3a3a, { y: 1.1 }),
+          box(0.3, 0.2, 0.02, 0x1a1a1a, { y: 1.15, z: 0.05 }),
+        ]),
+      );
+      light = mesh([sphere(0.05, 5, 4, 0xff3030, { y: 1.3, z: 0.05 })], MAT.glow);
+      group.add(light);
+      h = halo(0xff8060, 0.7);
+      break;
+    case 'antenna':
+      group.add(
+        mesh([
+          ...Array.from({ length: 7 }, (_, k) =>
+            box(0.6, 0.05, 0.05, 0x9a9a9a, { y: 0.3 + k * 0.35 }),
+          ),
+          box(0.05, 2.6, 0.05, 0x8a8a8a, { x: -0.3, y: 1.3 }),
+          box(0.05, 2.6, 0.05, 0x8a8a8a, { x: 0.3, y: 1.3 }),
+        ]),
+      );
+      item = mesh([
+        box(0.7, 0.35, 0.4, 0x5a6a7a, { y: 0.2, z: 0.4 }),
+        cyl(0.02, 0.02, 0.9, 3, 0xcccccc, { y: 0.6, z: 0.4, x: 0.2 }),
+      ]);
+      h = halo(0x9fe8ff, 0.8);
+      break;
+    case 'beacon':
+      group.add(
+        mesh([
+          box(0.9, 1.1, 0.5, 0x4a4f55, { y: 0.55 }),
+          box(0.7, 0.05, 0.4, 0x2a2f35, { y: 1.12 }),
+        ]),
+      );
+      light = mesh([box(0.5, 0.3, 0.02, 0x40ff80, { y: 0.8, z: 0.26 })], MAT.glow);
+      group.add(light);
+      h = halo(0x80ffb0, 0.9);
+      break;
+    case 'heli':
+      group.add(
+        mesh([
+          disc(5, 20, 0x5a5d62, { y: 0.04 }),
+          torus(4.3, 0.12, 0xf2c14e, { y: 0.06, rx: Math.PI / 2 }),
+          box(0.5, 0.02, 2.6, 0xf2f2f2, { x: -0.9, y: 0.07 }),
+          box(0.5, 0.02, 2.6, 0xf2f2f2, { x: 0.9, y: 0.07 }),
+          box(1.4, 0.02, 0.45, 0xf2f2f2, { y: 0.07 }),
+        ]),
+      );
+      break;
+  }
+  if (item) group.add(item);
+  if (h) group.add(h);
+  return { spot, group, halo: h, item, ...(light ? { light } : {}) };
+}
+
+function fuselage(len: number, r: number, color: number, stripe: number): THREE.BufferGeometry[] {
+  const parts = [
+    cyl(r, r, len, 10, color, { rz: Math.PI / 2, y: r }),
+    box(len, 0.25, 0.04, stripe, { y: r + 0.3, z: r - 0.02 }),
+    box(len, 0.25, 0.04, stripe, { y: r + 0.3, z: -r + 0.02 }),
+  ];
+  for (let k = 0; k < Math.floor(len / 0.9); k++) {
+    const x = -len / 2 + 0.6 + k * 0.9;
+    parts.push(box(0.35, 0.3, 0.04, 0x2a3a4a, { x, y: r + 0.75, z: r - 0.05 }));
+    parts.push(box(0.35, 0.3, 0.04, 0x2a3a4a, { x, y: r + 0.75, z: -r + 0.05 }));
+  }
+  return parts;
+}
+
+/** The static model for a landmark, in its local frame (origin at the POI centre). */
+function poiStructure(poi: PoiDef): THREE.Group {
+  const g = new THREE.Group();
+  const add = (parts: THREE.BufferGeometry[], dx: number, dz: number, rot: number, tilt = 0) => {
+    const m = mesh(parts);
+    m.position.set(dx, 0, dz);
+    m.rotation.set(0, -rot, tilt);
+    g.add(m);
+  };
+  const b = poi.boxes;
+  switch (poi.id) {
+    case 'crash': {
+      const f = b[0];
+      if (f) {
+        add(
+          [
+            ...fuselage(14, 2.1, 0xeef0f2, 0x2f6fb5),
+            ...Array.from({ length: 6 }, (_, k) =>
+              cone(0.4, 1.2, 4, 0xd0d3d6, {
+                x: 7.2,
+                y: 0.6 + k * 0.6,
+                z: -1.5 + k * 0.6,
+                rz: -Math.PI / 2,
+              }),
+            ),
+          ],
+          f.dx,
+          f.dz,
+          f.rot,
+          0.04,
+        );
+      }
+      const w = b[1];
+      if (w)
+        add(
+          [
+            box(8, 0.3, 1.6, 0xd7dadf, { y: 0.45 }),
+            cyl(0.5, 0.5, 1.8, 8, 0x8a9096, { x: -1, y: 0.4, z: 0.9, rz: Math.PI / 2 }),
+            box(0.6, 0.05, 1.5, 0x2f6fb5, { x: 3.6, y: 0.62 }),
+          ],
+          w.dx,
+          w.dz,
+          w.rot,
+          0.12,
+        );
+      const d = b[2];
+      if (d)
+        add(
+          [
+            box(1.2, 1.1, 0.7, 0xb0b6bd, { y: 0.55 }),
+            box(0.9, 0.8, 0.6, 0x9aa0a6, { x: 0.9, y: 0.4, z: 0.6, ry: 0.5 }),
+            box(2.6, 0.12, 1.2, 0xd7dadf, { y: 0.06, z: -0.5, ry: 0.3 }),
+          ],
+          d.dx,
+          d.dz,
+          d.rot,
+        );
+      // Scorched ground.
+      g.add(mesh([disc(9, 12, 0x3a3226, { y: 0.04 })]));
+      break;
+    }
+    case 'cockpit': {
+      const c = b[0];
+      if (c)
+        add(
+          [
+            cyl(1.6, 1.6, 3.2, 10, 0xeef0f2, { x: 0.6, y: 1.6, rz: Math.PI / 2 }),
+            cone(1.6, 2.4, 10, 0xeef0f2, { x: -2.2, y: 1.6, rz: Math.PI / 2 }),
+            box(0.9, 0.5, 2.0, 0x1e2c3c, { x: -1.4, y: 2.5 }),
+            box(3.2, 0.25, 0.04, 0x2f6fb5, { x: 0.6, y: 1.9, z: 1.58 }),
+            ...Array.from({ length: 5 }, (_, k) =>
+              cone(0.35, 1.0, 4, 0xd0d3d6, {
+                x: 2.4,
+                y: 0.6 + k * 0.6,
+                z: -1.2 + k * 0.6,
+                rz: -Math.PI / 2,
+              }),
+            ),
+          ],
+          c.dx,
+          c.dz,
+          c.rot,
+          -0.06,
+        );
+      break;
+    }
+    case 'tail': {
+      const t = b[0];
+      if (t)
+        add(
+          [
+            ...fuselage(8, 1.7, 0xeef0f2, 0x2f6fb5),
+            box(2.4, 4.2, 0.25, 0x2f6fb5, { x: 2.4, y: 4.6, rz: 0.35 }),
+            box(2.2, 0.2, 4.6, 0xeef0f2, { x: 3, y: 2.4 }),
+            cone(1.7, 2.2, 10, 0xeef0f2, { x: 5, y: 1.7, rz: -Math.PI / 2 }),
+          ],
+          t.dx,
+          t.dz,
+          t.rot,
+          0.05,
+        );
+      const c = b[1];
+      if (c)
+        add(
+          [
+            box(6, 2.6, 2.6, 0xc8692c, { y: 1.3 }),
+            ...Array.from({ length: 7 }, (_, k) =>
+              box(0.08, 2.62, 2.62, 0xa8541f, { x: -2.7 + k * 0.9, y: 1.3 }),
+            ),
+            box(0.1, 2.4, 1.2, 0x8a3f12, { x: 3.0, y: 1.3, z: 0.6 }),
+          ],
+          c.dx,
+          c.dz,
+          c.rot,
+        );
+      break;
+    }
+    case 'tower': {
+      const legs: THREE.BufferGeometry[] = [];
+      const H = 18;
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          legs.push(
+            cyl(0.08, 0.12, H, 4, 0x9a9a9a, {
+              x: sx * 0.9,
+              y: H / 2,
+              z: sz * 0.9,
+              rz: sx * 0.035,
+              rx: -sz * 0.035,
+            }),
+          );
+        }
+      }
+      for (let k = 1; k < 9; k++) {
+        const y = k * 2;
+        const w = 1.9 - k * 0.08;
+        legs.push(
+          box(w, 0.06, 0.06, 0x8a8a8a, { y, z: w / 2 }),
+          box(w, 0.06, 0.06, 0x8a8a8a, { y, z: -w / 2 }),
+          box(0.06, 0.06, w, 0x8a8a8a, { y, x: w / 2 }),
+          box(0.06, 0.06, w, 0x8a8a8a, { y, x: -w / 2 }),
+        );
+        legs.push(box(0.05, 2.6, 0.05, 0x8a8a8a, { y: y - 1, z: w / 2, rz: 0.7 }));
+      }
+      legs.push(
+        box(1.6, 0.1, 1.6, 0x7a7a7a, { y: H }),
+        cyl(0.05, 0.05, 4, 4, 0xbdbdbd, { y: H + 2 }),
+      );
+      add(legs, 0, 0, 0);
+      g.add(mesh([sphere(0.18, 5, 4, 0xff3030, { y: H + 4 })], MAT.glow));
+      const s = b[1];
+      if (s)
+        add(
+          [
+            box(4, 2.8, 3, 0xb8b2a6, { y: 1.4 }),
+            box(4.4, 0.2, 3.4, 0x6a5a4a, { y: 2.9 }),
+            box(0.9, 1.9, 0.05, 0x4a3a2a, { y: 0.95, z: 1.52 }),
+            box(0.9, 0.6, 0.05, 0x2a3a4a, { x: 1.2, y: 1.8, z: 1.52 }),
+          ],
+          s.dx,
+          s.dz,
+          s.rot,
+        );
+      break;
+    }
+    case 'station': {
+      for (const bx of b) {
+        const parts = [
+          box(bx.w, bx.h, bx.d, 0xa8aaa4, { y: bx.h / 2 }),
+          box(bx.w + 0.3, 0.25, bx.d + 0.3, 0x6c6e6a, { y: bx.h + 0.1 }),
+        ];
+        for (let k = 0; k < Math.floor(bx.w / 2); k++)
+          parts.push(
+            box(1.0, 0.8, 0.05, k % 2 ? 0x2a3a4a : 0x4a6a7a, {
+              x: -bx.w / 2 + 1 + k * 2,
+              y: bx.h * 0.6,
+              z: bx.d / 2 + 0.01,
+            }),
+          );
+        for (let k = 0; k < 4; k++)
+          parts.push(
+            cyl(0.08, 0.14, bx.h * 1.2, 5, 0x2c4f2a, {
+              x: -bx.w / 2 + 0.5 + k * (bx.w / 4),
+              y: bx.h * 0.5,
+              z: bx.d / 2 + 0.1,
+              rz: 0.3 * (k % 2 ? 1 : -1),
+            }),
+          );
+        add(parts, bx.dx, bx.dz, bx.rot);
+      }
+      g.add(
+        mesh([
+          disc(11, 14, 0x55535a, { y: 0.05 }),
+          ...Array.from({ length: 10 }, (_, k) =>
+            cyl(0.06, 0.06, 1.4, 4, 0x7a7a7a, {
+              x: Math.sin((k / 10) * Math.PI * 2) * 13,
+              y: 0.7,
+              z: Math.cos((k / 10) * Math.PI * 2) * 13,
+            }),
+          ),
+        ]),
+      );
+      break;
+    }
+    default: {
+      const t = b[0];
+      if (t)
+        add(
+          [
+            cyl(0.01, 1.7, 1.9, 3, 0x6a7a5a, { y: 0.95, rx: Math.PI / 2, ry: 0, sz: 1 }),
+            box(0.06, 2.2, 0.06, 0x5b3a22, { y: 1.1, x: 1.2 }),
+          ],
+          t.dx,
+          t.dz,
+          t.rot,
+        );
+      g.add(
+        mesh([
+          ...Array.from({ length: 6 }, (_, k) =>
+            dodeca(0.15, STONE, {
+              x: 2 + Math.sin(k) * 0.45,
+              y: 0.08,
+              z: 2.5 + Math.cos(k) * 0.45,
+            }),
+          ),
+          cyl(0.06, 0.07, 0.8, 4, 0x2a2420, { x: 2, y: 0.1, z: 2.5, rz: Math.PI / 2 }),
+        ]),
+      );
+    }
+  }
+  return g;
+}
+
+export interface PoiView {
+  poi: PoiDef;
+  group: THREE.Group;
+  spots: SpotView[];
+}
+
+export function buildPois(heightAt: (x: number, z: number) => number): PoiView[] {
+  return POIS.map((poi) => {
+    const group = poiStructure(poi);
+    group.position.set(poi.x, heightAt(poi.x, poi.z), poi.z);
+    const spots = poi.spots.map((spot) => {
+      const v = spotModel(spot);
+      v.group.position.set(
+        spot.dx,
+        heightAt(poi.x + spot.dx, poi.z + spot.dz) - group.position.y,
+        spot.dz,
+      );
+      group.add(v.group);
+      return v;
+    });
+    return { poi, group, spots };
+  });
+}
+
+/** The rescue helicopter. */
+export function helicopter(): { group: THREE.Group; rotor: THREE.Object3D } {
+  const group = new THREE.Group();
+  group.add(
+    mesh([
+      sphere(1.3, 8, 6, 0xe0e4e8, { y: 1.5, sx: 1.6 }),
+      box(4, 0.4, 0.4, 0xe0e4e8, { x: -3, y: 1.8 }),
+      box(0.2, 1.2, 0.8, 0xd0453b, { x: -4.9, y: 2.2 }),
+      box(1.0, 0.6, 0.05, 0x2a3a4a, { x: 1.2, y: 1.8, z: 1.0 }),
+      box(3.4, 0.12, 0.12, 0x3a3a3a, { y: 0.15, z: 0.9 }),
+      box(3.4, 0.12, 0.12, 0x3a3a3a, { y: 0.15, z: -0.9 }),
+      box(4, 0.3, 0.05, 0xd0453b, { y: 1.6, z: 1.3 }),
+    ]),
+  );
+  const rotor = new THREE.Group();
+  rotor.position.y = 2.9;
+  rotor.add(
+    mesh([
+      box(9, 0.06, 0.35, 0x2a2a2a),
+      box(0.35, 0.06, 9, 0x2a2a2a),
+      cyl(0.15, 0.15, 0.4, 6, 0x3a3a3a, { y: -0.2 }),
+    ]),
+  );
+  group.add(rotor);
+  return { group, rotor };
+}

@@ -1,13 +1,18 @@
 # Mishmash
 
 A RUN.world game the community designs: players suggest features, everyone votes, and the
-winners get built. The first build is the hub: an intro, a vote on the base genre and a chat.
+winners get built. It starts as **Bloom Island**, a 2.5D survival and crafting game: your plane
+crashes on a big island where the other passengers are turning into plants. Gather, craft,
+build, survive the nights, find the three radio parts and call for rescue, solo or with up to 3
+friends. Around it sits the community hub: the vote on what gets added next and a chat.
 
 ```bash
 npm install
-npm run dev          # local preview, SDK in mock mode (chat and votes are a local stand-in)
+npm run dev          # local preview, SDK in mock mode (chat and votes are a local stand-in;
+                     # co-op runs on a local room server on port 9001)
 npm test             # rules unit tests
 npm run playthrough  # Playwright playthrough (dev server running)
+npx tsx scripts/islandmap.ts 1234 map.png   # picture of the island for a seed
 ```
 
 See `CLAUDE.md` for architecture, conventions, checks and deployment.

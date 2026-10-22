@@ -1,0 +1,95 @@
+// Models for things held in a hand and bags on the ground.
+
+import * as THREE from 'three';
+import { MAT, box, cone, cyl, ico, merge, sphere } from './geo';
+
+const cache = new Map<string, THREE.BufferGeometry>();
+const glowCache = new Map<string, THREE.BufferGeometry>();
+
+function geoFor(id: string): {
+  lit: THREE.BufferGeometry | null;
+  glow: THREE.BufferGeometry | null;
+} {
+  if (cache.has(id) || glowCache.has(id))
+    return { lit: cache.get(id) ?? null, glow: glowCache.get(id) ?? null };
+  let lit: THREE.BufferGeometry[] = [];
+  let glow: THREE.BufferGeometry[] = [];
+  const handle = (len: number, color = 0x7a5232) =>
+    cyl(0.035, 0.04, len, 5, color, { y: -len / 2 + 0.1 });
+  switch (id) {
+    case 'axe_stone':
+    case 'axe_scrap':
+      lit = [
+        handle(0.75),
+        box(0.08, 0.22, 0.28, id === 'axe_scrap' ? 0xb0b6bd : 0x8a8c90, { y: -0.5, z: 0.12 }),
+      ];
+      break;
+    case 'pick_stone':
+    case 'pick_scrap':
+      lit = [
+        handle(0.75),
+        box(0.06, 0.08, 0.55, id === 'pick_scrap' ? 0xb0b6bd : 0x8a8c90, { y: -0.52, z: 0.05 }),
+      ];
+      break;
+    case 'machete':
+      lit = [handle(0.2, 0x2a2420), box(0.03, 0.7, 0.1, 0xd7dadf, { y: -0.45, z: 0.03 })];
+      break;
+    case 'club':
+      lit = [cyl(0.05, 0.11, 0.8, 6, 0x6b4a2a, { y: -0.35 })];
+      break;
+    case 'spear':
+      lit = [
+        cyl(0.03, 0.03, 1.8, 5, 0x7a5232, { y: -0.3, rx: 0 }),
+        cone(0.06, 0.25, 4, 0x8a8c90, { y: -1.3, rx: Math.PI }),
+      ];
+      break;
+    case 'torch':
+      lit = [handle(0.55)];
+      glow = [cone(0.09, 0.3, 5, 0xffa53a, { y: 0.28 }), cone(0.05, 0.2, 5, 0xffe07a, { y: 0.3 })];
+      break;
+    case 'firebomb':
+      lit = [
+        cyl(0.06, 0.08, 0.2, 6, 0x4a7a3a, { y: -0.1 }),
+        box(0.04, 0.1, 0.04, 0xe8d8b0, { y: 0.05 }),
+      ];
+      glow = [sphere(0.04, 4, 3, 0xd6ff6a, { y: -0.1, z: 0.07 })];
+      break;
+    case 'radio':
+      lit = [
+        box(0.22, 0.3, 0.1, 0x3a3a3a, { y: -0.15 }),
+        cyl(0.01, 0.01, 0.3, 3, 0xaaaaaa, { x: 0.08, y: 0.1 }),
+      ];
+      break;
+    default:
+      return { lit: null, glow: null };
+  }
+  const l = lit.length ? merge(lit) : null;
+  const g = glow.length ? merge(glow) : null;
+  if (l) cache.set(id, l);
+  if (g) glowCache.set(id, g);
+  return { lit: l, glow: g };
+}
+
+/** The model a character holds for an item (null for things not drawn in hand). */
+export function heldModel(id: string): THREE.Object3D | null {
+  const { lit, glow } = geoFor(id);
+  if (!lit && !glow) return null;
+  const g = new THREE.Group();
+  if (lit) g.add(new THREE.Mesh(lit, MAT.lit));
+  if (glow) g.add(new THREE.Mesh(glow, MAT.glow));
+  // Point the tool forward from the fist.
+  g.rotation.x = -Math.PI / 2;
+  g.position.z = 0.05;
+  return g;
+}
+
+let bagGeo: THREE.BufferGeometry | null = null;
+
+export function bagModel(): THREE.Mesh {
+  bagGeo ??= merge([
+    ico(0.32, 0, 0x8a6a3a, { y: 0.28, sy: 0.9 }),
+    cyl(0.12, 0.16, 0.12, 6, 0x6b4f2a, { y: 0.58 }),
+    box(0.5, 0.05, 0.06, 0x5a3c22, { y: 0.35, rz: 0.6 }),
+  ]);
+  return new THREE.Mesh(bagGeo, MAT.lit);
+}

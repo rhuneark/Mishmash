@@ -356,7 +356,8 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   (the share link opens the newest); Explore only gets a newer version when the Publish
   workflow runs again, and only when the user asks. Server config (UGC limits, textGen off,
   realtime rooms) reaches public players with each publish. The survival game (v1.8.0,
-  2026-10-22) is private until the user asks to publish it.
+  2026-10-22) and its next update (v1.10.0: item pictures, drag and drop, quick panel, PC
+  keys, lore, Mashbench) are private until the user asks to publish them.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

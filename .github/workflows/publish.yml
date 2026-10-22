@@ -62,3 +62,6 @@ jobs:
       - name: Unpublish
         if: inputs.action == 'unpublish'
         run: rundot game set-private
+
+      - name: Show versions
+        run: rundot game list-versions

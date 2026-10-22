@@ -158,7 +158,13 @@ user to try chat and voting on the live build after changes there.
 - `.github/workflows/publish.yml`: hand-run only, **only when the user asks**. `publish` runs
   `rundot game set-public --version X.Y.Z` (newest from `rundot game list-versions` if blank;
   the CLI rejects "latest"); `unpublish` runs `rundot game set-private`. `set-public` puts a
-  version into RUN's review; it goes on Explore once review passes.
+  version into RUN's review; it goes on Explore once review passes. GitHub only registered this
+  workflow after a later push touched it (dispatching it 404'd before).
+- **Going public:** v1.7.0 (the hub, Dev area, thumbnail, tags) was submitted with the Publish
+  workflow on 2026-10-22 at the user's request. Pushes after that still deploy private builds
+  (the share link opens the newest); Explore only gets a newer version when the Publish
+  workflow runs again, and only when the user asks. Server config (UGC limits, textGen off)
+  reaches public players with each publish.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

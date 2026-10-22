@@ -340,8 +340,12 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   when they're set. The user wants them updated as the game takes shape; since the survival
   game (2026-10-22) they describe Bloom Island (keywords: survival, crafting, base-building,
   horror, island, co-op, multiplayer, open-world, exploration, monsters, community-build,
-  voting, halloween, spooky; the last two match the Halloween thumbnail). The share link is
-  printed in the Deploy step log.
+  voting, halloween, spooky, plus the hub's community, player-made, chat, social; halloween
+  and spooky match the Halloween thumbnail). Despite RUN's docs, `set-keywords` **adds** to
+  the game's tags and fails past 30 (v1.9.0's deploy hit "at most 30 tags"), so the step
+  first runs `delete-keyword` on every listed tag and on `GAME_KEYWORDS_RETIRED` (tags to
+  drop: put a removed tag there rather than just deleting it from the list). The share link
+  is printed in the Deploy step log.
 - `.github/workflows/publish.yml`: hand-run only, **only when the user asks**. `publish` runs
   `rundot game set-public --version X.Y.Z` (newest from `rundot game list-versions` if blank;
   the CLI rejects "latest"); `unpublish` runs `rundot game set-private`. `set-public` puts a

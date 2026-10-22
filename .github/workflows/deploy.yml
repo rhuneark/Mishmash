@@ -19,10 +19,11 @@ concurrency:
 
 env:
   # Store listing, applied after each deploy when set. Keywords (tags) drive RUN
-  # search and recommendations; each deploy replaces the whole list. Both are
-  # first versions, to update as the game takes shape.
+  # search and recommendations. RUN adds set-keywords to the game's existing tags
+  # (at most 30), so the step first deletes the listed and the retired ones.
   GAME_DESCRIPTION: "Your plane goes down on a huge island, and the other passengers are turning into plants. Gather, craft tools, build a camp, keep your fire burning and survive the nights while the Bloom hunts you. Find the three radio parts, solve your way off the island and call for rescue. Play solo or with up to 3 friends. Mishmash is built by its players: vote on what gets added next and chat in the Town Square!"
-  GAME_KEYWORDS: 'survival,crafting,base-building,horror,island,co-op,multiplayer,open-world,exploration,monsters,community-build,voting,halloween,spooky'
+  GAME_KEYWORDS: 'survival,crafting,base-building,horror,island,co-op,multiplayer,open-world,exploration,monsters,community-build,voting,halloween,spooky,community,player-made,chat,social'
+  GAME_KEYWORDS_RETIRED: 'casual'
 
 jobs:
   deploy:
@@ -82,5 +83,10 @@ jobs:
       - name: Set keywords and description
         if: steps.setup.outputs.ready == 'true'
         run: |
-          if [ -n "$GAME_KEYWORDS" ]; then rundot game set-keywords "$GAME_KEYWORDS"; fi
+          if [ -n "$GAME_KEYWORDS" ]; then
+            for k in $(echo "$GAME_KEYWORDS_RETIRED,$GAME_KEYWORDS" | tr ',' ' '); do
+              rundot game delete-keyword "$k" > /dev/null 2>&1 || true
+            done
+            rundot game set-keywords "$GAME_KEYWORDS"
+          fi
           if [ -n "$GAME_DESCRIPTION" ]; then rundot game set-description "$GAME_DESCRIPTION"; fi

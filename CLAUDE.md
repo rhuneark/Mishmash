@@ -8,8 +8,10 @@ plane crashes on a big island and the other passengers turn into walking plants 
 Around it sits the community hub: the Play tab, a Round 2 vote on what to add next, the Town
 Square chat, About, and the owner's Dev area.
 
-Share link (private, unlisted): https://w.run/u/7VPvCLP7URUp69R6K10O/private?k=5ba4a9c6c90a7da7908d7c7dbb35a5f3
-(game ID `7VPvCLP7URUp69R6K10O`; end every update to the user with this link)
+Share link (private, unlisted): https://w.run/rhuneark/mishmash?tag=private&k=5ba4a9c6c90a7da7908d7c7dbb35a5f3
+(the format the deploy prints since v1.8.0; older builds printed
+https://w.run/u/7VPvCLP7URUp69R6K10O/private?k=…; game ID `7VPvCLP7URUp69R6K10O`; end every
+update to the user with this link)
 
 ## The hub
 
@@ -299,8 +301,8 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   workflow on 2026-10-22 at the user's request. Pushes after that still deploy private builds
   (the share link opens the newest); Explore only gets a newer version when the Publish
   workflow runs again, and only when the user asks. Server config (UGC limits, textGen off,
-  realtime rooms) reaches public players with each publish. The survival game (2026-10-22)
-  is private until the user asks to publish it.
+  realtime rooms) reaches public players with each publish. The survival game (v1.8.0,
+  2026-10-22) is private until the user asks to publish it.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

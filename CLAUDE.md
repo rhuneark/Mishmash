@@ -11,7 +11,11 @@ Around it sits the community hub: the Play tab, a Round 2 vote on what to add ne
 Square chat, About, and the owner's Dev area.
 
 Share link (private, unlisted): https://w.run/rhuneark/mishmash?tag=private&k=5ba4a9c6c90a7da7908d7c7dbb35a5f3
-(the format the deploy prints since v1.8.0; older builds printed
+(printed by v1.15.0's deploy, before the rename). After the rename to Bloom Island the
+publish printed its review link under a new slug
+(`https://w.run/rhuneark/bloom-island?tag=review&k=73f42ab1a4c201d71974bf26b91a2e73`), so
+the next deploy will likely print the private link as `…/rhuneark/bloom-island?tag=private&k=…`:
+take the link from the newest Deploy log and update this line (the format the deploy prints since v1.8.0; older builds printed
 https://w.run/u/7VPvCLP7URUp69R6K10O/private?k=…; game ID `7VPvCLP7URUp69R6K10O`; end every
 update to the user with this link)
 

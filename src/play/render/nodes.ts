@@ -87,7 +87,17 @@ export class NodeView {
     this.shakes.set(id, 0.35);
   }
 
-  update(x: number, z: number, radius: number, dt: number): void {
+  /**
+   * `toCam`: the flat direction from the survivor towards the camera (trees on that side
+   * turn see-through).
+   */
+  update(
+    x: number,
+    z: number,
+    radius: number,
+    dt: number,
+    toCam: { x: number; z: number } = { x: 0, z: 1 },
+  ): void {
     const cx = Math.floor((x + HALF) / CHUNK);
     const cz = Math.floor((z + HALF) / CHUNK);
     const centre = cz * CHUNKS + cx;
@@ -98,7 +108,7 @@ export class NodeView {
       this.fill(cx, cz, radius);
       refilled = true;
     }
-    this.updateFade(x, z, refilled);
+    this.updateFade(x, z, refilled, toCam);
     for (const [id, t] of this.shakes) {
       if (this.faded.has(id)) {
         this.shakes.delete(id);
@@ -172,18 +182,20 @@ export class NodeView {
     });
   }
 
-  /** Trees between the camera (south, above) and the survivor turn see-through. */
-  private updateFade(x: number, z: number, force: boolean): void {
-    const key = `${Math.round(x * 2)}|${Math.round(z * 2)}`;
+  /** Trees between the camera (above, on the `toCam` side) and the survivor turn see-through. */
+  private updateFade(x: number, z: number, force: boolean, toCam: { x: number; z: number }): void {
+    const key = `${Math.round(x * 2)}|${Math.round(z * 2)}|${toCam.x.toFixed(2)}`;
     if (!force && key === this.fadeKey) return;
     this.fadeKey = key;
     const want = new Set<number>();
-    forNodesNear(this.island, x, z + 3.5, 7.5, (id) => {
+    forNodesNear(this.island, x + toCam.x * 4, z + toCam.z * 4, 8.5, (id) => {
       const type = this.island.nodeType[id] as number;
       if (!TREES.includes(type) || !this.slots.has(id)) return;
       const dx = (this.island.nodeX[id] as number) - x;
       const dz = (this.island.nodeZ[id] as number) - z;
-      if (dz > -2.5 && dz < 9.5 && Math.abs(dx) < 3.4) want.add(id);
+      const along = dx * toCam.x + dz * toCam.z;
+      const side = Math.abs(dx * toCam.z - dz * toCam.x);
+      if (along > -2.5 && along < 11 && side < 3.6) want.add(id);
     });
     for (const id of this.faded) {
       if (want.has(id)) continue;

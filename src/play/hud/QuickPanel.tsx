@@ -1,12 +1,48 @@
-// The quick bag and craft panel: stays open while you move, fight and gather,
-// so you can craft and sort your bag without stopping.
+// The bag and craft window: pops up to the top right of the survivor and stays
+// open while you move, fight and gather, so you can craft and sort your bag
+// without stopping.
 
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { ITEMS } from '../../game/content/items';
 import { HOTBAR, INV_SIZE } from '../../game/sim/inventory';
 import type { GameClient } from '../client';
+import { usePrefs } from '../prefs';
 import { RecipeRow, sortedRecipes } from './Craft';
 import { ItemIcon, SlotButton, quickUse } from './Slots';
+
+/**
+ * Where the window goes: its bottom-left corner just above and right of the survivor's
+ * head (client.anchor, from the view), kept on screen, clear of the minimap when upright
+ * and of the action buttons when sideways.
+ */
+export function QuickWindow({ client, pc }: { client: GameClient; pc: boolean }) {
+  const s = usePrefs();
+  const a = client.anchor;
+  const w = a.w || window.innerWidth;
+  const h = a.h || window.innerHeight;
+  const x = a.w ? a.x : w / 2;
+  const y = a.w ? a.y : h * 0.55;
+  const landscape = w > h;
+  const buttons = s.hud === 'large' ? 210 : 188;
+  const width = Math.min(w - 16, 312);
+  const minLeft = landscape && s.leftHanded ? buttons : 8;
+  const maxLeft = w - width - (landscape && !s.leftHanded ? buttons : 8);
+  const left = Math.max(minLeft, Math.min(x + 16, maxLeft));
+  const bottom = Math.max(8, h - y + 14);
+  const room = landscape ? 8 : s.hud === 'large' ? 176 : 164;
+  const style = {
+    left,
+    bottom,
+    width,
+    maxHeight: `max(150px, calc(${h - bottom - room}px - var(--safe-top)))`,
+    '--tail': `${Math.max(18, Math.min(width - 18, x - left))}px`,
+  } as CSSProperties;
+  return (
+    <div className="quick-window" style={style}>
+      <QuickPanel client={client} pc={pc} />
+    </div>
+  );
+}
 
 export function QuickPanel({ client, pc }: { client: GameClient; pc: boolean }) {
   const tab = client.quickTab;
@@ -43,7 +79,7 @@ export function QuickPanel({ client, pc }: { client: GameClient; pc: boolean }) 
           <button
             className="round-btn"
             onClick={() => client.toggleQuick()}
-            aria-label="Close the quick panel"
+            aria-label="Close the bag window"
           >
             ✕
           </button>

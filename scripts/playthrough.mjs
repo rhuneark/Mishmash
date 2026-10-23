@@ -111,6 +111,30 @@ const standToBuild = async (page, kind) => {
   );
 };
 
+/** Somewhere near the crash site with nothing to bump into for a few metres. */
+const openGround = async (page) => {
+  const spot = await game(page, async () => {
+    const { forNodesNear, hitCollider, heightAt } = await import('/src/game/world.ts');
+    const { NODES } = await import('/src/game/content/nodes.ts');
+    const c = window.__game.client;
+    for (let r = 10; r < 200; r += 4) {
+      for (let a = 0; a < 16; a++) {
+        const x = Math.round(Math.sin((a / 16) * 6.2832) * r);
+        const z = 262 + Math.round(Math.cos((a / 16) * 6.2832) * r);
+        let blocked = !!hitCollider(c.island, x, z, 6) || heightAt(c.island, x, z) < 0.5;
+        forNodesNear(c.island, x, z, 6, (id) => {
+          if ((NODES[c.island.nodeType[id]]?.radius ?? 0) > 0 && !c.nodeGone(id)) blocked = true;
+        });
+        for (const b of c.buildings.values()) if (Math.hypot(b.x - x, b.z - z) < 7) blocked = true;
+        if (!blocked) return [x, z];
+      }
+    }
+    return null;
+  });
+  if (spot) await teleport(page, spot[0], spot[1]);
+  await page.waitForTimeout(300);
+};
+
 /** Taps the action button where it is (it re-renders often, so no stability wait). */
 const pressUse = async (page) => {
   const b = await page.locator('.use-btn').boundingBox();
@@ -347,13 +371,28 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.getByRole('button', { name: 'Bag and crafting' }).click();
   await page.locator('.quick-panel').waitFor();
   await page.locator('.quick-panel').getByRole('button', { name: 'Bag', exact: true }).click();
-  const qz = await game(page, () => window.__game.client.z);
+  // The window pops up above the survivor's head, a little to the right, on screen.
+  const qw = await page.locator('.quick-window').boundingBox();
+  const head = await game(page, () => window.__game.client.anchor);
+  check(
+    qw &&
+      qw.y + qw.height <= head.y &&
+      qw.x + qw.width > head.x + 40 &&
+      qw.x >= 0 &&
+      qw.x + qw.width <= width &&
+      qw.y >= 0,
+    `${tag} game: the bag window isn't up and right of the survivor`,
+  );
+  // Isometric: W walks away from the camera (north-east), even with the window open.
+  await openGround(page);
+  const q0 = await game(page, () => [window.__game.client.x, window.__game.client.z]);
   await page.keyboard.down('KeyW');
   await page.waitForTimeout(900);
   await page.keyboard.up('KeyW');
+  const q1 = await game(page, () => [window.__game.client.x, window.__game.client.z]);
   check(
-    qz - (await game(page, () => window.__game.client.z)) > 0.3,
-    `${tag} game: can't move with the quick bag open`,
+    q0[1] - q1[1] > 0.3 && q1[0] - q0[0] > 0.3,
+    `${tag} game: W didn't walk north-east with the bag window open`,
   );
   const drag = async (from, to) => {
     const a = await from.boundingBox();
@@ -387,7 +426,8 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   );
   await drag(
     page.locator(`.quick-panel [data-slot="inv:${dropSlot}"]`),
-    page.locator('.game-canvas'),
+    // The island where the window doesn't cover it (the stick's area counts as the island).
+    page.locator('.joy-zone'),
   );
   await until(
     page,
@@ -611,6 +651,33 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.locator('.menu-screen').waitFor({ state: 'detached' });
   await page.locator('.game.turned').waitFor({ state: 'detached' });
   await page.waitForTimeout(600);
+
+  // The top-down camera keeps north up: W walks straight north.
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('tab', { name: /Screen/ }).click();
+  await page.getByRole('radio', { name: /Top-down/ }).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.locator('.menu-screen').waitFor({ state: 'detached' });
+  await openGround(page);
+  const t0p = await game(page, () => [window.__game.client.x, window.__game.client.z]);
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(900);
+  await page.keyboard.up('KeyW');
+  const t1p = await game(page, () => [window.__game.client.x, window.__game.client.z]);
+  check(
+    t0p[1] - t1p[1] > 0.3 && Math.abs(t1p[0] - t0p[0]) < 0.15,
+    `${tag} top-down: W didn't walk straight north`,
+  );
+  await shot('9g-top-down');
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('tab', { name: /Screen/ }).click();
+  await page.getByRole('radio', { name: /Isometric/ }).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.locator('.menu-screen').waitFor({ state: 'detached' });
 
   // Journal and map.
   await page.getByRole('button', { name: 'Journal' }).click();

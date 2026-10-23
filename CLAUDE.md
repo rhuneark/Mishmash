@@ -81,9 +81,17 @@ update to the user with this link)
 
 ## Bloom Island (the game)
 
-Portrait 2.5D: a tilted perspective camera (`view.ts`, ~60°, looks a little north of the
-survivor) over a flat-shaded low-poly island. Everything is procedural (no art files).
+Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no art files).
 
+- **Camera** (`view.ts`, `settings.ts` `cameraRig`): **isometric** by default, like Project
+  Zomboid: it stands south-west of the survivor, 40° down, with a narrow 30° lens, so up on
+  screen is north-east. Settings › Screen › Camera angle switches to **top-down** (north up,
+  ~62° down, 48° lens). It looks a little ahead (`ahead`) so the survivor sits below the HUD's
+  top rows. The stick and keys are screen directions turned onto the island
+  (`screenToWorld`, `view.toWorld` in Game's frame loop); trees on the camera's side turn
+  see-through (`nodes.update` `toCam`); fog is measured from the camera's distance; the
+  minimap turns to match (`rot`, an N on its rim; the full map stays north up). Directions in
+  toasts and objectives are compass directions.
 - **World** (`game/world.ts`): `generateIsland(seed)` builds the same island on every device
   and on the room server: a 1024 m square, heightmap every 2 m (`CELL`), island radius ~400 m
   with noisy coasts, a mountain in the north-east (`PEAK`, radio tower), a marsh in the east
@@ -217,19 +225,22 @@ survivor) over a flat-shaded low-poly island. Everything is procedural (no art f
   touch; the player turns the phone. Pointer points go through `toLocal` (joystick, drag ghost;
   `elementFromPoint` keeps screen points), safe areas turn with it (`turnInsets`, all four
   `--safe-*` set on `.game`). `.game.landscape` (any wide game, turned or not) has its own HUD
-  layout (stats and minimap in a row, quick panel as a left column with the stick beside it,
-  smaller hotbar); `.lefty` swaps stick and buttons; `.hud-small/large` scale the button
+  layout (stats and minimap in a row, smaller hotbar); `.lefty` swaps stick and buttons; `.hud-small/large` scale the button
   groups. `.game` is a size container (`cqw`/`cqh` for the full map).
 - **Item pictures** (`hud/itemIcons.ts`): every item is a small SVG (48×48, flat colours,
   dark outline) shown as a data-URL `<img>` (`Slots.tsx` `ItemIcon`). Not emoji: newer emoji
   (wood, rock, rope…) are empty boxes on older phones and Windows. `itemIcons.test.ts`
   fails when an item has no picture. The `icon` emoji in `items.ts` is unused by the HUD.
-- **Quick bag and craft panel** (`hud/QuickPanel.tsx`, the 🎒 button, Tab on PC): stays open
-  while you move, fight and gather (`client.quickOpen`, not a modal `panel`): the bag (slots
-  6–23; the hotbar is right below it) and a craft list sorted craftable-first, with the station
-  each recipe needs. Using a workbench/Mashbench opens it on Craft. ⤢ opens the full sheets.
-  Phones: full width under the minimap buttons; PC: a 380px column on the left. Craft lists
-  refresh when a station comes into reach (`stationKey` in `client.update`).
+- **Bag and craft window** (`hud/QuickPanel.tsx`, the 🎒 button, Tab, I/B or C on PC): pops
+  up above and to the right of the survivor's head and stays open while you move, fight and
+  gather (`client.quickOpen`, not a modal `panel`): the bag (slots 6–23; the hotbar is right
+  below) and a craft list sorted craftable-first, with the station each recipe needs. Using a
+  workbench/Mashbench opens it on Craft; ⤢ opens the full sheets. `QuickWindow` places it from
+  `client.anchor` (the head's spot on screen when standing still, `view.updateAnchor`; it only
+  moves when the camera or the screen changes): 312 px wide, kept on screen, below the minimap
+  when upright, clear of the action buttons when sideways, with a tail pointing at the
+  survivor. Big banners show as toasts while it's open. Craft lists refresh when a station
+  comes into reach (`stationKey` in `client.update`).
 - **Drag and drop** (`hud/drag.ts`, `Slots.tsx` `SlotButton`/`dropItem`/`DragLayer`):
   pointer events, so mouse and touch both work. Slots carry `data-slot="inv:N"` / `"box:N"`;
   drop on another slot (move/merge/swap; into or out of a storage box at that slot: `store`
@@ -239,7 +250,7 @@ survivor) over a flat-shaded low-poly island. Everything is procedural (no art f
   up to 3 keys or mouse buttons (`Mouse0`… and `WheelUp/Down`); one key never does two things
   (`bind` moves it); saved per player in appStorage under `mishmash_keys` (`parseBindings`
   repairs it). Defaults: WASD/arrows, Shift sprint, Space/E/left click action, F eat, Q drop,
-  R turn, Tab quick panel, I/B bag, C craft, J journal, M map, 1–6 hotbar, wheel cycles the
+  R turn, Tab bag window, I/B bag, C craft (both the window), J journal, M map, 1–6 hotbar, wheel cycles the
   hotbar, = and - move the camera (saved as the camera setting). Esc is fixed (opens and closes
   the menu, steps back a menu page). Key hints show on devices with a mouse
   (`isPc`: `(pointer: fine)`).
@@ -382,9 +393,9 @@ npm run dev                 # then, in another shell:
 npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, vote, chat, owner
                             # delete, Dev area), the game (walk, read, gather, craft, build, night
                             # fight, death, item pictures, quick panel, drag and drop, Mashbench,
-                            # research page, auto tool, a supply pod, pause menu, settings,
-                            # rebinding a key, landscape, save/continue), hub settings and
-                            # local co-op;
+                            # research page, auto tool, a supply pod, the bag window's place,
+                            # isometric and top-down walking, pause menu, settings, rebinding
+                            # a key, landscape, save/continue), hub settings and local co-op;
                             # must print "clean"
 ```
 
@@ -423,8 +434,8 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   realtime rooms) reaches public players with each publish. The survival game (v1.8.0,
   2026-10-22) and its next update (v1.10.0: item pictures, drag and drop, quick panel, PC
   keys, lore, Mashbench) and v1.11.0 (pause menu and settings, volume sliders and music, auto
-  tool, landscape, world events and a livelier island) are private until the user asks to
-  publish them.
+  tool, landscape, world events and a livelier island) and v1.12.0 (isometric camera, bag
+  window by the survivor) are private until the user asks to publish them.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

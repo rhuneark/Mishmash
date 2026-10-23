@@ -313,6 +313,7 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
           onReset={() =>
             prefs.reset([
               'orientation',
+              'view',
               'flip',
               'leftHanded',
               'hud',
@@ -351,6 +352,16 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
               />
             </>
           )}
+          <Choice
+            label="Camera angle"
+            desc="Isometric looks across the island at a slant; top-down keeps north up."
+            value={s.view}
+            options={[
+              { id: 'iso', label: '◇ Isometric' },
+              { id: 'top', label: '▢ Top-down' },
+            ]}
+            set={(v) => set({ view: v })}
+          />
           <Choice
             label="Button size"
             value={s.hud}

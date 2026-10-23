@@ -6,6 +6,8 @@ export const SETTINGS_KEY = 'mishmash_settings';
 export type Quality = 'auto' | 'low' | 'medium' | 'high';
 export type Orientation = 'portrait' | 'landscape';
 export type HudSize = 'small' | 'normal' | 'large';
+/** Isometric (diagonal and low, like Project Zomboid) or top-down (north up, steep). */
+export type CameraView = 'iso' | 'top';
 
 export interface Settings {
   /** Switch to the right tool for trees, rocks and vines. */
@@ -26,6 +28,7 @@ export interface Settings {
   /** Stick on the right, buttons on the left. */
   leftHanded: boolean;
   hud: HudSize;
+  view: CameraView;
   /** Camera distance, 80–130 (%). */
   camera: number;
   shake: boolean;
@@ -49,6 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   flip: false,
   leftHanded: false,
   hud: 'normal',
+  view: 'iso',
   camera: 100,
   shake: true,
   damageNumbers: true,
@@ -61,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
 const QUALITIES: Quality[] = ['auto', 'low', 'medium', 'high'];
 const ORIENTATIONS: Orientation[] = ['portrait', 'landscape'];
 const HUD_SIZES: HudSize[] = ['small', 'normal', 'large'];
+const VIEWS: CameraView[] = ['iso', 'top'];
 
 function num(v: unknown, def: number, min: number, max: number): number {
   return typeof v === 'number' && Number.isFinite(v)
@@ -93,6 +98,7 @@ export function parseSettings(raw: unknown): Settings {
     flip: bool(o['flip'], d.flip),
     leftHanded: bool(o['leftHanded'], d.leftHanded),
     hud: pick(o['hud'], HUD_SIZES, d.hud),
+    view: pick(o['view'], VIEWS, d.view),
     camera: num(o['camera'], d.camera, 80, 130),
     shake: bool(o['shake'], d.shake),
     damageNumbers: bool(o['damageNumbers'], d.damageNumbers),
@@ -133,4 +139,33 @@ export function graphicsFor(q: Quality, touch: boolean): GraphicsLevel {
 export function gain(v: number): number {
   const k = Math.min(100, Math.max(0, v)) / 100;
   return k * k;
+}
+
+export interface CameraRig {
+  /** Where the camera stands around the survivor (radians; 0 = due south, looking north). */
+  yaw: number;
+  /** Angle down from level. */
+  pitch: number;
+  /** Vertical field of view (degrees): narrow looks flatter, more isometric. */
+  fov: number;
+  /** Distance to what it looks at (× 1.3 upright, × 1.05 sideways, × the camera setting). */
+  dist: number;
+  /** How far ahead of the survivor it looks, so they sit below the HUD's top rows. */
+  ahead: number;
+}
+
+export function cameraRig(view: CameraView): CameraRig {
+  return view === 'iso'
+    ? { yaw: -Math.PI / 4, pitch: (40 * Math.PI) / 180, fov: 30, dist: 41, ahead: 5 }
+    : { yaw: 0, pitch: Math.atan2(22, 11.5), fov: 48, dist: Math.hypot(22, 11.5), ahead: 3.5 };
+}
+
+/**
+ * A stick or keys on screen (x right, z down) → a direction on the island for a camera
+ * at `yaw`: up on screen is straight away from the camera.
+ */
+export function screenToWorld(x: number, z: number, yaw: number): { x: number; z: number } {
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  return { x: x * c + z * s, z: -x * s + z * c };
 }

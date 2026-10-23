@@ -13,7 +13,7 @@ import { daylight } from '../game/sim/time';
 import { colorFor } from '../game/sim/types';
 import { BIOME, biomeAt, forNodesNear, heightAt, type Island } from '../game/world';
 import type { Sound, Sfx } from './audio';
-import { RUN, type ClientFx, type GameClient } from './client';
+import { RUN, type ClientFx, type GameClient, type MoveInput } from './client';
 import { itemIconUrl } from './hud/itemIcons';
 import { buzz } from './prefs';
 import { Actor } from './render/actors';
@@ -23,7 +23,13 @@ import { bagModel, crateModel, podModel } from './render/items';
 import { NodeView } from './render/nodes';
 import { nodeTint } from './render/props';
 import { WIND } from './render/wind';
-import type { GraphicsLevel } from './settings';
+import {
+  cameraRig,
+  screenToWorld,
+  type CameraRig,
+  type CameraView,
+  type GraphicsLevel,
+} from './settings';
 import {
   buildPois,
   buildingModel,
@@ -176,6 +182,8 @@ export class View {
   private terrainRadius = 3;
   private nodeRadius = 2;
   private fogMul = 1;
+  /** The camera's distance from what it looks at (fog starts from there). */
+  private fogFrom = 32;
   private shakeOn = true;
   private numbers = true;
   private w = 1;
@@ -187,6 +195,7 @@ export class View {
   private readonly popups: Popup[] = [];
   private readonly lead = new THREE.Vector3();
   private camDist = 1.3;
+  private rig: CameraRig = cameraRig('iso');
   private hitStop = 0;
   private stepAcc = 0;
   private smokeAcc = 0;
@@ -292,12 +301,14 @@ export class View {
 
   /** Player settings: camera, effects and graphics quality. */
   configure(o: {
+    view: CameraView;
     zoom: number;
     shake: boolean;
     numbers: boolean;
     gfx: GraphicsLevel;
     life: boolean;
   }): void {
+    this.rig = cameraRig(o.view);
     this.zoom = o.zoom;
     this.shakeOn = o.shake;
     this.numbers = o.numbers;
@@ -314,6 +325,12 @@ export class View {
       this.resize(this.w, this.h);
     }
     this.ambient.configure(o.gfx.grass, o.life);
+  }
+
+  /** The stick or keys (screen directions) as a direction on the island. */
+  toWorld(m: MoveInput): MoveInput {
+    const w = screenToWorld(m.x, m.z, this.rig.yaw);
+    return { x: w.x, z: w.z, sprint: m.sprint };
   }
 
   private kick(amount: number): void {
@@ -899,29 +916,48 @@ export class View {
     this.updateGhost();
     this.updateRing();
     this.updateLighting(dt, time);
-    // Camera: a little ahead (north, and where you're heading), so the survivor sits
-    // below the HUD's top rows; sprinting and a fight pull it back a touch.
+    // Camera: a little ahead (away from the camera, and where you're heading), so the
+    // survivor sits below the HUD's top rows; sprinting and a fight pull it back a touch.
+    const rig = this.rig;
+    const toCamX = Math.sin(rig.yaw);
+    const toCamZ = Math.cos(rig.yaw);
     const run = Math.min(1, c.speed / RUN);
     const ease = 1 - Math.exp(-dt * 2.5);
     this.lead.x += ((c.speed > 0 ? Math.sin(c.ry) : 0) * 2.4 * run - this.lead.x) * ease;
     this.lead.z += ((c.speed > 0 ? Math.cos(c.ry) : 0) * 2.4 * run - this.lead.z) * ease;
-    const target = tmpVec.set(c.x + this.lead.x, this.y(c.x, c.z) + 0.8, c.z - 3.5 + this.lead.z);
+    const target = tmpVec.set(
+      c.x + this.lead.x - toCamX * rig.ahead,
+      this.y(c.x, c.z) + 0.8,
+      c.z + this.lead.z - toCamZ * rig.ahead,
+    );
     this.focus.lerp(target, 1 - Math.exp(-dt * 8));
     const portrait = this.camera.aspect < 1;
     const want =
       (portrait ? 1.3 : 1.05) * this.zoom * (1 + (c.mv === 2 ? 0.06 : 0) + this.danger * 0.08);
     this.camDist += (want - this.camDist) * (1 - Math.exp(-dt * 2));
-    const dist = this.camDist;
-    this.camera.position.set(this.focus.x, this.focus.y + 22 * dist, this.focus.z + 11.5 * dist);
+    const dist = rig.dist * this.camDist;
+    const flat = Math.cos(rig.pitch) * dist;
+    this.camera.position.set(
+      this.focus.x + toCamX * flat,
+      this.focus.y + Math.sin(rig.pitch) * dist,
+      this.focus.z + toCamZ * flat,
+    );
+    if (this.camera.fov !== rig.fov) {
+      this.camera.fov = rig.fov;
+      this.camera.updateProjectionMatrix();
+    }
+    this.camera.lookAt(this.focus);
+    this.updateAnchor(toCamX, toCamZ);
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt);
       const s = this.shake * 0.6;
       this.camera.position.x += (Math.random() - 0.5) * s;
       this.camera.position.y += (Math.random() - 0.5) * s;
+      this.camera.lookAt(this.focus);
     }
-    this.camera.lookAt(this.focus);
+    this.fogFrom = dist;
     this.terrain.update(c.x, c.z, this.terrainRadius);
-    this.nodes.update(c.x, c.z, this.nodeRadius, dt);
+    this.nodes.update(c.x, c.z, this.nodeRadius, dt, { x: toCamX, z: toCamZ });
     const day = daylight(c.info().phase);
     this.ambient.update(dt, this.t, c.x, c.z, day, c.info().bloom, this.dangerSpots);
     this.fx.update(dt);
@@ -932,6 +968,27 @@ export class View {
       if (p.life <= 0) this.popups.splice(i, 1);
     }
     this.updateLabels();
+  }
+
+  /**
+   * Where the survivor's head is on screen when they stand still (the bag window pops up
+   * beside it). It only moves when the camera or the screen changes.
+   */
+  private updateAnchor(toCamX: number, toCamZ: number): void {
+    this.camera.updateMatrixWorld();
+    const r = this.rig;
+    tmpVec
+      .set(this.focus.x + toCamX * r.ahead, this.focus.y + 1, this.focus.z + toCamZ * r.ahead)
+      .project(this.camera);
+    const w = this.renderer.domElement.clientWidth;
+    const h = this.renderer.domElement.clientHeight;
+    const x = Math.round((tmpVec.x * 0.5 + 0.5) * w);
+    const y = Math.round((-tmpVec.y * 0.5 + 0.5) * h);
+    const a = this.client.anchor;
+    if (Math.abs(a.x - x) > 2 || Math.abs(a.y - y) > 2 || a.w !== w || a.h !== h) {
+      this.client.anchor = { x, y, w, h };
+      this.client.touch();
+    }
   }
 
   /** Dust (or splashes) at the survivor's feet. */
@@ -1093,8 +1150,8 @@ export class View {
     sky.lerp(SKY_DUSK, warm * 0.6);
     (this.scene.background as THREE.Color).copy(sky);
     this.fog.color.copy(sky);
-    this.fog.near = (18 + day * 40) * this.fogMul;
-    this.fog.far = (62 + day * 70) * this.fogMul;
+    this.fog.near = this.fogFrom + (-14 + day * 40) * this.fogMul;
+    this.fog.far = this.fogFrom + (30 + day * 70) * this.fogMul;
     this.hemi.color.copy(bloom ? HEMI_BLOOM : HEMI_NIGHT).lerp(HEMI_DAY, day);
     this.hemi.groundColor.copy(GROUND_NIGHT).lerp(GROUND_DAY, day);
     this.hemi.intensity = 0.8 + day * 0.9;

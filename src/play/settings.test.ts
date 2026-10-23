@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, gain, graphicsFor, parseSettings } from './settings';
+import {
+  DEFAULT_SETTINGS,
+  cameraRig,
+  gain,
+  graphicsFor,
+  parseSettings,
+  screenToWorld,
+} from './settings';
 
 describe('settings', () => {
   it('repairs saved settings', () => {
@@ -32,5 +39,20 @@ describe('settings', () => {
     expect(gain(0)).toBe(0);
     expect(gain(100)).toBe(1);
     expect(gain(50)).toBeCloseTo(0.25);
+  });
+
+  it('turns the stick with the camera', () => {
+    const near = (a: { x: number; z: number }, x: number, z: number) => {
+      expect(a.x).toBeCloseTo(x);
+      expect(a.z).toBeCloseTo(z);
+    };
+    // Top-down: up on screen is north.
+    near(screenToWorld(0, -1, cameraRig('top').yaw), 0, -1);
+    // Isometric: the camera stands south-west, so up is north-east and right is south-east.
+    const iso = cameraRig('iso').yaw;
+    near(screenToWorld(0, -1, iso), Math.SQRT1_2, -Math.SQRT1_2);
+    near(screenToWorld(1, 0, iso), Math.SQRT1_2, Math.SQRT1_2);
+    expect(parseSettings({ view: 'sideways' }).view).toBe('iso');
+    expect(parseSettings({ view: 'top' }).view).toBe('top');
   });
 });

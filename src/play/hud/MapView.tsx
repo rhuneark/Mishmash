@@ -16,6 +16,8 @@ interface MapOpts {
   t: number;
   full: boolean;
   objectivePoi: string | null;
+  /** Turns the map so up matches up on screen (the camera's yaw; 0 = north up). */
+  rot?: number;
 }
 
 function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts): void {
@@ -23,13 +25,27 @@ function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts
   const scale = w / o.across;
   const ox = w / 2 - (o.cx + HALF) * scale;
   const oy = h / 2 - (o.cz + HALF) * scale;
-  const px = (x: number) => ox + (x + HALF) * scale;
-  const py = (z: number) => oy + (z + HALF) * scale;
+  const rot = o.rot ?? 0;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  /** A spot on the island → canvas (turned about the centre; markers stay upright). */
+  const at = (x: number, z: number): [number, number] => {
+    const dx = ox + (x + HALF) * scale - w / 2;
+    const dy = oy + (z + HALF) * scale - h / 2;
+    return [w / 2 + dx * cos - dy * sin, h / 2 + dx * sin + dy * cos];
+  };
   ctx.fillStyle = '#1d4f72';
   ctx.fillRect(0, 0, w, h);
+  ctx.save();
+  if (rot) {
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(rot);
+    ctx.translate(-w / 2, -h / 2);
+  }
   ctx.imageSmoothingEnabled = o.full;
   ctx.drawImage(o.image, ox, oy, WORLD * scale, WORLD * scale);
   o.fog.paint(ctx, ox, oy, scale, [14, 16, 32], o.full ? 0.86 : 0.9);
+  ctx.restore();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   // Landmarks you found (or read about).
@@ -37,8 +53,7 @@ function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts
   ctx.font = `${iconSize}px system-ui, sans-serif`;
   for (const poi of POIS) {
     if (!c.flags.has(`seen:${poi.id}`)) continue;
-    const x = px(poi.x);
-    const y = py(poi.z);
+    const [x, y] = at(poi.x, poi.z);
     if (poi.id === o.objectivePoi) {
       ctx.strokeStyle = `rgba(255, 210, 90, ${0.5 + Math.sin(o.t * 4) * 0.4})`;
       ctx.lineWidth = 2;
@@ -59,17 +74,16 @@ function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts
   }
   for (const b of c.buildings.values()) {
     if (b.kind !== 'bedroll' || b.owner !== c.you) continue;
-    ctx.fillText('🛏️', px(b.x), py(b.z));
+    ctx.fillText('🛏️', ...at(b.x, b.z));
   }
   for (const d of c.drops.values()) {
     if (!d.label.endsWith("'s bag")) continue;
-    ctx.fillText('🎒', px(d.x), py(d.z));
+    ctx.fillText('🎒', ...at(d.x, d.z));
   }
   // Washed-up crates and supply pods: on the minimap's rim when they're further away.
   for (const d of c.drops.values()) {
     if (d.kind !== 'crate' && d.kind !== 'pod') continue;
-    let x = px(d.x);
-    let y = py(d.z);
+    let [x, y] = at(d.x, d.z);
     if (!o.full) {
       const r = w / 2 - iconSize * 0.7;
       const dx = x - w / 2;
@@ -94,15 +108,14 @@ function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(px(other.x), py(other.z), o.full ? 5 : 4, 0, Math.PI * 2);
+    ctx.arc(...at(other.x, other.z), o.full ? 5 : 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }
   // You: an arrow.
-  const x = px(c.x);
-  const y = py(c.z);
-  const fx = Math.sin(c.ry);
-  const fz = Math.cos(c.ry);
+  const [x, y] = at(c.x, c.z);
+  const fx = Math.sin(c.ry) * cos - Math.cos(c.ry) * sin;
+  const fz = Math.sin(c.ry) * sin + Math.cos(c.ry) * cos;
   const s = o.full ? 9 : 7;
   ctx.fillStyle = '#ffffff';
   ctx.strokeStyle = '#1a1a1a';
@@ -114,6 +127,18 @@ function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts
   ctx.closePath();
   ctx.stroke();
   ctx.fill();
+  // A turned minimap shows where north is.
+  if (rot && !o.full) {
+    const r = w / 2 - 9;
+    const nx = w / 2 + sin * r;
+    const ny = h / 2 - cos * r;
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillStyle = '#ffd36a';
+    ctx.strokeText('N', nx, ny);
+    ctx.fillText('N', nx, ny);
+  }
 }
 
 function useMapCanvas(
@@ -153,6 +178,7 @@ export function MiniMap(props: {
   fog: Fog;
   image: HTMLCanvasElement;
   objectivePoi: string | null;
+  rot: number;
   onOpen: () => void;
 }) {
   const ref = useMapCanvas((ctx, w, h, t) => {

@@ -189,6 +189,8 @@ export class GameClient {
   quickOpen = false;
   quickTab: 'bag' | 'craft' = 'bag';
   menuPage: MenuPage = 'main';
+  /** Where the survivor stands on screen (px; the view keeps it up to date). */
+  anchor = { x: 0, y: 0, w: 0, h: 0 };
   /** Auto tool / weapon (Menu › Settings › Gameplay). */
   auto = { tool: true, weapon: true, back: true };
   /** What an automatic switch replaced, to switch back to. */

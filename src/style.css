@@ -1136,29 +1136,6 @@ button:disabled {
   flex: none;
 }
 
-/* Phones: the quick panel takes the full width under the minimap buttons. */
-.hud-left.with-quick {
-  top: calc(160px + var(--safe-top));
-  right: 8px;
-  max-width: none;
-}
-
-.hud-left.with-quick .objective {
-  display: none;
-}
-
-@media (min-width: 700px) {
-  .hud-left.with-quick {
-    top: calc(100px + var(--safe-top));
-    right: auto;
-    width: 380px;
-  }
-
-  .hud-left.with-quick .objective {
-    display: block;
-  }
-}
-
 .objective {
   padding: 6px 10px;
   border-left: 3px solid var(--accent);
@@ -1910,8 +1887,41 @@ button:disabled {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
 }
 
-.hud-left > .quick-panel {
-  flex: 0 1 auto;
+.quick-window {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  transform-origin: var(--tail) 100%;
+  animation: pop-in 0.16s ease-out;
+}
+
+.quick-window > .quick-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: rgba(26, 24, 44, 0.94);
+}
+
+/* A little tail pointing down at the survivor. */
+.quick-window::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--tail) - 9px);
+  bottom: -8px;
+  width: 16px;
+  height: 16px;
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(26, 24, 44, 0.94);
+  transform: rotate(45deg);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
 }
 
 .quick-head {
@@ -2512,35 +2522,10 @@ button:disabled {
   overflow: hidden;
 }
 
-.game.landscape .hud-left.with-quick {
-  top: calc(8px + var(--safe-top));
-  bottom: calc(64px + var(--safe-bottom));
-  width: 330px;
-  max-width: 50%;
-  max-height: none;
-}
-
-.game.landscape .hud-left.with-quick .objective {
-  display: none;
-}
-
-.game.landscape .hud.quick-open .hud-stats {
-  margin-left: min(340px, 51%);
-}
-
 .game.landscape .joy-zone {
   bottom: calc(8px + var(--safe-bottom));
   width: 38%;
   height: 62%;
-}
-
-.game.landscape .hud.quick-open .joy-zone {
-  left: min(340px, 51%);
-  width: 26%;
-}
-
-.game.landscape.lefty .hud.quick-open .joy-zone {
-  left: auto;
 }
 
 .game.landscape .hud-actions {

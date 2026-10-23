@@ -19,7 +19,9 @@ import type { Fog } from './map';
 import { FullMap, MiniMap } from './MapView';
 import { PauseMenu } from './Menu';
 import { BagSheet, JournalSheet, KeypadSheet, NoteSheet, StorageSheet } from './Panels';
-import { QuickPanel } from './QuickPanel';
+import { QuickWindow } from './QuickPanel';
+import { usePrefs } from '../prefs';
+import { cameraRig } from '../settings';
 import { DragLayer, ItemIcon, SlotButton, quickUse } from './Slots';
 
 export interface HudProps {
@@ -51,6 +53,7 @@ export function Hud(props: HudProps) {
   const panel = client.panel;
   const close = () => client.openPanel(null);
   const pc = isPc();
+  const settings = usePrefs();
   const quick = client.quickOpen && !panel && me?.alive !== false;
   const hint = (a: Action) => (pc ? keyHint(input.bindings, a) : '');
   const mother = [...client.mobs.values()].find(
@@ -81,6 +84,7 @@ export function Hud(props: HudProps) {
             fog={props.fog}
             image={props.mapImage}
             objectivePoi={objective?.poi ?? null}
+            rot={cameraRig(settings.view).yaw}
             onOpen={() => client.openPanel('map')}
           />
           <div className="hud-corner-buttons">
@@ -102,7 +106,7 @@ export function Hud(props: HudProps) {
           </div>
         </div>
       </div>
-      <div className={`hud-left${quick ? ' with-quick' : ''}`}>
+      <div className="hud-left">
         {objective && (
           <button className="objective" onClick={() => client.openPanel('journal')}>
             <span className="objective-mark">▸</span> {objective.text}
@@ -129,7 +133,6 @@ export function Hud(props: HudProps) {
             🚁 The helicopter is waiting! {formatTime(client.rescueLeft())}
           </div>
         )}
-        {quick && <QuickPanel client={client} pc={pc} />}
         {quick && client.banner && (
           <div key={client.banner.id} className={`toast banner-toast ${client.banner.kind}`}>
             {client.banner.text}
@@ -141,6 +144,7 @@ export function Hud(props: HudProps) {
           </div>
         ))}
       </div>
+      {quick && <QuickWindow client={client} pc={pc} />}
       {client.banner && !quick && (
         <div key={client.banner.id} className={`banner ${client.banner.kind}`}>
           {client.banner.text}

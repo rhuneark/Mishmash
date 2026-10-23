@@ -164,6 +164,7 @@ export function Game(props: {
   }, [client, settings.autoTool, settings.autoWeapon, settings.autoBack]);
   useEffect(() => {
     viewRef.current?.configure({
+      view: settings.view,
       zoom: settings.camera / 100,
       shake: settings.shake,
       numbers: settings.damageNumbers,
@@ -191,6 +192,7 @@ export function Game(props: {
     viewRef.current = view;
     const s = prefs.get();
     view.configure({
+      view: s.view,
       zoom: s.camera / 100,
       shake: s.shake,
       numbers: s.damageNumbers,
@@ -213,7 +215,8 @@ export function Game(props: {
       raf = requestAnimationFrame(frame);
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
-      client.update(dt, input.move(), input.useHeld);
+      // The stick and keys are screen directions; the island turns with the camera.
+      client.update(dt, view.toWorld(input.move()), input.useHeld);
       view.update(dt);
       view.render();
       fogAcc += dt;
@@ -257,8 +260,7 @@ export function Game(props: {
   // What keys and mouse buttons do (keys.ts; rebindable under Menu › Settings › Controls).
   useEffect(() => {
     for (let i = 0; i < 6; i++) input.on(`slot${i + 1}` as Action, () => client.select(i));
-    const toggle = (p: 'bag' | 'craft' | 'journal' | 'map') => () =>
-      client.openPanel(client.panel === p ? null : p);
+    const toggle = (p: 'journal' | 'map') => () => client.openPanel(client.panel === p ? null : p);
     input.on('use', () => client.use());
     input.on('eat', () => client.eatHeld());
     input.on('drop', () => client.dropHeld());
@@ -267,8 +269,13 @@ export function Game(props: {
       if (client.panel === 'bag' || client.panel === 'craft') client.openPanel(null);
       else if (!client.panel) client.toggleQuick();
     });
-    input.on('bag', toggle('bag'));
-    input.on('craft', toggle('craft'));
+    // The bag and crafting open the window by the survivor (⤢ in it opens the full sheet).
+    const bagWindow = (tab: 'bag' | 'craft') => () => {
+      if (client.panel === 'bag' || client.panel === 'craft') client.openPanel(null);
+      else if (!client.panel) client.toggleQuick(tab);
+    };
+    input.on('bag', bagWindow('bag'));
+    input.on('craft', bagWindow('craft'));
     input.on('journal', toggle('journal'));
     input.on('map', toggle('map'));
     input.on('next', () => client.cycle(1));

@@ -322,6 +322,108 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     () => [...window.__game.client.buildings.values()].some((b) => b.kind === 'campfire'),
     `${tag} game: campfire not placed`,
   );
+  // Quests under the minimap: the way off, and the first night with the campfire ticked.
+  await page.locator('.quest', { hasText: 'Survivors of MX207' }).waitFor();
+  await page
+    .locator('.quest', { hasText: 'The first night' })
+    .locator('li.done', { hasText: 'campfire' })
+    .waitFor();
+
+  // Build mode: walls snap to the grid and meet at a corner, a post on the joint; the
+  // take-down tool removes one again.
+  await give(page, [
+    ['wall_wood', 3],
+    ['post_wood', 2],
+  ]);
+  await openGround(page);
+  await page.getByRole('button', { name: 'Build mode' }).click();
+  await page.locator('.build-panel').waitFor();
+  // The mouse would aim the piece: park it on the build panel.
+  await page.locator('.build-panel .build-title').hover();
+  await page.locator('.build-bar').getByRole('button', { name: 'Wooden wall' }).click();
+  const before = await game(page, () => window.__game.client.buildings.size);
+  const placePiece = async (piece, dx, dz, rot) => {
+    await page.locator('.build-bar').getByRole('button', { name: piece }).click();
+    await game(
+      page,
+      ([dx, dz, rot]) => {
+        const c = window.__game.client;
+        c.build.rot = rot;
+        c.setBuildCursor({ x: c.x + dx, z: c.z + dz });
+      },
+      [dx, dz, rot],
+    );
+    await until(
+      page,
+      () => !!window.__game.client.ghost && !window.__game.client.ghost.problem,
+      `${tag} build: no free spot for ${piece}`,
+    );
+    const n = await game(page, () => window.__game.client.buildings.size);
+    // Headless frames are slow and the action has a short cooldown: press until it's down.
+    for (let k = 0; k < 8; k++) {
+      await pressUse(page);
+      await page.waitForTimeout(700);
+      if ((await game(page, () => window.__game.client.buildings.size)) > n) break;
+    }
+    check(
+      (await game(page, () => window.__game.client.buildings.size)) > n,
+      `${tag} build: ${piece} wasn't placed`,
+    );
+  };
+  await placePiece('Wooden wall', -1, -3, 0);
+  await placePiece('Wooden wall', 1, -3, 0);
+  await placePiece('Wooden wall', -2, -2, 1);
+  await placePiece('Wooden post', -2, -3, 0);
+  const built = await game(page, () =>
+    [...window.__game.client.buildings.values()].filter((b) => b.kind !== 'campfire'),
+  );
+  check(built.length - (before - 1) === 4, `${tag} build: expected 4 pieces (${built.length})`);
+  // On the 2 m grid: walls along grid lines (even), their middles on odd metres.
+  const walls = built.filter((b) => b.kind === 'wall_wood');
+  check(
+    walls.every((b) =>
+      b.rot & 1
+        ? b.x % 2 === 0 && Math.abs(b.z % 2) === 1
+        : b.z % 2 === 0 && Math.abs(b.x % 2) === 1,
+    ),
+    `${tag} build: walls not on the grid (${JSON.stringify(walls.map((b) => [b.x, b.z, b.rot]))})`,
+  );
+  // The turn buttons and the snap switch.
+  const rot0 = await game(page, () => window.__game.client.build.rot);
+  await page.getByRole('button', { name: 'Turn right' }).click();
+  check(
+    (await game(page, () => window.__game.client.build.rot)) === (rot0 + 1) % 4,
+    `${tag} build: Turn right didn't turn the piece`,
+  );
+  const snap = page.getByRole('switch', { name: /Snap/ });
+  await snap.click();
+  check(
+    (await snap.getAttribute('aria-checked')) === 'false',
+    `${tag} build: snap didn't turn off`,
+  );
+  await snap.click();
+  await noSideScroll('build mode');
+  await shot('6b-build');
+  // Take one wall down again.
+  await page.locator('.build-bar').getByRole('button', { name: 'Take down' }).click();
+  const wall = walls[0];
+  await game(page, ([x, z]) => window.__game.client.setBuildCursor({ x, z }), [wall.x, wall.z]);
+  await until(
+    page,
+    () => window.__game.client.build.remove !== null,
+    `${tag} build: the take-down tool found nothing`,
+  );
+  const count = await game(page, () => window.__game.client.buildings.size);
+  await pressUse(page);
+  await until(
+    page,
+    (n) => window.__game.client.buildings.size === n - 1,
+    `${tag} build: the wall didn't come down`,
+    15000,
+    count,
+  );
+  await page.getByRole('button', { name: 'Leave build mode' }).first().click();
+  await page.locator('.build-panel').waitFor({ state: 'detached' });
 
   // Night falls; a Husk comes. Fight it with a machete.
   await give(page, [['machete', 1]]);
@@ -621,10 +723,49 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.getByText('TR-C0-4242').waitFor();
   await page.locator('.rules-preset', { hasText: 'Survivor' }).waitFor();
   await noSideScroll('island page');
+  // The island's owner can change its rules: a frantic spawn rate, then back.
+  const setSpawn = async (label) => {
+    await page.getByRole('button', { name: /Change the rules/ }).click();
+    await page
+      .getByRole('radiogroup', { name: 'Spawn rate' })
+      .getByRole('radio', { name: label })
+      .click();
+    await page.getByRole('button', { name: 'Use these rules' }).click();
+  };
+  await setSpawn('Frantic');
+  await until(
+    page,
+    () => window.__game.client.rules.spawnRate === 'frantic',
+    `${tag} rules: the spawn rate didn't change`,
+  );
+  await setSpawn('Normal');
+  await until(
+    page,
+    () => window.__game.client.rules.spawnRate === 'normal',
+    `${tag} rules: the spawn rate didn't change back`,
+  );
   await page.getByRole('button', { name: '‹ Back' }).click();
   await page.getByText('Paused').waitFor();
   // Settings: PC keys can be changed (journal on K instead of J) and volumes set.
   await page.getByRole('button', { name: /Settings/ }).click();
+  // HUD: the minimap can go, the player box can move, then it all comes back.
+  await page.getByRole('tab', { name: /HUD/ }).click();
+  await page.getByRole('switch', { name: 'Minimap', exact: true }).click();
+  await page
+    .getByRole('radiogroup', { name: 'Where they sit' })
+    .getByRole('radio', { name: 'Top left' })
+    .click();
+  check((await page.locator('.minimap').count()) === 0, `${tag} hud: the minimap didn't hide`);
+  check(
+    (await page.locator('.game.stats-top').count()) === 1,
+    `${tag} hud: the player box didn't move to the top`,
+  );
+  await page.getByRole('button', { name: 'Reset this page' }).click();
+  check(
+    (await page.locator('.minimap').count()) === 1,
+    `${tag} hud: reset didn't bring the minimap back`,
+  );
+  await noSideScroll('hud settings');
   await page.getByRole('tab', { name: /Controls/ }).click();
   await page.getByRole('button', { name: 'Journal, key 1' }).click();
   await page.keyboard.press('KeyK');

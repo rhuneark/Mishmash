@@ -10,9 +10,16 @@ import { type PoiDef, type Spot } from '../game/content/pois';
 import { CLASSIC, specCode, type IslandSpec } from '../game/islands';
 import { DEFAULT_RULES, parseRules, type WorldRules } from '../game/rules';
 import { RECIPES, type Station } from '../game/content/recipes';
-import { currentObjective, type Objective } from '../game/objectives';
+import {
+  currentObjective,
+  mainQuest,
+  objectives,
+  starterQuest,
+  type Objective,
+  type Quest,
+} from '../game/objectives';
 import { HOTBAR, bestSlot, hasAll, jobScore } from '../game/sim/inventory';
-import { placementProblem, snapPlacement } from '../game/sim/place';
+import { placementProblem, snapToGrid } from '../game/sim/place';
 import {
   MOB_KINDS,
   MOB_STATE,
@@ -47,6 +54,22 @@ const SPOT_REACH = 3.6;
 const BUILD_REACH = 3.8;
 const DROP_REACH = 3;
 const GHOST_AHEAD = 2.6;
+/** Pieces go down this far from you at most (the authority allows 7 m). */
+const BUILD_RANGE = 6.5;
+/** Pieces come down this far from you (the authority allows 5.2 m). */
+const REMOVE_RANGE = 5;
+
+/** Build mode: a piece from your bag, put down where the cursor is. */
+export interface BuildMode {
+  /** The item to place, 'remove' to take pieces down, or null (nothing to build). */
+  piece: string | null;
+  /** Quarter turns (0 = facing south, the way the camera sees it straight). */
+  rot: number;
+  /** Where the piece goes, relative to you (null: in front of you). */
+  cursor: { dx: number; dz: number } | null;
+  /** The building the remove tool points at. */
+  remove: number | null;
+}
 const TOAST_SECONDS = 3.6;
 /** Auto tool: seconds after the last swing before switching back. */
 const AUTO_BACK = 1.8;
@@ -184,6 +207,10 @@ export class GameClient {
   target: Target | null = null;
   ghost: { kind: string; x: number; z: number; rot: number; problem: string | null } | null = null;
   private ghostTurn = 0;
+  /** Build mode (null: off). */
+  build: BuildMode | null = null;
+  /** Snap to the grid and its cell size (Settings, set by Game). */
+  buildPrefs = { snap: true, grid: 2 };
 
   // UI state.
   panel: Panel | null = null;
@@ -388,6 +415,9 @@ export class GameClient {
       case 'rescue':
         this.rescue = msg.r;
         this.rescueAt = this.time;
+        break;
+      case 'rules':
+        this.rules = parseRules(msg.rules);
         break;
       case 'save':
         return;
@@ -844,18 +874,29 @@ export class GameClient {
   }
 
   private updateGhost(): void {
-    const held = this.heldItem();
-    const kind = held?.place;
+    const build = this.build;
+    // The last of a piece went down (or none had come yet): the next kind in the bag.
+    if (build && build.piece !== 'remove' && !this.me?.inv.some((s) => s?.id === build.piece)) {
+      const next = this.buildPieces()[0]?.id ?? null;
+      if (next !== build.piece) {
+        build.piece = next;
+        this.touch();
+      }
+    }
+    const piece = build && build.piece !== 'remove' ? build.piece : null;
+    const kind = build ? (piece ? ITEMS[piece]?.place : undefined) : this.heldItem()?.place;
+    if (build) build.remove = build.piece === 'remove' ? this.removeTarget() : null;
     if (!kind || !this.me?.alive || !this.island) {
+      if (this.ghost) this.touch();
       this.ghost = null;
       return;
     }
-    const fx = Math.sin(this.ry);
-    const fz = Math.cos(this.ry);
-    const ahead = GHOST_AHEAD + (BUILDINGS[kind]?.d ?? 1) / 2;
-    const p = snapPlacement(kind, this.x + fx * ahead, this.z + fz * ahead);
     const facing = Math.round(this.ry / (Math.PI / 2));
-    const rot = (((facing + this.ghostTurn) % 4) + 4) % 4;
+    const rot = build ? build.rot : (((facing + this.ghostTurn) % 4) + 4) % 4;
+    const at = this.buildPoint(kind);
+    const p = this.buildPrefs.snap
+      ? snapToGrid(kind, at.x, at.z, rot, this.buildPrefs.grid)
+      : { x: Math.round(at.x * 10) / 10, z: Math.round(at.z * 10) / 10 };
     const g = this.ghost;
     if (g && g.kind === kind && g.x === p.x && g.z === p.z && g.rot === rot) return;
     const problem = placementProblem(
@@ -870,24 +911,113 @@ export class GameClient {
     const tooClose =
       circleInBox(this.x, this.z, RADIUS, footprint(kind, p.x, p.z, rot)) &&
       BUILDINGS[kind]?.blocks;
+    const far = Math.hypot(p.x - this.x, p.z - this.z) > 7 ? 'Too far away.' : null;
     this.ghost = {
       kind,
       x: p.x,
       z: p.z,
       rot,
-      problem: problem ?? (tooClose ? 'Step back a little.' : null),
+      problem: problem ?? (tooClose ? 'Step back a little.' : far),
     };
     this.touch();
   }
 
-  turnGhost(): void {
-    this.ghostTurn = (this.ghostTurn + 1) % 4;
+  /** Where a piece would go: the build cursor, or in front of you. */
+  private buildPoint(kind: string): { x: number; z: number } {
+    const c = this.build?.cursor;
+    if (c) return { x: this.x + c.dx, z: this.z + c.dz };
+    const ahead = GHOST_AHEAD + (BUILDINGS[kind]?.d ?? 1) / 2;
+    return { x: this.x + Math.sin(this.ry) * ahead, z: this.z + Math.cos(this.ry) * ahead };
+  }
+
+  /** The building under the remove tool's cursor (in reach). */
+  private removeTarget(): number | null {
+    const at = this.buildPoint('wall_wood');
+    if (Math.hypot(at.x - this.x, at.z - this.z) > REMOVE_RANGE) return null;
+    let best: number | null = null;
+    let bd = 1.2;
+    for (const b of this.buildings.values()) {
+      const box = footprint(b.kind, b.x, b.z, b.rot);
+      const dx = Math.max(box.minX - at.x, 0, at.x - box.maxX);
+      const dz = Math.max(box.minZ - at.z, 0, at.z - box.maxZ);
+      const d = Math.hypot(dx, dz);
+      if (d < bd) {
+        bd = d;
+        best = b.id;
+      }
+    }
+    return best;
+  }
+
+  turnGhost(dir = 1): void {
+    if (this.build) this.build.rot = (((this.build.rot + dir) % 4) + 4) % 4;
+    else this.ghostTurn = (((this.ghostTurn + dir) % 4) + 4) % 4;
     this.ghost = null;
     this.updateGhost();
     this.touch();
   }
 
+  /** The pieces you can build: placeable items in your bag (one entry per kind). */
+  buildPieces(): { id: string; n: number }[] {
+    const out = new Map<string, number>();
+    for (const s of this.me?.inv ?? []) {
+      if (s && ITEMS[s.id]?.place) out.set(s.id, (out.get(s.id) ?? 0) + s.n);
+    }
+    return [...out].map(([id, n]) => ({ id, n }));
+  }
+
+  /** Build mode on or off. */
+  toggleBuild(on = !this.build): void {
+    if (!on) {
+      this.build = null;
+    } else {
+      const held = this.heldItem();
+      const pieces = this.buildPieces();
+      const facing = Math.round(this.ry / (Math.PI / 2));
+      this.build = {
+        piece: held?.place ? held.id : (pieces[0]?.id ?? null),
+        rot: (((facing + this.ghostTurn) % 4) + 4) % 4,
+        cursor: null,
+        remove: null,
+      };
+      this.quickOpen = false;
+      if (this.panel && this.panel !== 'menu') this.panel = null;
+    }
+    this.ghost = null;
+    this.updateGhost();
+    this.touch();
+  }
+
+  /** Picks what build mode puts down ('remove' takes pieces down). */
+  buildPick(piece: string): void {
+    if (!this.build) return;
+    this.build.piece = piece;
+    this.ghost = null;
+    this.updateGhost();
+    this.touch();
+  }
+
+  /** Moves the build cursor to a spot on the island (kept in reach), or back in front of you. */
+  setBuildCursor(at: { x: number; z: number } | null): void {
+    if (!this.build) return;
+    if (!at) {
+      this.build.cursor = null;
+    } else {
+      let dx = at.x - this.x;
+      let dz = at.z - this.z;
+      const d = Math.hypot(dx, dz);
+      if (d > BUILD_RANGE) {
+        dx *= BUILD_RANGE / d;
+        dz *= BUILD_RANGE / d;
+      }
+      this.build.cursor = { dx, dz };
+    }
+    this.updateGhost();
+  }
+
   private findTarget(): Target | null {
+    // In build mode the action button only builds.
+    if (this.build) return null;
     const island = this.island as Island;
     const held = this.heldItem();
     const x = this.x;
@@ -1020,7 +1150,12 @@ export class GameClient {
         };
       }
       case 'door_wood':
-        return { ...base, verb: b.v === 1 ? 'Close' : 'Open', name: 'the door' };
+      case 'gate_wood':
+        return {
+          ...base,
+          verb: b.v === 1 ? 'Close' : 'Open',
+          name: b.kind === 'gate_wood' ? 'the gate' : 'the door',
+        };
       case 'bedroll':
         return { ...base, verb: 'Sleep here:', name: 'set spawn' };
       case 'rain_collector':
@@ -1115,9 +1250,19 @@ export class GameClient {
     item?: string;
   } {
     const held = this.heldItem();
+    if (this.build) {
+      if (this.build.piece === 'remove') {
+        const b = this.build.remove !== null ? this.buildings.get(this.build.remove) : undefined;
+        return b
+          ? { text: `Take down ${BUILDINGS[b.kind]?.name ?? ''}`, kind: 'place' }
+          : { text: '', kind: 'none', blocked: 'Point at something you built.' };
+      }
+      if (!this.ghost) return { text: '', kind: 'none', blocked: 'Craft pieces at a workbench.' };
+    }
     if (this.ghost) {
+      const name = ITEMS[this.build?.piece ?? '']?.name ?? held?.name ?? '';
       return {
-        text: `Place ${held?.name ?? ''}`,
+        text: `Place ${name}`,
         kind: 'place',
         ...(this.ghost.problem ? { blocked: this.ghost.problem } : {}),
       };
@@ -1161,14 +1306,22 @@ export class GameClient {
     if (!me?.alive || me.escaped || this.clock < this.nextUse || this.panelBlocksMove()) return;
     const held = this.heldItem();
     const cooldown = held?.weapon?.cooldown ?? 0.6;
+    if (this.build?.piece === 'remove') {
+      if (this.build.remove !== null) this.demolish(this.build.remove);
+      this.nextUse = this.clock + 0.35;
+      return;
+    }
     if (this.ghost) {
       if (this.ghost.problem) {
         this.toast(this.ghost.problem);
         return;
       }
+      const piece = this.build?.piece;
+      const slot = piece ? me.inv.findIndex((s) => s?.id === piece) : me.held;
+      if (slot < 0) return;
       this.send({
         type: 'place',
-        slot: me.held,
+        slot,
         x: this.ghost.x,
         z: this.ghost.z,
         rot: this.ghost.rot,
@@ -1176,6 +1329,7 @@ export class GameClient {
       this.nextUse = this.clock + 0.35;
       return;
     }
+    if (this.build) return;
     const t = this.target;
     if (held?.throwable && !(t?.hostile && t.kind === 'mob' && !held.weapon)) {
       const aim = this.aimThrow(held.throwable.range);
@@ -1244,6 +1398,11 @@ export class GameClient {
     if (p === 'menu' && this.panel !== 'menu') this.menuPage = 'main';
     this.panel = p;
     this.touch();
+  }
+
+  /** Asks the authority for new world rules (only the island's owner is heard). */
+  setRules(rules: WorldRules): void {
+    this.link.send({ type: 'rules', rules });
   }
 
   setMenuPage(page: MenuPage): void {
@@ -1451,6 +1610,27 @@ export class GameClient {
     });
   }
 
+  /** The quests the HUD lists: the way off (its current chapter) and the first night. */
+  quests(): Quest[] {
+    const main = mainQuest(
+      objectives({
+        flags: this.flags,
+        notes: this.notes,
+        carrying: this.carrying(),
+        rescue: this.rescue,
+        parts: this.island?.spec,
+      }),
+    );
+    const built = [...this.buildings.values()];
+    const starter = starterQuest({
+      axe: (this.me?.inv ?? []).some((s) => s && ITEMS[s.id]?.tool?.kind === 'axe'),
+      campfire: built.some((b) => b.kind === 'campfire'),
+      bedroll: built.some((b) => b.kind === 'bedroll' && b.owner === this.you),
+      day: this.info().day,
+    });
+    return [main, starter].filter((q): q is Quest => q !== null);
+  }
+
   async close(): Promise<void> {
     await this.link.close();
   }
@@ -1467,7 +1647,7 @@ export const MOB_NAMES: Record<MonsterKind, string> = {
 
 function blocks(b: BuildingNet): boolean {
   if (!BUILDINGS[b.kind]?.blocks) return false;
-  return !(b.kind === 'door_wood' && b.v === 1);
+  return !(BUILDINGS[b.kind]?.opens && b.v === 1);
 }
 
 function circleInBox(x: number, z: number, r: number, b: ReturnType<typeof footprint>): boolean {

@@ -50,6 +50,9 @@ const HEMI_NIGHT = new THREE.Color(0x3a4c80);
 const HEMI_BLOOM = new THREE.Color(0x5a3a6a);
 const GROUND_NIGHT = new THREE.Color(0x1a1a2a);
 const tmpColor = new THREE.Color();
+const tmpV2 = new THREE.Vector2();
+/** The build grid reaches this far (m) around the piece. */
+const GRID_REACH = 9;
 const tmpVec = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
 const tmpM = new THREE.Matrix4();
@@ -178,6 +181,11 @@ export class View {
   private terrainRadius = 3;
   private nodeRadius = 2;
   private fogMul = 1;
+  // Build mode's grid.
+  private grid: THREE.LineSegments | null = null;
+  private gridKey = '';
+  private gridShow = true;
+  private readonly raycaster = new THREE.Raycaster();
   // The island's climate: daylight colours and how misty it is.
   private readonly skyDay: THREE.Color;
   private readonly skyDusk: THREE.Color;
@@ -317,8 +325,10 @@ export class View {
     numbers: boolean;
     gfx: GraphicsLevel;
     life: boolean;
+    grid?: boolean;
   }): void {
     this.rig = cameraRig(o.view);
+    this.gridShow = o.grid ?? true;
     this.zoom = o.zoom;
     this.shakeOn = o.shake;
     this.numbers = o.numbers;
@@ -882,6 +892,8 @@ export class View {
       }
       if (v.door)
         v.door.rotation.y += ((net.v === 1 ? -1.45 : 0) - v.door.rotation.y) * Math.min(1, dt * 8);
+      if (v.door2)
+        v.door2.rotation.y += ((net.v === 1 ? 1.45 : 0) - v.door2.rotation.y) * Math.min(1, dt * 8);
       if (v.jaws) {
         // Open while armed, snapped shut while re-arming.
         const shut = (net.v ?? 0) > 0;
@@ -924,6 +936,7 @@ export class View {
     this.updateDanger();
     this.updatePois(dt);
     this.updateGhost();
+    this.updateGrid();
     this.updateRing();
     this.updateLighting(dt, time);
     // Camera: a little ahead (away from the camera, and where you're heading), so the
@@ -943,7 +956,9 @@ export class View {
     this.focus.lerp(target, 1 - Math.exp(-dt * 8));
     const portrait = this.camera.aspect < 1;
     const want =
-      (portrait ? 1.3 : 1.05) * this.zoom * (1 + (c.mv === 2 ? 0.06 : 0) + this.danger * 0.08);
+      (portrait ? 1.3 : 1.05) *
+      this.zoom *
+      (1 + (c.mv === 2 ? 0.06 : 0) + this.danger * 0.08 + (c.build ? 0.22 : 0));
     this.camDist += (want - this.camDist) * (1 - Math.exp(-dt * 2));
     const dist = rig.dist * this.camDist;
     const flat = Math.cos(rig.pitch) * dist;
@@ -1123,8 +1138,83 @@ export class View {
     this.ghost.group.rotation.y = g.rot * (Math.PI / 2);
   }
 
+  /** Build mode's grid: lines on the ground around the piece, following the slopes. */
+  private updateGrid(): void {
+    const c = this.client;
+    if (!c.build || !this.gridShow) {
+      if (this.grid) this.grid.visible = false;
+      return;
+    }
+    const g = c.buildPrefs.grid;
+    const at = c.ghost ?? { x: c.x, z: c.z };
+    const cx = Math.round(at.x / g) * g;
+    const cz = Math.round(at.z / g) * g;
+    const key = `${cx}|${cz}|${g}`;
+    if (!this.grid) {
+      this.grid = new THREE.LineSegments(
+        new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.32,
+          depthWrite: false,
+        }),
+      );
+      this.grid.renderOrder = 2;
+      this.grid.frustumCulled = false;
+      this.scene.add(this.grid);
+    }
+    this.grid.visible = true;
+    if (key === this.gridKey) return;
+    this.gridKey = key;
+    const n = Math.round(GRID_REACH / g);
+    const pts: number[] = [];
+    const y = (x: number, z: number) => Math.max(heightAt(this.island, x, z), 0) + 0.07;
+    for (let k = -n; k <= n; k++) {
+      for (let s = -GRID_REACH; s < GRID_REACH; s += 1) {
+        const lx = cx + k * g;
+        const lz = cz + k * g;
+        pts.push(lx, y(lx, cz + s), cz + s, lx, y(lx, cz + s + 1), cz + s + 1);
+        pts.push(cx + s, y(cx + s, lz), lz, cx + s + 1, y(cx + s + 1, lz), lz);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    this.grid.geometry.dispose();
+    this.grid.geometry = geo;
+  }
+
+  /** A spot on screen (px in the canvas) on the ground of the island. */
+  groundAt(px: number, py: number): { x: number; z: number } | null {
+    if (!this.w || !this.h) return null;
+    tmpV2.set((px / this.w) * 2 - 1, -(py / this.h) * 2 + 1);
+    this.raycaster.setFromCamera(tmpV2, this.camera);
+    const { origin: o, direction: d } = this.raycaster.ray;
+    if (d.y > -0.01) return null;
+    let y = this.y(this.client.x, this.client.z);
+    let x = o.x;
+    let z = o.z;
+    for (let i = 0; i < 4; i++) {
+      const t = (y - o.y) / d.y;
+      x = o.x + d.x * t;
+      z = o.z + d.z * t;
+      y = Math.max(heightAt(this.island, x, z), 0);
+    }
+    return { x, z };
+  }
+
   private updateRing(): void {
     const t = this.client.target;
+    // The remove tool points at a piece: a red ring under it.
+    const rm = this.client.build?.remove;
+    const doomed = rm !== null && rm !== undefined ? this.client.buildings.get(rm) : undefined;
+    if (doomed) {
+      this.ring.visible = true;
+      this.ring.position.set(doomed.x, this.y(doomed.x, doomed.z) + 0.06, doomed.z);
+      this.ring.scale.setScalar(1.4 * (1 + Math.sin(this.t * 6) * 0.05));
+      (this.ring.material as THREE.MeshBasicMaterial).color.setHex(0xff5a5a);
+      return;
+    }
     if (!t || this.client.ghost) {
       this.ring.visible = false;
       return;

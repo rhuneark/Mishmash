@@ -19,6 +19,14 @@ export interface BuildingDef {
   trap?: { damage: number; stun: number; rearm: number };
   /** No monster, even an enraged one, steps into its light. */
   repels?: boolean;
+  /** Opens and closes (doors and gates; open ones don't block). */
+  opens?: boolean;
+  /**
+   * How it sits on the build grid: `edge` pieces (walls, doors) run along grid lines, `corner`
+   * pieces (posts) sit on grid points, the rest fill cells. Edge and corner pieces may meet
+   * at corners and joints.
+   */
+  shape?: 'edge' | 'corner';
 }
 
 const list: BuildingDef[] = [
@@ -33,16 +41,52 @@ const list: BuildingDef[] = [
     station: 'fire',
   },
   { id: 'workbench', name: 'Workbench', hp: 200, w: 1.8, d: 1.0, blocks: true, station: 'bench' },
-  { id: 'wall_wood', name: 'Wooden wall', hp: 300, w: 2.0, d: 0.35, blocks: true },
-  { id: 'door_wood', name: 'Wooden door', hp: 250, w: 2.0, d: 0.35, blocks: true },
-  { id: 'wall_stone', name: 'Stone wall', hp: 750, w: 2.0, d: 0.45, blocks: true },
-  { id: 'spikes', name: 'Spike barricade', hp: 200, w: 2.0, d: 0.8, blocks: true, thorns: 10 },
-  { id: 'torch_post', name: 'Torch post', hp: 80, w: 0.4, d: 0.4, blocks: true, light: 7 },
+  { id: 'wall_wood', name: 'Wooden wall', hp: 300, w: 2.0, d: 0.35, blocks: true, shape: 'edge' },
+  {
+    id: 'door_wood',
+    name: 'Wooden door',
+    hp: 250,
+    w: 2.0,
+    d: 0.35,
+    blocks: true,
+    opens: true,
+    shape: 'edge',
+  },
+  { id: 'wall_stone', name: 'Stone wall', hp: 750, w: 2.0, d: 0.45, blocks: true, shape: 'edge' },
+  {
+    id: 'spikes',
+    name: 'Spike barricade',
+    hp: 200,
+    w: 2.0,
+    d: 0.8,
+    blocks: true,
+    thorns: 10,
+    shape: 'edge',
+  },
+  {
+    id: 'torch_post',
+    name: 'Torch post',
+    hp: 80,
+    w: 0.4,
+    d: 0.4,
+    blocks: true,
+    light: 7,
+    shape: 'corner',
+  },
   { id: 'storage', name: 'Storage box', hp: 150, w: 1.0, d: 0.8, blocks: true },
   { id: 'bedroll', name: 'Bedroll', hp: 60, w: 1.0, d: 2.0, blocks: false },
   { id: 'rain_collector', name: 'Rain collector', hp: 120, w: 1.2, d: 1.2, blocks: true },
   { id: 'mashbench', name: 'Mashbench', hp: 220, w: 1.8, d: 1.1, blocks: true, station: 'mash' },
-  { id: 'thorn_wall', name: 'Thorn wall', hp: 650, w: 2.0, d: 0.55, blocks: true, thorns: 16 },
+  {
+    id: 'thorn_wall',
+    name: 'Thorn wall',
+    hp: 650,
+    w: 2.0,
+    d: 0.55,
+    blocks: true,
+    thorns: 16,
+    shape: 'edge',
+  },
   {
     id: 'snap_trap',
     name: 'Snap trap',
@@ -61,6 +105,38 @@ const list: BuildingDef[] = [
     blocks: true,
     light: 14,
     repels: true,
+  },
+  // Building shapes: short walls, windows, posts and a wide gate.
+  { id: 'wall_half', name: 'Short wall', hp: 160, w: 1.0, d: 0.35, blocks: true, shape: 'edge' },
+  { id: 'wall_window', name: 'Window wall', hp: 260, w: 2.0, d: 0.35, blocks: true, shape: 'edge' },
+  { id: 'post_wood', name: 'Wooden post', hp: 200, w: 0.5, d: 0.5, blocks: true, shape: 'corner' },
+  {
+    id: 'gate_wood',
+    name: 'Wooden gate',
+    hp: 450,
+    w: 4.0,
+    d: 0.4,
+    blocks: true,
+    opens: true,
+    shape: 'edge',
+  },
+  {
+    id: 'wall_stone_half',
+    name: 'Short stone wall',
+    hp: 380,
+    w: 1.0,
+    d: 0.45,
+    blocks: true,
+    shape: 'edge',
+  },
+  {
+    id: 'pillar_stone',
+    name: 'Stone pillar',
+    hp: 450,
+    w: 0.6,
+    d: 0.6,
+    blocks: true,
+    shape: 'corner',
   },
 ];
 

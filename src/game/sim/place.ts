@@ -4,7 +4,7 @@
 import { BUILDINGS } from '../content/buildings';
 import { NODES } from '../content/nodes';
 import { forNodesNear, heightAt, hitCollider, poolNear, type Island } from '../world';
-import { boxesOverlap, circleHitsBox, footprint } from './types';
+import { boxesOverlap, circleHitsBox, footprint, type Aabb } from './types';
 
 export interface PlacedLike {
   kind: string;
@@ -42,7 +42,9 @@ export function placementProblem(
   if (lo < 0.2) return 'Too close to the water.';
   if (hi - lo > 1.8) return 'The ground is too steep.';
   for (const b of buildings) {
-    if (boxesOverlap(box, footprint(b.kind, b.x, b.z, b.rot))) return 'Something is already there.';
+    const other = footprint(b.kind, b.x, b.z, b.rot);
+    if (boxesOverlap(box, other) && !joins(kind, b.kind, box, other))
+      return 'Something is already there.';
   }
   for (const [cx, cz] of corners) {
     if (hitCollider(island, cx, cz, 0.2)) return 'Wreckage is in the way.';
@@ -59,8 +61,51 @@ export function placementProblem(
   return null;
 }
 
+/** Wall pieces and posts may meet: they overlap only where they join, not along their length. */
+const JOINT = 0.62;
+
+function joins(a: string, b: string, boxA: Aabb, boxB: Aabb): boolean {
+  if (!BUILDINGS[a]?.shape || !BUILDINGS[b]?.shape) return false;
+  const w = Math.min(boxA.maxX, boxB.maxX) - Math.max(boxA.minX, boxB.minX);
+  const d = Math.min(boxA.maxZ, boxB.maxZ) - Math.max(boxA.minZ, boxB.minZ);
+  return w <= JOINT && d <= JOINT;
+}
+
 /** Snaps a build position: walls to a 1 m grid so they line up, others to 0.5 m. */
 export function snapPlacement(kind: string, x: number, z: number): { x: number; z: number } {
-  const step = kind.startsWith('wall') || kind === 'door_wood' || kind === 'spikes' ? 1 : 0.5;
+  const step = BUILDINGS[kind]?.shape === 'edge' ? 1 : 0.5;
   return { x: Math.round(x / step) * step, z: Math.round(z / step) * step };
+}
+
+/**
+ * Snaps a piece to the build grid (cells `grid` metres across): walls and doors run along
+ * grid lines with their ends on grid points, posts sit on grid points, everything else fills
+ * a cell. Rotations are quarter turns.
+ */
+export function snapToGrid(
+  kind: string,
+  x: number,
+  z: number,
+  rot: number,
+  grid: number,
+): { x: number; z: number } {
+  const def = BUILDINGS[kind];
+  if (!def) return { x, z };
+  const along = (v: number, len: number) => {
+    const step = Math.min(grid, len);
+    return Math.round((v - len / 2) / step) * step + len / 2;
+  };
+  // (+ 0 turns -0 into 0.)
+  const line = (v: number) => Math.round(v / grid) * grid + 0;
+  if (def.shape === 'corner') return { x: line(x), z: line(z) };
+  if (def.shape === 'edge') {
+    // Quarter turns 1 and 3 run the piece along z.
+    return rot & 1 ? { x: line(x), z: along(z, def.w) } : { x: along(x, def.w), z: line(z) };
+  }
+  const w = rot & 1 ? def.d : def.w;
+  const d = rot & 1 ? def.w : def.d;
+  // Small things snap to half cells; bigger ones line their edges up with the grid.
+  const fine = grid / 2;
+  const cell = (v: number, len: number) => Math.round((v - len / 2) / fine) * fine + len / 2;
+  return { x: cell(x, Math.ceil(w / fine) * fine), z: cell(z, Math.ceil(d / fine) * fine) };
 }

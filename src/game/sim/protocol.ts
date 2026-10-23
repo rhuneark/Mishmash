@@ -30,6 +30,8 @@ export type C2S =
   | { type: 'take'; id: number; slot: number; to?: number }
   | { type: 'code'; code: string }
   | { type: 'respawn' }
+  /** The island's owner changes the world rules (others are ignored). */
+  | { type: 'rules'; rules: unknown }
   /** Leaving a co-op island: the host gets a last save first. */
   | { type: 'bye' };
 
@@ -173,6 +175,7 @@ export type S2C =
       id?: string;
     }
   | { type: 'rescue'; r: RescueNet }
+  | { type: 'rules'; rules: WorldRules }
   | { type: 'save'; part: number; parts: number; data: string };
 
 /** Splits a long string into message-sized parts. */

@@ -11,6 +11,25 @@ export interface Objective {
   done: boolean;
   /** Landmark it points to (map marker). */
   poi?: string;
+  /** The quest it belongs to (the HUD's quest list groups them). */
+  chapter?: Chapter;
+  /** A short line for the quest list. */
+  short?: string;
+}
+
+export type Chapter = 'crash' | 'parts' | 'rescue';
+
+export const CHAPTER_TITLES: Record<Chapter, string> = {
+  crash: '✈️ Survivors of MX207',
+  parts: '📻 Three radio parts',
+  rescue: '🚁 Call for rescue',
+};
+
+/** A quest in the HUD's list: a title and its steps. */
+export interface Quest {
+  id: string;
+  title: string;
+  steps: { id: string; text: string; done: boolean }[];
 }
 
 export interface Progress {
@@ -40,7 +59,46 @@ export function tagsFound(notes: ReadonlySet<string>): number {
 export function objectives(p: Progress): Objective[] {
   const list = checklist(p);
   const parts = p.parts;
-  return parts ? list.map((o) => ({ ...o, text: turnDirections(o.text, parts) })) : list;
+  return parts
+    ? list.map((o) => ({
+        ...o,
+        text: turnDirections(o.text, parts),
+        ...(o.short ? { short: turnDirections(o.short, parts) } : {}),
+      }))
+    : list;
+}
+
+/** The way off as quests: the chapter you're on, its steps ticked off as you go. */
+export function mainQuest(list: Objective[]): Quest | null {
+  const now = list.find((o) => !o.done) ?? list[list.length - 1];
+  if (!now?.chapter) return null;
+  const chapter = now.chapter;
+  return {
+    id: chapter,
+    title: CHAPTER_TITLES[chapter],
+    steps: list
+      .filter((o) => o.chapter === chapter)
+      .map((o) => ({ id: o.id, text: o.short ?? o.text, done: o.done })),
+  };
+}
+
+/** What a new survivor sets up on the first days. */
+export interface StarterProgress {
+  axe: boolean;
+  campfire: boolean;
+  bedroll: boolean;
+  day: number;
+}
+
+/** The first-night quest: until it's done, and only on the first days. */
+export function starterQuest(p: StarterProgress): Quest | null {
+  const steps = [
+    { id: 'axe', text: 'Craft a stone axe', done: p.axe },
+    { id: 'campfire', text: 'Build a campfire before dark', done: p.campfire },
+    { id: 'bedroll', text: 'Put down a bedroll', done: p.bedroll },
+  ];
+  if (p.day > 3 || steps.every((s) => s.done)) return null;
+  return { id: 'starter', title: '🔥 The first night', steps };
 }
 
 function checklist(p: Progress): Objective[] {
@@ -51,16 +109,20 @@ function checklist(p: Progress): Objective[] {
   list.push({
     id: 'crash',
     text: 'Search the wreckage at the crash site',
+    short: 'Search the wreckage',
     done: searched,
     poi: 'crash',
+    chapter: 'crash',
   });
   if (!searched) return list;
   const log = p.notes.has('cockpit_log');
   list.push({
     id: 'cockpit',
     text: 'Find the cockpit in the jungle to the north-west',
+    short: 'Find the cockpit (north-west)',
     done: log,
     poi: 'cockpit',
+    chapter: 'crash',
   });
   if (!log) return list;
   const radio = f.has('radio_built') || has('radio');
@@ -70,35 +132,55 @@ function checklist(p: Progress): Objective[] {
     text: f.has('cargo_open')
       ? 'Battery: taken from the cargo hold'
       : `Battery: open the cargo hold at the tail section (west). The code is on 4 luggage tags around the crash site (${tags}/4)`,
+    short: f.has('cargo_open')
+      ? 'Battery from the cargo hold'
+      : `Battery: open the cargo hold (west), code tags ${tags}/4`,
     done: f.has('cargo_open') || has('battery') || radio,
     poi: 'tail',
+    chapter: 'parts',
   });
   list.push({
     id: 'antenna',
     text: f.has('antenna_taken')
       ? 'Antenna: taken from the radio tower'
       : 'Antenna: cut the Bloom vines at the radio tower (north-east, needs a machete) and climb it',
+    short: f.has('antenna_taken')
+      ? 'Antenna from the radio tower'
+      : 'Antenna: cut the vines at the radio tower (north-east)',
     done: f.has('antenna_taken') || has('antenna') || radio,
     poi: 'tower',
+    chapter: 'parts',
   });
   list.push({
     id: 'transmitter',
     text: f.has('mother_dead')
       ? "Transmitter: lies in the Mother Bloom's remains at Kessler Station"
       : 'Transmitter: destroy the Mother Bloom at Kessler Station (east marsh). Fire hurts it',
+    short: f.has('mother_dead')
+      ? "Transmitter: in the Mother Bloom's remains"
+      : 'Transmitter: kill the Mother Bloom (east marsh)',
     done: has('transmitter') || radio,
     poi: 'station',
+    chapter: 'parts',
   });
   const parts = f.has('cargo_open') && f.has('antenna_taken') && f.has('mother_dead');
   if (!parts && !radio) return list;
-  list.push({ id: 'radio', text: 'Build the emergency radio at a workbench', done: radio });
+  list.push({
+    id: 'radio',
+    text: 'Build the emergency radio at a workbench',
+    short: 'Build the radio at a workbench',
+    done: radio,
+    chapter: 'parts',
+  });
   if (!radio) return list;
   const called = f.has('radio_called');
   list.push({
     id: 'call',
     text: 'Call for rescue at the beacon by the radio tower',
+    short: 'Call from the beacon by the tower',
     done: called,
     poi: 'tower',
+    chapter: 'rescue',
   });
   if (!called) return list;
   const phase = p.rescue.phase;
@@ -106,21 +188,27 @@ function checklist(p: Progress): Objective[] {
     list.push({
       id: 'again',
       text: 'The helicopter left. Call again from the beacon',
+      short: 'Call again from the beacon',
       done: false,
       poi: 'tower',
+      chapter: 'rescue',
     });
     return list;
   }
   list.push({
     id: 'hold',
     text: 'Hold out until the helicopter lands',
+    short: 'Hold out until it lands',
     done: phase === 'landed' || f.has('escaped'),
+    chapter: 'rescue',
   });
   list.push({
     id: 'board',
     text: 'Board the helicopter on the helipad',
+    short: 'Board the helicopter',
     done: f.has('escaped'),
     poi: 'tower',
+    chapter: 'rescue',
   });
   return list;
 }

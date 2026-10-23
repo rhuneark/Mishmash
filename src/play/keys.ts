@@ -19,6 +19,9 @@ export type Action =
   | 'craft'
   | 'journal'
   | 'map'
+  | 'build'
+  | 'snap'
+  | 'hud'
   | 'slot1'
   | 'slot2'
   | 'slot3'
@@ -33,7 +36,7 @@ export type Action =
 export interface ActionDef {
   id: Action;
   label: string;
-  group: 'Move' | 'Act' | 'Screens' | 'Hotbar' | 'Camera';
+  group: 'Move' | 'Act' | 'Build' | 'Screens' | 'Hotbar' | 'Camera';
   def: string[];
 }
 
@@ -51,12 +54,15 @@ export const ACTIONS: ActionDef[] = [
   },
   { id: 'eat', label: 'Eat or use what you hold', group: 'Act', def: ['KeyF'] },
   { id: 'drop', label: 'Drop what you hold', group: 'Act', def: ['KeyQ'] },
-  { id: 'turn', label: 'Turn a building', group: 'Act', def: ['KeyR'] },
+  { id: 'turn', label: 'Turn a building', group: 'Build', def: ['KeyR'] },
+  { id: 'build', label: 'Build mode on/off', group: 'Build', def: ['KeyV'] },
+  { id: 'snap', label: 'Snap to the grid on/off', group: 'Build', def: ['KeyG'] },
   { id: 'quick', label: 'Quick bag and craft', group: 'Screens', def: ['Tab'] },
   { id: 'bag', label: 'Bag', group: 'Screens', def: ['KeyI', 'KeyB'] },
   { id: 'craft', label: 'Crafting', group: 'Screens', def: ['KeyC'] },
   { id: 'journal', label: 'Journal', group: 'Screens', def: ['KeyJ'] },
   { id: 'map', label: 'Map', group: 'Screens', def: ['KeyM'] },
+  { id: 'hud', label: 'Hide or show the HUD', group: 'Screens', def: ['KeyH'] },
   { id: 'slot1', label: 'Hotbar 1', group: 'Hotbar', def: ['Digit1', 'Numpad1'] },
   { id: 'slot2', label: 'Hotbar 2', group: 'Hotbar', def: ['Digit2', 'Numpad2'] },
   { id: 'slot3', label: 'Hotbar 3', group: 'Hotbar', def: ['Digit3', 'Numpad3'] },

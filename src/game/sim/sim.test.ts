@@ -5,7 +5,8 @@ import { NODE } from '../content/nodes';
 import { POI_BY_ID, SPAWN, MOTHER_SPOT, RESCUE_SECONDS } from '../content/pois';
 import { rng } from '../rng';
 import { IslandSim } from './sim';
-import { spawnMob } from './mobs';
+import { runDirector, spawnMob } from './mobs';
+import { placementProblem, snapToGrid } from './place';
 import { POD_FALL, POD_LOOT, compass, pickEvent, rollLoot } from './events';
 import { bestSlot, count, emptyInv, weaponScore } from './inventory';
 import { DAY, START_TIME } from './time';
@@ -761,5 +762,104 @@ describe('world rules', () => {
     expect(dayInfo(night(3), 3).bloom).toBe(true);
     expect(dayInfo(night(7), 3).bloom).toBe(false);
     expect(dayInfo(night(14), 0).bloom).toBe(false);
+  });
+});
+
+describe('the build grid and building shapes', () => {
+  it('snaps walls along grid lines, posts to grid points and boxes into cells', () => {
+    expect(snapToGrid('wall_wood', -22.6, 258.3, 0, 2)).toEqual({ x: -23, z: 258 });
+    expect(snapToGrid('wall_wood', -23.8, 259.2, 1, 2)).toEqual({ x: -24, z: 259 });
+    expect(snapToGrid('gate_wood', 3.1, 0.4, 0, 2)).toEqual({ x: 4, z: 0 });
+    expect(snapToGrid('wall_half', 1.4, 0.2, 0, 2)).toEqual({ x: 1.5, z: 0 });
+    expect(snapToGrid('post_wood', 1.3, -0.8, 0, 2)).toEqual({ x: 2, z: 0 });
+    expect(snapToGrid('wall_wood', 0.4, 0.4, 0, 1)).toEqual({ x: 0, z: 0 });
+    // A 1 m box fills a half cell: its centre sits in the middle of one.
+    expect(snapToGrid('storage', 0.3, 0.2, 0, 2)).toEqual({ x: 0.5, z: 0.5 });
+  });
+
+  it('lets walls meet at corners and posts sit on joints, but not overlap along a wall', () => {
+    const near = SPAWN;
+    const ok = (
+      placed: { kind: string; x: number; z: number; rot: number }[],
+      kind: string,
+      x: number,
+      z: number,
+      rot: number,
+    ) => placementProblem(island, placed, () => true, kind, near.x + x, near.z + z, rot);
+    const wall = { kind: 'wall_wood', x: near.x - 1, z: near.z - 30, rot: 0 };
+    const rel = (b: typeof wall) => [{ ...b }];
+    // A corner: the second wall runs along z from the first one's end.
+    expect(ok(rel(wall), 'wall_wood', 0, -29, 1)).toBeNull();
+    // A post on the joint.
+    expect(ok(rel(wall), 'post_wood', 0, -30, 0)).toBeNull();
+    // Half over the first wall: no.
+    expect(ok(rel(wall), 'wall_wood', 0, -30, 0)).toBe('Something is already there.');
+    // A box can't stand in a wall.
+    expect(ok(rel(wall), 'storage', -1, -30, 0)).toBe('Something is already there.');
+  });
+
+  it('opens and closes a gate like a door', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    let spot = { x: 0, z: 0 };
+    for (let r = 20; r < 120; r += 4) {
+      const x = SPAWN.x + r;
+      const z = SPAWN.z - 10;
+      if (!h.sim.placeProblem('gate_wood', x, z, 0)) {
+        spot = { x, z };
+        break;
+      }
+    }
+    walkTo(h, 'a', spot.x, spot.z + 2.5);
+    h.sim.give(p, 'gate_wood', 1);
+    h.sim.handle('a', {
+      type: 'place',
+      slot: p.inv.findIndex((s) => s?.id === 'gate_wood'),
+      x: spot.x,
+      z: spot.z,
+      rot: 0,
+    });
+    const gate = [...h.sim.buildings.values()].find((b) => b.kind === 'gate_wood')!;
+    expect(gate).toBeTruthy();
+    expect(h.sim.blockingAt(spot.x + 1, spot.z, 0.3)?.id).toBe(gate.id);
+    h.sim.handle('a', { type: 'use', kind: 'build', id: gate.id });
+    expect(gate.v).toBe(1);
+    expect(h.sim.blockingAt(spot.x + 1, spot.z, 0.3)).toBeNull();
+  });
+});
+
+describe('changing the rules and the spawn rate', () => {
+  it('only lets the island owner change the rules, and keeps storage as it was made', () => {
+    const h = harness(4242, { sharedChests: false });
+    h.sim.owner = 'a';
+    h.sim.join('a', 'Ann');
+    h.sim.join('b', 'Bo');
+    h.sim.handle('b', { type: 'rules', rules: { ...DEFAULT_RULES, spawnRate: 'frantic' } });
+    expect(h.sim.rules.spawnRate).toBe('normal');
+    h.sim.handle('a', {
+      type: 'rules',
+      rules: { ...DEFAULT_RULES, spawnRate: 'frantic', sharedChests: true, bloomEvery: 3 },
+    });
+    expect(h.sim.rules.spawnRate).toBe('frantic');
+    expect(h.sim.rules.bloomEvery).toBe(3);
+    expect(h.sim.rules.sharedChests).toBe(false);
+    expect((h.inbox.get('b') ?? []).some((m) => m.type === 'rules')).toBe(true);
+  });
+
+  it('spawns roamers faster or slower with the spawn rate', () => {
+    const roamers = (spawnRate: WorldRules['spawnRate']) => {
+      const h = harness(4242, { spawnRate });
+      h.sim.join('a', 'Ann');
+      const p = h.sim.players.get('a')!;
+      // A night in the jungle, away from the crash site's fire.
+      h.sim.time = DAY * 2 + DAY * 0.8;
+      const jungle = nearestNode(NODE.jungle, p.x, p.z);
+      walkTo(h, 'a', island.nodeX[jungle] as number, (island.nodeZ[jungle] as number) + 2);
+      h.sim.mobs.clear();
+      for (let k = 0; k < 3; k++) runDirector(h.sim);
+      return [...h.sim.mobs.values()].filter((m) => m.roamer).length;
+    };
+    expect(roamers('frantic')).toBeGreaterThan(roamers('slow'));
   });
 });

@@ -17,7 +17,14 @@ import { LUGGAGE_LOOT, NODE, NODES } from '../content/nodes';
 import { NOTES, PAGES } from '../content/notes';
 import { RESCUE_SECONDS, type PoiDef, type Spot } from '../content/pois';
 import { isClassic, type IslandParts } from '../islands';
-import { changedRules, hungerScale, parseRules, yieldOf, type WorldRules } from '../rules';
+import {
+  changedRules,
+  changeRules,
+  hungerScale,
+  parseRules,
+  yieldOf,
+  type WorldRules,
+} from '../rules';
 import { RECIPES, type Station } from '../content/recipes';
 import { hash01 } from '../rng';
 import { HALF, poolNear, type Island } from '../world';
@@ -106,8 +113,10 @@ export class IslandSim {
   rescue: RescueState;
   /** World events (events.ts): when the next one comes, and pods on their way down. */
   nextEvent: number;
-  /** World rules (rules.ts), fixed when the island was made. */
-  readonly rules: WorldRules;
+  /** World rules (rules.ts), picked when the island was made; its owner may change them. */
+  rules: WorldRules;
+  /** Who may change the rules: the solo player, or the host of a co-op room. */
+  owner = '';
   readonly parts: IslandParts;
   /** The storage every box opens when the rules connect them. */
   readonly chest: Inv;
@@ -214,6 +223,13 @@ export class IslandSim {
 
   newId(): number {
     return this.nextId++;
+  }
+
+  /** New world rules from the island's owner (storage stays as the island was made). */
+  setRules(raw: unknown): void {
+    this.rules = changeRules(this.rules, raw);
+    this.lastInfo = this.info();
+    this.broadcast({ type: 'rules', rules: { ...this.rules } });
   }
 
   /** Day, night and Bloom nights by this island's rules. */
@@ -424,6 +440,9 @@ export class IslandSim {
         return this.onTake(p, msg.id, msg.slot, msg.to);
       case 'code':
         return this.onCode(p, msg.code);
+      case 'rules':
+        if (id === this.owner) this.setRules(msg.rules);
+        return;
       case 'respawn':
         return this.onRespawn(p);
       default:
@@ -586,6 +605,7 @@ export class IslandSim {
         return;
       }
       case 'door_wood':
+      case 'gate_wood':
         b.v = b.v === 1 ? 0 : 1;
         this.broadcast({ type: 'build', b: this.net(b) });
         return;

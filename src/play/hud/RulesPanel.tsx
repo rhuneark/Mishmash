@@ -10,6 +10,7 @@ import {
   type Often,
   type Amount,
   type Speed,
+  type SpawnRate,
   type WorldRules,
 } from '../../game/rules';
 import { Toggle } from './Menu';
@@ -87,7 +88,7 @@ export const RULE_GROUPS: { title: string; rows: Row[] }[] = [
     ],
   },
   {
-    title: '🥀 The Bloom',
+    title: '🥀 The Bloom (zombies)',
     rows: [
       { key: 'daySpeed', label: 'How fast they move by day', options: SPEED },
       { key: 'nightSpeed', label: 'How fast they move at night', options: SPEED },
@@ -102,7 +103,7 @@ export const RULE_GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         key: 'monsters',
-        label: 'How many roam the island',
+        label: 'How many roam at once',
         desc: 'None: no roamers, only the rooted Snapjaws and the Mother Bloom. Bloom nights and the rescue still come (at least half size).',
         options: [
           { id: 'none', label: 'None' },
@@ -111,6 +112,17 @@ export const RULE_GROUPS: { title: string; rows: Row[] }[] = [
           { id: 'many', label: 'Many' },
           { id: 'swarm', label: 'Swarm' },
         ] satisfies Opt<Amount>[],
+      },
+      {
+        key: 'spawnRate',
+        label: 'Spawn rate',
+        desc: 'How fast new ones rise from the ground while there are fewer than the island allows.',
+        options: [
+          { id: 'slow', label: 'Slow' },
+          { id: 'normal', label: 'Normal' },
+          { id: 'fast', label: 'Fast' },
+          { id: 'frantic', label: 'Frantic' },
+        ] satisfies Opt<SpawnRate>[],
       },
       {
         key: 'bloomBlockDamage',
@@ -186,9 +198,22 @@ function valueLabel(r: Row, rules: WorldRules): string {
   return (r.options as Opt<unknown>[]).find((o) => o.id === v)?.label ?? String(v);
 }
 
-/** The rules to pick on the New island screen: a preset, then every rule. */
-export function RulesEditor({ rules, set }: { rules: WorldRules; set: (r: WorldRules) => void }) {
+/**
+ * The rules to pick: a preset, then every rule. `fixed` rules show but can't change (an
+ * island in play keeps its storage as it was made).
+ */
+export function RulesEditor({
+  rules,
+  set,
+  fixed = [],
+}: {
+  rules: WorldRules;
+  set: (r: WorldRules) => void;
+  fixed?: (keyof WorldRules)[];
+}) {
   const preset = presetOf(rules);
+  const keep = (r: WorldRules) =>
+    Object.fromEntries(fixed.map((k) => [k, r[k]])) as Partial<WorldRules>;
   return (
     <div className="rules">
       <div className="set-row choice">
@@ -205,7 +230,7 @@ export function RulesEditor({ rules, set }: { rules: WorldRules; set: (r: WorldR
               role="radio"
               aria-checked={p.id === preset}
               className={p.id === preset ? 'on' : ''}
-              onClick={() => set({ ...p.rules })}
+              onClick={() => set({ ...p.rules, ...keep(rules) })}
             >
               {p.name}
             </button>
@@ -220,9 +245,9 @@ export function RulesEditor({ rules, set }: { rules: WorldRules; set: (r: WorldR
               <Toggle
                 key={r.key}
                 label={r.label}
-                desc={r.desc}
+                desc={fixed.includes(r.key) ? `${r.desc} Set when the island was made.` : r.desc}
                 on={rules[r.key]}
-                set={(v) => set({ ...rules, [r.key]: v })}
+                set={(v) => !fixed.includes(r.key) && set({ ...rules, [r.key]: v })}
               />
             ) : (
               <div key={r.key} className="set-row choice">

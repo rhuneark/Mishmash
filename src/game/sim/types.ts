@@ -340,7 +340,7 @@ export function boxesOverlap(a: Aabb, b: Aabb, shrink = 0.05): boolean {
 export function blocksNow(b: Building): boolean {
   const def = BUILDINGS[b.kind];
   if (!def?.blocks) return false;
-  if (b.kind === 'door_wood' && b.v === 1) return false;
+  if (def.opens && b.v === 1) return false;
   return true;
 }
 

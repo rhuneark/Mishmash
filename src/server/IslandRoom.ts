@@ -80,6 +80,7 @@ export default class IslandRoom extends GameRoom<Msg> {
       (to, msg) => this.out(to, msg),
       rng((save.seed ^ Date.now()) >>> 0),
     );
+    this.sim.owner = this.hostId;
     for (const [id, name] of this.pending) this.sim.join(id, name);
     this.pending.clear();
     this.log.info('Island ready', { seed: save.seed, players: this.playerCount });
@@ -135,6 +136,7 @@ const CLIENT_TYPES = new Set([
   'take',
   'code',
   'respawn',
+  'rules',
 ]);
 
 function isClientMessage(m: Msg): m is C2S {

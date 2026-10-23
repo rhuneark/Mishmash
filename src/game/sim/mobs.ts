@@ -5,7 +5,7 @@
 import { BUILDINGS } from '../content/buildings';
 import { ITEMS } from '../content/items';
 import { MONSTERS, MOTHER_SLAM_RADIUS, PUFFER_BURST, type MonsterKind } from '../content/monsters';
-import { monsterScale, speedFor } from '../rules';
+import { monsterScale, spawnsPerSecond, speedFor } from '../rules';
 import { BIOME, biomeAt, heightAt, hitCollider } from '../world';
 import type { IslandSim } from './sim';
 import { DAY } from './time';
@@ -650,7 +650,13 @@ export function runDirector(sim: IslandSim): void {
     const scale = monsterScale(sim.rules.monsters);
     want = Math.round(want * (enraged ? Math.max(0.5, scale) : scale));
     if (hostileNear < want) {
-      const n = info.bloom && !rescueHere ? 2 : 1;
+      // The spawn rate rule: below one a second, a chance each second.
+      const rate = spawnsPerSecond(sim.rules.spawnRate);
+      const base = (info.bloom && !rescueHere ? 2 : 1) * rate;
+      const n = Math.min(
+        want - hostileNear,
+        Math.floor(base) + (sim.random() < base - Math.floor(base) ? 1 : 0),
+      );
       for (let k = 0; k < n; k++) {
         const pos = spawnSpot(sim, p.x, p.z, enraged, info.night || enraged);
         if (!pos) break;

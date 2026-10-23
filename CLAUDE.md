@@ -130,12 +130,16 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   toolbelt = hotbar / backpack = the rest / nothing / delete), infinite stacks (`stackLimit`,
   passed as a parameter, never global: one room server runs many rooms), monster speed by day
   and by night, Bloom night every N (0 = never; `dayInfo(t, every)`), how many roam
-  (`monsterScale`), their damage to buildings, your damage to nodes, yield, world events, map
+  (`monsterScale`; Bloom nights and the rescue never drop below half), the **spawn rate**
+  (`spawnRate`: slow / normal / fast / frantic = `spawnsPerSecond` 0.25–3 from the director
+  while too few are around; labelled under "The Bloom (zombies)"), their damage to buildings, your damage to nodes, yield, world events, map
   markers (all / landmarks / only you, `MapView`), connected storage (`sharedChests`: every box
   shows `sim.chest`, `CHEST_SLOTS` 48, saved as `IslandSave.chest`) and craft from storage
   (`craftFromChests`: `removeFrom` takes from the bag first, client `craftCount`). Presets:
   Relaxed, Survivor (the defaults), Nightmare. The pause menu's 🏝️ This island page shows the
-  name, code and rules.
+  name, code and rules, and the island's owner (`sim.owner`: the solo player, or the room's
+  host) can change them there mid-game (C2S/S2C `rules`, `changeRules`: storage stays as it
+  was made; others' requests are ignored).
 - **World** (`game/world.ts`): `generateIsland(seed, parts)` builds the same island on every device
   and on the room server: a 1024 m square, heightmap every 2 m (`CELL`), island radius ~400 m
   with noisy coasts, a mountain in the north-east (`PEAK`, radio tower), a marsh in the east
@@ -248,17 +252,27 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   reverb and echo; day = major and busy, night = minor and sparse, Bloom nights = a dissonant
   drone, and drums rise with `view.danger` (hostile monsters close and active, the Mother
   near) and during the rescue call.
-- **HUD** (`play/hud/`): stat bars, clock, objective, minimap (fog of war, `map.ts` `Fog`,
-  saved per island under `mishmash_fog`), journal (objectives, notes, cargo code so far,
+- **HUD** (`play/hud/`): the player box (`.hud-player`: day and time, health, food, water;
+  top left on upright phones, **bottom left on PC and sideways** with the clock above the
+  bars: Game sets `.stats-low` from `statsAt` / `pc` / `landscape`), minimap (fog of war,
+  `map.ts` `Fog`, saved per island under `mishmash_fog`), **quests under the minimap**
+  (`QuestList`: quest cards with a title and bulleted steps, done ones ticked; the way off
+  grouped into chapters by `mainQuest`, `Objective.chapter`/`short`, plus `starterQuest` "The
+  first night" on days 1–3; tap opens the journal; hidden while the bag window or build mode
+  is open; sideways they sit left of the minimap), journal (objectives, notes, cargo code so far,
   Kessler pages, tips), map, bag + crafting sheet, storage box, keypad, pause menu, death and
   win screens. Floating joystick on the left half (touch only: a mouse clicks the island
   through it).
 - **Pause menu** (`hud/Menu.tsx`, ☰ or Esc; `client.menuPage`: main / settings / friends /
   howto / island): Resume, Settings, Journal, Map, Play with friends (room code), This island,
   How to play, Save and quit. Solo play pauses while it's open (`link.pause`, also when the app is in the background).
-  **Settings** (`SettingsPanel`, tabs): Gameplay (auto tool, auto weapon, switch back), Audio
-  (master, effects, ambience, music), Screen (phones: portrait/landscape + turn the other way,
-  left-handed; button size, camera distance, shake, damage numbers, vibration), Graphics
+  **Settings** (`SettingsPanel`, tabs): Gameplay (auto tool, auto weapon, switch back; build
+  snap, grid size, show grid), Audio (master, effects, ambience, music), Screen (phones:
+  portrait/landscape + turn the other way, left-handed; camera angle and distance, shake,
+  vibration), **HUD** (show the HUD (H), health/food/water on/off and where (auto / top left /
+  bottom left), day and time, minimap on/off, size and turning, quests (every step / next
+  step / hidden), HUD size 80–140% and opacity (`--hud-scale`, `--hud-alpha`), button size,
+  damage numbers, key hints; the controls and ☰ always stay), Graphics
   (quality auto/low/medium/high, grass and wildlife, FPS), Controls (key list). Settings live
   in `play/settings.ts` (pure: `parseSettings` repairs saved data) and `play/prefs.ts` (store,
   `usePrefs`, saved in appStorage under `mishmash_settings` 0.4 s after a change, loaded at
@@ -271,6 +285,22 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   `--safe-*` set on `.game`). `.game.landscape` (any wide game, turned or not) has its own HUD
   layout (stats and minimap in a row, smaller hotbar); `.lefty` swaps stick and buttons; `.hud-small/large` scale the button
   groups. `.game` is a size container (`cqw`/`cqh` for the full map).
+- **Build mode** (🔨 button or V; `client.build`, `BuildPanel`/`BuildBar` in Hud.tsx): the
+  hotbar becomes the build bar (every placeable kind in your bag, plus 🗑️ take down), the
+  camera pulls back and a grid shows on the ground around the piece (`view.updateGrid`).
+  The piece follows the mouse on PC (`view.groundAt` raycast, re-aimed every frame) or a
+  finger dragged on the island (aimed 56 px above it), within 6.5 m (`setBuildCursor`; the
+  authority allows 7). ⟲ ⟳ / R / the wheel turn it (quarter turns), ▦ Snap (G) and the grid
+  size (1 m / 2 m, `buildPrefs` from Settings) are on the panel. `snapToGrid` (place.ts):
+  `shape: 'edge'` pieces (walls, doors, gates, spikes) run along grid lines with their ends
+  on grid points, `corner` pieces (posts) sit on grid points, others fill (half) cells;
+  edge/corner pieces may overlap where they join (`joins`, ≤ 0.62 m both ways) so corners and
+  T-joints work. Place = the action button, click or Space (from any bag slot); the
+  take-down tool demolishes the piece under the cursor (`removeTarget`, red ring). Esc / V /
+  ✕ leaves. Outside build mode a held placeable still shows the ghost in front of you, with
+  the same snapping. **Shapes** (2026-10-23): short wall (1 m), window wall, wooden post,
+  wooden gate (4 m, two leaves, `opens` like the door), short stone wall, stone pillar.
+  Floors, roofs, furniture and traps are the "Bigger bases" ballot option: not built.
 - **Item pictures** (`hud/itemIcons.ts`): every item is a small SVG (48×48, flat colours,
   dark outline) shown as a data-URL `<img>` (`Slots.tsx` `ItemIcon`). Not emoji: newer emoji
   (wood, rock, rope…) are empty boxes on older phones and Windows. `itemIcons.test.ts`
@@ -294,8 +324,9 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   up to 3 keys or mouse buttons (`Mouse0`… and `WheelUp/Down`); one key never does two things
   (`bind` moves it); saved per player in appStorage under `mishmash_keys` (`parseBindings`
   repairs it). Defaults: WASD/arrows, Shift sprint, Space/E/left click action, F eat, Q drop,
-  R turn, Tab bag window, I/B bag, C craft (both the window), J journal, M map, 1–6 hotbar, wheel cycles the
-  hotbar, = and - move the camera (saved as the camera setting). Esc is fixed (opens and closes
+  R turn, V build mode, G snap, Tab bag window, I/B bag, C craft (both the window), J journal,
+  M map, H hide/show the HUD, 1–6 hotbar, wheel cycles the hotbar (turns the piece in build
+  mode), = and - move the camera (saved as the camera setting). Esc is fixed (opens and closes
   the menu, steps back a menu page). Key hints show on devices with a mouse
   (`isPc`: `(pointer: fine)`).
 - **Saves**: your island is one JSON in appStorage (`mishmash_island`, `IslandSave` v1,
@@ -319,8 +350,9 @@ Most features are data first, then a little code:
   / `food` / `heal` / `place` / `throwable` as needed), a recipe in `content/recipes.ts`
   and/or a drop in `content/nodes.ts` / `monsters.ts`. Inventory, crafting UI, hotbar, eating
   and the authority's checks pick it up. A held model is optional (`render/items.ts`).
-- **New building**: `content/buildings.ts` (footprint, hp, blocks, light, station, thorns), an
-  item with `place`, a model in `render/structures.ts` `buildingModel`, and behaviour in
+- **New building**: `content/buildings.ts` (footprint, hp, blocks, light, station, thorns;
+  `shape: 'edge' | 'corner'` for wall pieces and posts on the build grid, `opens` for doors
+  and gates), an item with `place`, a model in `render/structures.ts` `buildingModel`, and behaviour in
   `sim.ts` (`useBuilding`, `updateBuildings`) plus its action label in `client.ts`
   `buildingTarget`.
 - **New monster**: `content/monsters.ts` (+ `MOB_KINDS` in `sim/protocol.ts`: append, never
@@ -451,9 +483,11 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, v
                             # (walk, read, gather, craft, build, night fight, death, item
                             # pictures, quick panel, drag and drop, Mashbench, research page,
                             # auto tool, a supply pod, the bag window's place, isometric and
-                            # top-down walking, pause menu, This island, settings, rebinding a
-                            # key, landscape, save/continue, replace confirm), hub settings and
-                            # local co-op on a made island with Relaxed rules;
+                            # top-down walking, quests, build mode (grid, corner, post, turn,
+                            # snap, take down), pause menu, This island (change the spawn
+                            # rate), HUD settings, settings, rebinding a key, landscape,
+                            # save/continue, replace confirm), hub settings and local co-op on
+                            # a made island with Relaxed rules;
                             # must print "clean"
 ```
 

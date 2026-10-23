@@ -32,6 +32,27 @@ describe('settings', () => {
     expect(s.hud).toBe('large');
   });
 
+  it('repairs the HUD and build settings', () => {
+    const s = parseSettings({
+      hudOn: false,
+      statsAt: 'middle',
+      mapSize: 'large',
+      quests: 'current',
+      hudScale: 300,
+      hudOpacity: 5,
+      buildGrid: 3,
+      buildSnap: false,
+    });
+    expect(s.hudOn).toBe(false);
+    expect(s.statsAt).toBe('auto');
+    expect(s.mapSize).toBe('large');
+    expect(s.quests).toBe('current');
+    expect(s.hudScale).toBe(140);
+    expect(s.hudOpacity).toBe(40);
+    expect(s.buildGrid).toBe(2);
+    expect(s.buildSnap).toBe(false);
+  });
+
   it('picks graphics for the device and curves volumes', () => {
     expect(graphicsFor('auto', true)).toEqual(graphicsFor('medium', true));
     expect(graphicsFor('auto', false)).toEqual(graphicsFor('high', false));

@@ -53,6 +53,7 @@ export class LocalLink implements Link {
       },
       rng((save.seed ^ Date.now()) >>> 0),
     );
+    this.sim.owner = playerId;
     this.resume();
   }
 

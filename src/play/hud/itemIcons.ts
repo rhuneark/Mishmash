@@ -182,6 +182,41 @@ export const ITEM_ICONS: Record<string, string> = {
     `<rect x="4" y="8" width="40" height="34" rx="2" fill="#8f9196" ${O}/>` +
     `<path d="M4 19 L44 19 M4 30 L44 30 M17 8 L17 19 M31 8 L31 19 M10 19 L10 30 M24 19 L24 30 M38 19 L38 30 M17 30 L17 42 M31 30 L31 42" stroke="#1b1a2b" stroke-width="1.6"/>` +
     `<path d="M6 10 L15 10 M19 21 L22 21 M33 32 L40 32" stroke="#b4b6bb" stroke-width="1.6" stroke-linecap="round"/>`,
+  wall_half:
+    [13, 24]
+      .map(
+        (x, k) =>
+          `<path d="M${x} 42 L${x} ${12 + (k % 2) * 3} L${x + 5.5} ${7 + (k % 2) * 3} L${x + 11} ${12 + (k % 2) * 3} L${x + 11} 42 Z" fill="${k % 2 ? '#8a5f3a' : '#a0703f'}" ${O}/>`,
+      )
+      .join('') +
+    `<rect x="11" y="19" width="26" height="4" rx="1" fill="#5b3a22" ${T}/><rect x="11" y="33" width="26" height="4" rx="1" fill="#5b3a22" ${T}/>`,
+  wall_window:
+    `<rect x="4" y="6" width="40" height="36" rx="2" fill="#a0703f" ${O}/>` +
+    `<path d="M14 6 L14 42 M24 6 L24 15 M24 33 L24 42 M34 6 L34 42" stroke="#8a5f3a" stroke-width="1.5"/>` +
+    `<rect x="13" y="15" width="22" height="18" rx="1" fill="#2a3a52" ${O}/>` +
+    `<path d="M24 15 L24 33 M13 24 L35 24" stroke="#5b3a22" stroke-width="2.5"/>` +
+    `<path d="M16 18 L20 18" stroke="#9fd3ea" stroke-width="1.6" stroke-linecap="round"/>`,
+  post_wood:
+    `<rect x="17" y="10" width="14" height="34" rx="1.5" fill="#8a5f3a" ${O}/>` +
+    `<path d="M15 10 L24 4 L33 10 Z" fill="#a0703f" ${O}/>` +
+    `<rect x="15" y="19" width="18" height="4" rx="1" fill="#5b3a22" ${T}/><rect x="15" y="33" width="18" height="4" rx="1" fill="#5b3a22" ${T}/>` +
+    `<path d="M21 12 L21 42" stroke="#a0703f" stroke-width="1.5"/>`,
+  gate_wood:
+    `<rect x="3" y="6" width="6" height="38" rx="1" fill="#5b3a22" ${O}/><rect x="39" y="6" width="6" height="38" rx="1" fill="#5b3a22" ${O}/>` +
+    `<rect x="10" y="12" width="13" height="30" fill="#a0703f" ${O}/><rect x="25" y="12" width="13" height="30" fill="#8a5f3a" ${O}/>` +
+    `<path d="M10 18 L23 18 M10 34 L23 34 M25 18 L38 18 M25 34 L38 34" stroke="#5b3a22" stroke-width="2.5"/>` +
+    `<path d="M11 33 L22 19 M37 33 L26 19" stroke="#5b3a22" stroke-width="2"/>` +
+    `<rect x="3" y="4" width="42" height="5" rx="1" fill="#5b3a22" ${O}/>`,
+  wall_stone_half:
+    `<rect x="11" y="10" width="26" height="32" rx="2" fill="#8f9196" ${O}/>` +
+    `<path d="M11 21 L37 21 M11 32 L37 32 M24 10 L24 21 M18 21 L18 32 M30 21 L30 32 M24 32 L24 42" stroke="#1b1a2b" stroke-width="1.6"/>` +
+    `<path d="M13 12 L21 12 M26 23 L28 23" stroke="#b4b6bb" stroke-width="1.6" stroke-linecap="round"/>`,
+  pillar_stone:
+    `<rect x="14" y="36" width="20" height="7" rx="1" fill="#7f8186" ${O}/>` +
+    `<rect x="17" y="12" width="14" height="25" fill="#8f9196" ${O}/>` +
+    `<rect x="13" y="6" width="22" height="7" rx="1" fill="#7f8186" ${O}/>` +
+    `<path d="M21 14 L21 34 M27 14 L27 34" stroke="#6e7075" stroke-width="1.4"/>` +
+    `<path d="M15 8 L22 8" stroke="#b4b6bb" stroke-width="1.6" stroke-linecap="round"/>`,
   spikes:
     `<rect x="4" y="34" width="40" height="5" rx="1" fill="#5b3a22" ${O}/>` +
     [8, 18, 28, 38]

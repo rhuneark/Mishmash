@@ -20,7 +20,9 @@ import { FullMap, MiniMap } from './MapView';
 import { PauseMenu } from './Menu';
 import { BagSheet, JournalSheet, KeypadSheet, NoteSheet, StorageSheet } from './Panels';
 import { QuickWindow } from './QuickPanel';
-import { usePrefs } from '../prefs';
+import { prefs, usePrefs } from '../prefs';
+import { ITEMS } from '../../game/content/items';
+import type { Quest } from '../../game/objectives';
 import { cameraRig } from '../settings';
 import { DragLayer, ItemIcon, SlotButton, quickUse } from './Slots';
 
@@ -55,7 +57,13 @@ export function Hud(props: HudProps) {
   const pc = isPc();
   const settings = usePrefs();
   const quick = client.quickOpen && !panel && me?.alive !== false;
-  const hint = (a: Action) => (pc ? keyHint(input.bindings, a) : '');
+  const keys = pc && settings.keyHints;
+  const hint = (a: Action) => (keys ? keyHint(input.bindings, a) : '');
+  // Settings › HUD: what shows (the controls and ☰ always do).
+  const showInfo = settings.hudOn;
+  const build = client.build;
+  // Quests make room for the bag window and for build mode (you tap the island there).
+  const quests = showInfo && settings.quests !== 'off' && !quick && !build ? client.quests() : [];
   const mother = [...client.mobs.values()].find(
     (m) => m.kind === 'mother' && m.dying === 0 && Math.hypot(m.x - client.x, m.z - client.z) < 40,
   );
@@ -64,38 +72,48 @@ export function Hud(props: HudProps) {
 
   return (
     <div
-      className={`hud${info.bloom ? ' bloom' : ''}${info.night ? ' night' : ''}${client.quickOpen && !panel ? ' quick-open' : ''}`}
+      className={`hud${info.bloom ? ' bloom' : ''}${info.night ? ' night' : ''}${client.quickOpen && !panel ? ' quick-open' : ''}${quests.length ? ' quests-on' : ''}`}
     >
       <div className="hurt-flash" style={{ opacity: client.hurtFlash * 0.7 }} />
       {me.poison > 0 && <div className="poison-tint" />}
-      <div className="hud-top">
-        <div className="hud-stats">
-          <Bar icon="❤️" value={me.hp} cls={`hp${me.poison > 0 ? ' poisoned' : ''}`} />
-          <Bar icon="🍖" value={me.food} cls="food" />
-          <Bar icon="💧" value={me.water} cls="water" />
+      <div className="hud-player">
+        {showInfo && settings.clock && (
           <div className="hud-clock">
             {info.night ? (info.bloom ? '🌑' : '🌙') : '☀️'} {clockLabel(client.now())}
           </div>
-          {me.poison > 0 && <div className="chip poison">☠️ Poisoned</div>}
-        </div>
-        <div className="hud-corner">
-          <MiniMap
-            client={client}
-            fog={props.fog}
-            image={props.mapImage}
-            objectivePoi={objective?.poi ?? null}
-            rot={cameraRig(settings.view).yaw}
-            onOpen={() => client.openPanel('map')}
-          />
+        )}
+        {showInfo && settings.stats && (
+          <div className="hud-stats">
+            <Bar icon="❤️" value={me.hp} cls={`hp${me.poison > 0 ? ' poisoned' : ''}`} />
+            <Bar icon="🍖" value={me.food} cls="food" />
+            <Bar icon="💧" value={me.water} cls="water" />
+          </div>
+        )}
+        {me.poison > 0 && <div className="chip poison">☠️ Poisoned</div>}
+      </div>
+      <div className="hud-corner">
+        <div className="hud-corner-row">
+          {showInfo && settings.minimap && (
+            <MiniMap
+              client={client}
+              fog={props.fog}
+              image={props.mapImage}
+              objectivePoi={objective?.poi ?? null}
+              rot={settings.mapTurn ? cameraRig(settings.view).yaw : 0}
+              onOpen={() => client.openPanel('map')}
+            />
+          )}
           <div className="hud-corner-buttons">
-            <button
-              className="round-btn"
-              onClick={() => client.openPanel('journal')}
-              aria-label="Journal"
-              title={withKey('Journal', hint('journal'))}
-            >
-              📖
-            </button>
+            {showInfo && (
+              <button
+                className="round-btn"
+                onClick={() => client.openPanel('journal')}
+                aria-label="Journal"
+                title={withKey('Journal', hint('journal'))}
+              >
+                📖
+              </button>
+            )}
             <button
               className="round-btn"
               onClick={() => client.openPanel('menu')}
@@ -105,13 +123,12 @@ export function Hud(props: HudProps) {
             </button>
           </div>
         </div>
+        {quests.length > 0 && (
+          <QuestList quests={quests} current={settings.quests === 'current'} client={client} />
+        )}
       </div>
       <div className="hud-left">
-        {objective && (
-          <button className="objective" onClick={() => client.openPanel('journal')}>
-            <span className="objective-mark">▸</span> {objective.text}
-          </button>
-        )}
+        {build && <BuildPanel client={client} pc={pc} hint={hint} />}
         {mother && (
           <div className="bossbar">
             <div className="bossbar-name">The Mother Bloom</div>
@@ -173,6 +190,14 @@ export function Hud(props: HudProps) {
                 🔄
               </button>
             )}
+            <button
+              className={`round-btn big${build ? ' on' : ''}`}
+              onClick={() => client.toggleBuild()}
+              aria-label={build ? 'Leave build mode' : 'Build mode'}
+              title={withKey('Build mode', hint('build'))}
+            >
+              🔨
+            </button>
             {!client.ghost && client.target?.building !== undefined && (
               <TakeDown
                 onConfirm={() =>
@@ -204,7 +229,11 @@ export function Hud(props: HudProps) {
           <UseButton client={client} input={input} sound={sound} kind={label.kind} />
         </div>
       </div>
-      <Hotbar client={client} hints={pc ? input.bindings : null} />
+      {build ? (
+        <BuildBar client={client} />
+      ) : (
+        <Hotbar client={client} hints={keys ? input.bindings : null} />
+      )}
       <DragLayer />
       {panel === 'bag' && <BagSheet client={client} onClose={close} tab="bag" pc={pc} />}
       {panel === 'craft' && <BagSheet client={client} onClose={close} tab="craft" pc={pc} />}
@@ -334,6 +363,136 @@ function TakeDown({ onConfirm }: { onConfirm: () => void }) {
       {armed ? '✔️' : <ItemIcon id="axe_stone" className="btn-icon" />}
       {armed && <span className="btn-tip">Tap again to take it down</span>}
     </button>
+  );
+}
+
+/** The quests under the minimap: a title and its steps, done ones ticked. */
+function QuestList({
+  quests,
+  current,
+  client,
+}: {
+  quests: Quest[];
+  current: boolean;
+  client: GameClient;
+}) {
+  return (
+    <div className="quests" aria-label="Quests">
+      {quests.map((q) => {
+        const steps = current ? q.steps.filter((s) => !s.done).slice(0, 1) : q.steps;
+        return (
+          <button key={q.id} className="quest" onClick={() => client.openPanel('journal')}>
+            <span className="quest-title">{q.title}</span>
+            <ul className="quest-steps">
+              {steps.map((s) => (
+                <li key={s.id} className={s.done ? 'done' : ''}>
+                  {s.text}
+                </li>
+              ))}
+            </ul>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Build mode's tools: turn the piece, snap to the grid, the grid's size, leave. */
+function BuildPanel({
+  client,
+  pc,
+  hint,
+}: {
+  client: GameClient;
+  pc: boolean;
+  hint: (a: Action) => string;
+}) {
+  const s = usePrefs();
+  const piece = client.build?.piece;
+  const name =
+    piece === 'remove'
+      ? 'Take pieces down'
+      : piece
+        ? (ITEMS[piece]?.name ?? '')
+        : 'Nothing to build';
+  return (
+    <div className="build-panel">
+      <div className="build-head">
+        <span className="build-title">🔨 Build mode</span>
+        <button
+          className="round-btn"
+          onClick={() => client.toggleBuild(false)}
+          aria-label="Leave build mode"
+          title={withKey('Leave build mode', hint('build'))}
+        >
+          ✕
+        </button>
+      </div>
+      <div className="build-piece">{name}</div>
+      <div className="build-tools">
+        <button className="round-btn" onClick={() => client.turnGhost(-1)} aria-label="Turn left">
+          ⟲
+        </button>
+        <button
+          className="round-btn"
+          onClick={() => client.turnGhost(1)}
+          aria-label="Turn right"
+          title={withKey('Turn', hint('turn'))}
+        >
+          ⟳
+        </button>
+        <button
+          className={`pill-btn${s.buildSnap ? ' on' : ''}`}
+          role="switch"
+          aria-checked={s.buildSnap}
+          onClick={() => prefs.set({ buildSnap: !s.buildSnap })}
+          title={withKey('Snap to the grid', hint('snap'))}
+        >
+          ▦ Snap
+        </button>
+        <button
+          className="pill-btn"
+          onClick={() => prefs.set({ buildGrid: s.buildGrid === 2 ? 1 : 2 })}
+          aria-label={`Grid ${s.buildGrid} m`}
+        >
+          {s.buildGrid} m
+        </button>
+      </div>
+      <div className="build-tip">
+        {pc
+          ? 'The mouse moves it, the wheel turns it, click to place.'
+          : 'Drag on the island to move it, then tap the build button.'}
+      </div>
+    </div>
+  );
+}
+
+/** Build mode's bar: the pieces in your bag (and the take-down tool). */
+function BuildBar({ client }: { client: GameClient }) {
+  const pick = client.build?.piece;
+  const pieces = client.buildPieces();
+  return (
+    <div className="hotbar build-bar" aria-label="Pieces">
+      <button
+        className={`slot${pick === 'remove' ? ' held' : ''}`}
+        onClick={() => client.buildPick('remove')}
+        aria-label="Take down"
+      >
+        <span className="slot-emoji">🗑️</span>
+      </button>
+      {pieces.map((p) => (
+        <button
+          key={p.id}
+          className={`slot${pick === p.id ? ' held' : ''}`}
+          onClick={() => client.buildPick(p.id)}
+          aria-label={ITEMS[p.id]?.name ?? p.id}
+        >
+          <ItemIcon id={p.id} className="slot-icon" />
+          <span className="slot-n">{p.n}</span>
+        </button>
+      ))}
+      {pieces.length === 0 && <span className="build-empty">Craft pieces at a workbench</span>}
+    </div>
   );
 }
 

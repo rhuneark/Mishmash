@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { cargoCode, noteText } from './content/notes';
-import { currentObjective, knownCode, objectives, tagsFound, type Progress } from './objectives';
+import {
+  currentObjective,
+  knownCode,
+  mainQuest,
+  objectives,
+  starterQuest,
+  tagsFound,
+  type Progress,
+} from './objectives';
 
 const progress = (
   flags: string[],
@@ -87,5 +95,27 @@ describe('texts on a turned island', () => {
     const text = noteText('kessler', 1, undefined, { parts: turned, bloomEvery: 3 });
     expect(text).toMatch(/Every third night/);
     expect(noteText('kessler', 1)).toMatch(/seventh/);
+  });
+});
+
+describe('quests', () => {
+  it('lists the chapter you are on, its done steps ticked', () => {
+    const start = mainQuest(objectives(progress([], ['crash_note'])));
+    expect(start?.title).toContain('MX207');
+    expect(start?.steps.map((s) => [s.id, s.done])).toEqual([
+      ['crash', true],
+      ['cockpit', false],
+    ]);
+    const parts = mainQuest(objectives(progress(['cargo_open'], ['crash_note', 'cockpit_log'])));
+    expect(parts?.id).toBe('parts');
+    expect(parts?.steps.find((s) => s.id === 'battery')?.done).toBe(true);
+    expect(parts?.steps.every((s) => s.text.length < 60)).toBe(true);
+  });
+
+  it('gives a first-night quest until the camp is set up, and only on the first days', () => {
+    const q = starterQuest({ axe: true, campfire: false, bedroll: false, day: 1 });
+    expect(q?.steps.map((s) => s.done)).toEqual([true, false, false]);
+    expect(starterQuest({ axe: true, campfire: true, bedroll: true, day: 1 })).toBeNull();
+    expect(starterQuest({ axe: false, campfire: false, bedroll: false, day: 4 })).toBeNull();
   });
 });

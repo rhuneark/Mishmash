@@ -5,12 +5,12 @@ import * as run from '../sdk/run';
 import { appEvents } from '../app/appEvents';
 import { Sound } from './audio';
 import type { GameClient } from './client';
-import { Hud, useClient } from './hud/Hud';
+import { Hud, isPc, useClient } from './hud/Hud';
 import { Fog, islandImage } from './hud/map';
 import { Input } from './input';
 import { KEYS_KEY, parseBindings, type Action } from './keys';
 import { isTouch, prefs, usePrefs } from './prefs';
-import { rotationFor, setRotation, turnInsets } from './screen';
+import { rotationFor, setRotation, toLocal, turnInsets } from './screen';
 import { gain, graphicsFor, type Settings } from './settings';
 import { View } from './view';
 
@@ -72,6 +72,8 @@ export function Game(props: {
   const overlay = useRef<HTMLDivElement>(null);
   const fpsEl = useRef<HTMLDivElement>(null);
   const viewRef = useRef<View | null>(null);
+  /** The mouse over the island (build mode aims the piece at it every frame). */
+  const mouseAt = useRef<{ x: number; y: number } | null>(null);
   const [input] = useState(() => new Input());
   const [map, setMap] = useState<{ fog: Fog; image: HTMLCanvasElement } | null>(null);
   const ready = client.phase === 'ready';
@@ -87,7 +89,13 @@ export function Game(props: {
   const local = rot === 0 ? vp : { w: vp.h, h: vp.w };
   const landscape = local.w > local.h;
   const insets = turnInsets(run.safeArea(), rot);
+  const pc = useMemo(() => isPc(), []);
+  // Health, food and water: bottom left on PC and sideways (Settings › HUD can pin them).
+  const statsLow =
+    settings.statsAt === 'bottom' || (settings.statsAt === 'auto' && (pc || landscape));
   const style = {
+    '--hud-scale': settings.hudScale / 100,
+    '--hud-alpha': settings.hudOpacity / 100,
     '--safe-top': `${insets.top}px`,
     '--safe-right': `${insets.right}px`,
     '--safe-bottom': `${insets.bottom}px`,
@@ -163,6 +171,10 @@ export function Game(props: {
     client.auto = { tool: settings.autoTool, weapon: settings.autoWeapon, back: settings.autoBack };
   }, [client, settings.autoTool, settings.autoWeapon, settings.autoBack]);
   useEffect(() => {
+    client.buildPrefs = { snap: settings.buildSnap, grid: settings.buildGrid };
+    client.touch();
+  }, [client, settings.buildSnap, settings.buildGrid]);
+  useEffect(() => {
     viewRef.current?.configure({
       view: settings.view,
       zoom: settings.camera / 100,
@@ -170,8 +182,51 @@ export function Game(props: {
       numbers: settings.damageNumbers,
       gfx: graphicsFor(settings.quality, touch),
       life: settings.life,
+      grid: settings.buildGridShow,
     });
   }, [settings, touch, map]);
+
+  // Build mode: the mouse, or a finger on the island, moves the piece.
+  useEffect(() => {
+    const el = canvas.current;
+    if (!el || !ready) return;
+    let finger: number | null = null;
+    const aim = (e: PointerEvent) => {
+      const view = viewRef.current;
+      if (!view || !client.build) return;
+      const p = toLocal(e.clientX, e.clientY);
+      // A finger would hide the piece: aim a little above it.
+      const at = view.groundAt(p.x, p.y - (e.pointerType === 'mouse' ? 0 : 56));
+      if (at) client.setBuildCursor(at);
+    };
+    const down = (e: PointerEvent) => {
+      if (!client.build) return;
+      if (e.pointerType !== 'mouse') finger = e.pointerId;
+      aim(e);
+    };
+    const move = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') {
+        mouseAt.current = toLocal(e.clientX, e.clientY);
+        if (client.build) aim(e);
+      } else if (e.pointerId === finger) aim(e);
+    };
+    const up = (e: PointerEvent) => {
+      if (e.pointerId === finger) finger = null;
+    };
+    const leave = () => {
+      mouseAt.current = null;
+    };
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerleave', leave);
+    window.addEventListener('pointerup', up);
+    return () => {
+      el.removeEventListener('pointerdown', down);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerleave', leave);
+      window.removeEventListener('pointerup', up);
+    };
+  }, [client, ready]);
 
   // Map picture and explored fog for this island.
   useEffect(() => {
@@ -198,6 +253,7 @@ export function Game(props: {
       numbers: s.damageNumbers,
       gfx: graphicsFor(s.quality, touch),
       life: s.life,
+      grid: s.buildGridShow,
     });
     const el = canvas.current;
     const resize = () => view.resize(el.clientWidth, el.clientHeight);
@@ -217,6 +273,12 @@ export function Game(props: {
       last = now;
       // The stick and keys are screen directions; the island turns with the camera.
       client.update(dt, view.toWorld(input.move()), input.useHeld);
+      // The piece stays under the mouse while you walk.
+      const m = mouseAt.current;
+      if (client.build && m) {
+        const at = view.groundAt(m.x, m.y);
+        if (at) client.setBuildCursor(at);
+      }
       view.update(dt);
       view.render();
       fogAcc += dt;
@@ -265,6 +327,9 @@ export function Game(props: {
     input.on('eat', () => client.eatHeld());
     input.on('drop', () => client.dropHeld());
     input.on('turn', () => client.turnGhost());
+    input.on('build', () => client.toggleBuild());
+    input.on('snap', () => prefs.set({ buildSnap: !prefs.get().buildSnap }));
+    input.on('hud', () => prefs.set({ hudOn: !prefs.get().hudOn }));
     input.on('quick', () => {
       if (client.panel === 'bag' || client.panel === 'craft') client.openPanel(null);
       else if (!client.panel) client.toggleQuick();
@@ -278,8 +343,9 @@ export function Game(props: {
     input.on('craft', bagWindow('craft'));
     input.on('journal', toggle('journal'));
     input.on('map', toggle('map'));
-    input.on('next', () => client.cycle(1));
-    input.on('prev', () => client.cycle(-1));
+    // The wheel turns the piece in build mode, else it picks hotbar slots.
+    input.on('next', () => (client.build ? client.turnGhost(1) : client.cycle(1)));
+    input.on('prev', () => (client.build ? client.turnGhost(-1) : client.cycle(-1)));
     const zoom = (step: number) => () =>
       prefs.set({ camera: Math.min(130, Math.max(80, prefs.get().camera + step)) });
     input.on('zoomIn', zoom(-10));
@@ -288,6 +354,7 @@ export function Game(props: {
       if (client.panel === 'menu' && client.menuPage !== 'main') client.setMenuPage('main');
       else if (client.panel) client.openPanel(null);
       else if (client.quickOpen) client.toggleQuick();
+      else if (client.build) client.toggleBuild(false);
       else client.openPanel('menu');
     });
   }, [client, input]);
@@ -331,6 +398,11 @@ export function Game(props: {
     rot !== 0 ? 'turned' : '',
     settings.leftHanded ? 'lefty' : '',
     `hud-${settings.hud}`,
+    pc ? 'pc' : '',
+    statsLow ? 'stats-low' : 'stats-top',
+    `map-${settings.mapSize}`,
+    settings.hudOn ? '' : 'hud-off',
+    client.build ? 'building' : '',
   ]
     .filter(Boolean)
     .join(' ');

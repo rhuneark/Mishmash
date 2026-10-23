@@ -15,6 +15,8 @@ export interface BuildingView {
   flame?: THREE.Object3D;
   /** Door leaf (rotates open). */
   door?: THREE.Object3D;
+  /** A gate's second leaf (rotates open the other way). */
+  door2?: THREE.Object3D;
   /** Rain collector water surface. */
   water?: THREE.Object3D;
 }
@@ -141,6 +143,110 @@ export function buildingModel(kind: string): BuildingView {
             cyl(0.06, 0.08, 1.4, 5, WOOD2, { x: -0.6 + k * 0.4, y: 0.6, z: -0.15, rx: -0.6 }),
             cone(0.08, 0.3, 4, 0xd8c8a0, { x: -0.6 + k * 0.4, y: 1.15, z: -0.55, rx: -0.6 }),
           ]).flat(),
+        ]),
+      );
+      break;
+    case 'wall_half':
+      group.add(
+        mesh([
+          ...Array.from({ length: 3 }, (_, k) =>
+            box(0.32, 2.2 + (k % 2) * 0.15, 0.3, k % 2 ? WOOD : WOOD2, {
+              x: -0.34 + k * 0.34,
+              y: 1.1 + (k % 2) * 0.07,
+            }),
+          ),
+          box(1.0, 0.14, 0.12, 0x5b3a22, { y: 0.6, z: 0.18 }),
+          box(1.0, 0.14, 0.12, 0x5b3a22, { y: 1.7, z: 0.18 }),
+        ]),
+      );
+      break;
+    case 'wall_window':
+      group.add(
+        mesh([
+          // Planks below and above, posts at the sides, a cross in the window.
+          ...Array.from({ length: 5 }, (_, k) =>
+            box(0.38, 0.95, 0.3, k % 2 ? WOOD : WOOD2, { x: -0.8 + k * 0.4, y: 0.48 }),
+          ),
+          ...Array.from({ length: 5 }, (_, k) =>
+            box(0.38, 0.5, 0.3, k % 2 ? WOOD2 : WOOD, { x: -0.8 + k * 0.4, y: 2.05 }),
+          ),
+          box(0.36, 0.85, 0.3, WOOD2, { x: -0.82, y: 1.38 }),
+          box(0.36, 0.85, 0.3, WOOD2, { x: 0.82, y: 1.38 }),
+          box(1.3, 0.1, 0.34, 0x5b3a22, { y: 0.98 }),
+          box(1.3, 0.1, 0.34, 0x5b3a22, { y: 1.78 }),
+          box(0.07, 0.8, 0.08, 0x4a2f1a, { y: 1.38 }),
+          box(1.28, 0.07, 0.08, 0x4a2f1a, { y: 1.38 }),
+        ]),
+      );
+      break;
+    case 'post_wood':
+      group.add(
+        mesh([
+          box(0.44, 2.5, 0.44, WOOD2, { y: 1.25 }),
+          cone(0.3, 0.28, 4, WOOD, { y: 2.64, ry: Math.PI / 4 }),
+          box(0.5, 0.12, 0.5, 0x5b3a22, { y: 0.6 }),
+          box(0.5, 0.12, 0.5, 0x5b3a22, { y: 1.7 }),
+        ]),
+      );
+      break;
+    case 'gate_wood': {
+      group.add(
+        mesh([
+          box(0.24, 2.7, 0.4, 0x5b3a22, { x: -1.88, y: 1.35 }),
+          box(0.24, 2.7, 0.4, 0x5b3a22, { x: 1.88, y: 1.35 }),
+          box(4.0, 0.2, 0.4, 0x5b3a22, { y: 2.6 }),
+        ]),
+      );
+      const leaf = (side: -1 | 1) => {
+        const g = new THREE.Group();
+        g.position.set(side * 1.76, 0, 0);
+        g.add(
+          mesh([
+            ...Array.from({ length: 4 }, (_, k) =>
+              box(0.42, 2.25, 0.12, k % 2 ? WOOD : WOOD2, {
+                x: -side * (0.23 + k * 0.44),
+                y: 1.15,
+              }),
+            ),
+            box(1.7, 0.14, 0.06, 0x5b3a22, { x: -side * 0.88, y: 0.55, z: 0.08 }),
+            box(1.7, 0.14, 0.06, 0x5b3a22, { x: -side * 0.88, y: 1.75, z: 0.08 }),
+            box(0.1, 1.5, 0.06, 0x5b3a22, {
+              x: -side * 0.88,
+              y: 1.15,
+              z: 0.08,
+              rz: side * 0.62,
+            }),
+          ]),
+        );
+        return g;
+      };
+      const left = leaf(-1);
+      const right = leaf(1);
+      group.add(left, right);
+      view.door = left;
+      view.door2 = right;
+      break;
+    }
+    case 'wall_stone_half':
+      group.add(
+        mesh(
+          Array.from({ length: 6 }, (_, k) => {
+            const row = Math.floor(k / 2);
+            return box(0.5, 0.6, 0.45, k % 3 === 0 ? 0x8f9196 : k % 3 === 1 ? 0x7f8186 : 0x9a9ca1, {
+              x: -0.25 + (k % 2) * 0.5 + (row % 2) * 0.05,
+              y: 0.3 + row * 0.62,
+            });
+          }),
+        ),
+      );
+      break;
+    case 'pillar_stone':
+      group.add(
+        mesh([
+          box(0.6, 0.35, 0.6, 0x7f8186, { y: 0.18 }),
+          box(0.5, 1.9, 0.5, 0x8f9196, { y: 1.3 }),
+          box(0.62, 0.3, 0.62, 0x7f8186, { y: 2.38 }),
+          dodeca(0.16, 0x9a9ca1, { y: 2.62 }),
         ]),
       );
       break;

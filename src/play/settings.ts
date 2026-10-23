@@ -8,6 +8,11 @@ export type Orientation = 'portrait' | 'landscape';
 export type HudSize = 'small' | 'normal' | 'large';
 /** Isometric (diagonal and low, like Project Zomboid) or top-down (north up, steep). */
 export type CameraView = 'iso' | 'top';
+/** Where health, food and water sit ('auto': bottom left on PC and sideways, else top left). */
+export type StatsAt = 'auto' | 'top' | 'bottom';
+export type MapSize = 'small' | 'normal' | 'large';
+/** The quest list under the minimap: every step, only the next one, or hidden. */
+export type QuestMode = 'full' | 'current' | 'off';
 
 export interface Settings {
   /** Switch to the right tool for trees, rocks and vines. */
@@ -38,6 +43,26 @@ export interface Settings {
   /** Grass, birds, butterflies and fireflies. */
   life: boolean;
   fps: boolean;
+  /** HUD: everything over the island (the controls and ☰ always stay). */
+  hudOn: boolean;
+  stats: boolean;
+  statsAt: StatsAt;
+  clock: boolean;
+  minimap: boolean;
+  mapSize: MapSize;
+  /** The minimap turns with the camera (off: north up). */
+  mapTurn: boolean;
+  quests: QuestMode;
+  /** Size of the bars, clock, quests and minimap, 80–140 (%). */
+  hudScale: number;
+  /** How solid the HUD's panels are, 40–100 (%). */
+  hudOpacity: number;
+  /** Key hints on buttons (PC). */
+  keyHints: boolean;
+  /** Build mode: snap to the grid, its cell size (m) and showing it. */
+  buildSnap: boolean;
+  buildGrid: number;
+  buildGridShow: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -60,12 +85,31 @@ export const DEFAULT_SETTINGS: Settings = {
   quality: 'auto',
   life: true,
   fps: false,
+  hudOn: true,
+  stats: true,
+  statsAt: 'auto',
+  clock: true,
+  minimap: true,
+  mapSize: 'normal',
+  mapTurn: true,
+  quests: 'full',
+  hudScale: 100,
+  hudOpacity: 100,
+  keyHints: true,
+  buildSnap: true,
+  buildGrid: 2,
+  buildGridShow: true,
 };
+
+export const BUILD_GRIDS = [1, 2];
 
 const QUALITIES: Quality[] = ['auto', 'low', 'medium', 'high'];
 const ORIENTATIONS: Orientation[] = ['portrait', 'landscape'];
 const HUD_SIZES: HudSize[] = ['small', 'normal', 'large'];
 const VIEWS: CameraView[] = ['iso', 'top'];
+const STATS_AT: StatsAt[] = ['auto', 'top', 'bottom'];
+const MAP_SIZES: MapSize[] = ['small', 'normal', 'large'];
+const QUEST_MODES: QuestMode[] = ['full', 'current', 'off'];
 
 function num(v: unknown, def: number, min: number, max: number): number {
   return typeof v === 'number' && Number.isFinite(v)
@@ -106,6 +150,22 @@ export function parseSettings(raw: unknown): Settings {
     quality: pick(o['quality'], QUALITIES, d.quality),
     life: bool(o['life'], d.life),
     fps: bool(o['fps'], d.fps),
+    hudOn: bool(o['hudOn'], d.hudOn),
+    stats: bool(o['stats'], d.stats),
+    statsAt: pick(o['statsAt'], STATS_AT, d.statsAt),
+    clock: bool(o['clock'], d.clock),
+    minimap: bool(o['minimap'], d.minimap),
+    mapSize: pick(o['mapSize'], MAP_SIZES, d.mapSize),
+    mapTurn: bool(o['mapTurn'], d.mapTurn),
+    quests: pick(o['quests'], QUEST_MODES, d.quests),
+    hudScale: num(o['hudScale'], d.hudScale, 80, 140),
+    hudOpacity: num(o['hudOpacity'], d.hudOpacity, 40, 100),
+    keyHints: bool(o['keyHints'], d.keyHints),
+    buildSnap: bool(o['buildSnap'], d.buildSnap),
+    buildGrid: BUILD_GRIDS.includes(o['buildGrid'] as number)
+      ? (o['buildGrid'] as number)
+      : d.buildGrid,
+    buildGridShow: bool(o['buildGridShow'], d.buildGridShow),
   };
 }
 

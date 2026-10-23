@@ -8,6 +8,7 @@ export type Amount = 'none' | 'few' | 'normal' | 'many' | 'swarm';
 export type Markers = 'all' | 'landmarks' | 'none';
 export type Often = 'off' | 'rare' | 'normal' | 'often';
 export type Hunger = 'off' | 'slow' | 'normal' | 'fast';
+export type SpawnRate = 'slow' | 'normal' | 'fast' | 'frantic';
 
 export interface WorldRules {
   /** Damage the Bloom does to you, % (difficulty). */
@@ -24,6 +25,8 @@ export interface WorldRules {
   bloomEvery: number;
   /** How many roam the island ('none': only the rooted ones and the Mother). */
   monsters: Amount;
+  /** How fast new ones rise while there are fewer than that (the zombie spawn rate). */
+  spawnRate: SpawnRate;
   /** Damage the Bloom does to walls and buildings, %. */
   bloomBlockDamage: number;
   /** Your damage to trees, rocks and the like, %. */
@@ -49,6 +52,7 @@ export const DEFAULT_RULES: WorldRules = {
   nightSpeed: 'run',
   bloomEvery: 7,
   monsters: 'normal',
+  spawnRate: 'normal',
   bloomBlockDamage: 100,
   blockDamage: 100,
   yield: 100,
@@ -64,6 +68,7 @@ export const AMOUNTS: Amount[] = ['none', 'few', 'normal', 'many', 'swarm'];
 export const MARKERS: Markers[] = ['all', 'landmarks', 'none'];
 export const OFTEN: Often[] = ['off', 'rare', 'normal', 'often'];
 export const HUNGERS: Hunger[] = ['off', 'slow', 'normal', 'fast'];
+export const SPAWN_RATES: SpawnRate[] = ['slow', 'normal', 'fast', 'frantic'];
 export const DIFFICULTIES = [50, 100, 150, 200];
 export const BLOOM_EVERY_CHOICES = [3, 5, 7, 10, 14, 0];
 export const BLOCK_DAMAGES = [0, 25, 50, 100, 200, 300];
@@ -88,6 +93,7 @@ export function parseRules(raw: unknown): WorldRules {
     nightSpeed: pick(o['nightSpeed'], SPEEDS, d.nightSpeed),
     bloomEvery: pick(o['bloomEvery'], BLOOM_EVERY_CHOICES, d.bloomEvery),
     monsters: pick(o['monsters'], AMOUNTS, d.monsters),
+    spawnRate: pick(o['spawnRate'], SPAWN_RATES, d.spawnRate),
     bloomBlockDamage: pick(o['bloomBlockDamage'], BLOCK_DAMAGES, d.bloomBlockDamage),
     blockDamage: pick(o['blockDamage'], PLAYER_DAMAGES, d.blockDamage),
     yield: pick(o['yield'], YIELDS, d.yield),
@@ -128,6 +134,7 @@ export const PRESETS: Preset[] = [
       nightSpeed: 'jog',
       bloomEvery: 14,
       monsters: 'few',
+      spawnRate: 'slow',
       bloomBlockDamage: 25,
       yield: 200,
       craftFromChests: true,
@@ -153,6 +160,7 @@ export const PRESETS: Preset[] = [
       nightSpeed: 'sprint',
       bloomEvery: 3,
       monsters: 'swarm',
+      spawnRate: 'fast',
       bloomBlockDamage: 300,
       yield: 50,
       events: 'often',
@@ -192,6 +200,16 @@ export function monsterScale(a: Amount): number {
 
 export function hungerScale(h: Hunger): number {
   return { off: 0, slow: 0.5, normal: 1, fast: 1.6 }[h];
+}
+
+/** New monsters a second while too few are around (the director runs once a second). */
+export function spawnsPerSecond(r: SpawnRate): number {
+  return { slow: 0.25, normal: 1, fast: 2, frantic: 3 }[r];
+}
+
+/** Rules the island's owner may change after it was made (storage stays as it was made). */
+export function changeRules(current: WorldRules, raw: unknown): WorldRules {
+  return { ...parseRules(raw), sharedChests: current.sharedChests };
 }
 
 /** Seconds between world events × this (0: no events). */

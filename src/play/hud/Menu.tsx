@@ -4,7 +4,7 @@
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { CLIMATE_NAMES, TERRAIN_NAMES, islandName, specCode } from '../../game/islands';
-import { bloomOrdinal } from '../../game/rules';
+import { bloomOrdinal, type WorldRules } from '../../game/rules';
 import { clockLabel } from '../../game/sim/time';
 import type { Sound } from '../audio';
 import type { GameClient } from '../client';
@@ -21,7 +21,7 @@ import {
 } from '../keys';
 import { isTouch, prefs, usePrefs } from '../prefs';
 import type { Settings } from '../settings';
-import { RulesList } from './RulesPanel';
+import { RulesEditor, RulesList } from './RulesPanel';
 
 export function PauseMenu(props: {
   client: GameClient;
@@ -188,7 +188,10 @@ function Friends({ client, onHost }: { client: GameClient; onHost: () => void })
 
 function IslandPage({ client }: { client: GameClient }) {
   const spec = client.island?.spec;
+  const [draft, setDraft] = useState<WorldRules | null>(null);
   if (!spec) return null;
+  // The solo player and a co-op host may change the rules; guests play by them.
+  const owner = client.link.mode !== 'guest';
   const layout = `${['North up', 'Turned ¼', 'Turned ½', 'Turned ¾'][spec.turn]}${spec.mirror ? ', mirrored' : ''}`;
   return (
     <>
@@ -203,11 +206,38 @@ function IslandPage({ client }: { client: GameClient }) {
           Island code <b>{specCode(spec)}</b>
         </div>
         <p className="muted small-text">
-          Type this code on the New island screen to make the same island again. The rules were
-          picked when the island was made; friends who join play by them.
+          Type this code on the New island screen to make the same island again. Friends who join
+          play by this island's rules{owner ? '; you can change them here.' : '.'}
         </p>
       </div>
-      <RulesList rules={client.rules} />
+      {draft ? (
+        <>
+          <RulesEditor rules={draft} set={setDraft} fixed={['sharedChests']} />
+          <div className="row rules-apply">
+            <button
+              className="btn primary"
+              onClick={() => {
+                client.setRules(draft);
+                setDraft(null);
+              }}
+            >
+              Use these rules
+            </button>
+            <button className="btn" onClick={() => setDraft(null)}>
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          {owner && (
+            <button className="btn" onClick={() => setDraft({ ...client.rules })}>
+              ✏️ Change the rules
+            </button>
+          )}
+          <RulesList rules={client.rules} />
+        </>
+      )}
     </>
   );
 }
@@ -263,12 +293,13 @@ export function HowTo({ pc, bloomEvery }: { pc: boolean; bloomEvery: number }) {
 // ---------------------------------------------------------------------------
 // Settings.
 
-type Tab = 'gameplay' | 'audio' | 'screen' | 'graphics' | 'controls';
+type Tab = 'gameplay' | 'audio' | 'screen' | 'hud' | 'graphics' | 'controls';
 
 const TAB_NAMES: Record<Tab, string> = {
   gameplay: '🎮 Gameplay',
   audio: '🔊 Audio',
   screen: '📱 Screen',
+  hud: '🧭 HUD',
   graphics: '✨ Graphics',
   controls: '⌨️ Controls',
 };
@@ -284,6 +315,7 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
     'gameplay',
     'audio',
     'screen',
+    'hud',
     'graphics',
     ...(input ? ['controls' as const] : []),
   ];
@@ -308,7 +340,18 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
         ))}
       </div>
       {tab === 'gameplay' && (
-        <Group onReset={() => prefs.reset(['autoTool', 'autoWeapon', 'autoBack'])}>
+        <Group
+          onReset={() =>
+            prefs.reset([
+              'autoTool',
+              'autoWeapon',
+              'autoBack',
+              'buildSnap',
+              'buildGrid',
+              'buildGridShow',
+            ])
+          }
+        >
           <Toggle
             label="Auto tool"
             desc="Grab the right axe, pickaxe or blade for trees, rocks and vines."
@@ -326,6 +369,26 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
             desc="Go back to what you held (a torch, say) once the job is done."
             on={s.autoBack}
             set={(v) => set({ autoBack: v })}
+          />
+          <Toggle
+            label="Build: snap to the grid"
+            desc="Walls line up along the grid and meet at the corners. Off: put pieces anywhere."
+            on={s.buildSnap}
+            set={(v) => set({ buildSnap: v })}
+          />
+          <Choice
+            label="Build grid"
+            value={String(s.buildGrid) as '1' | '2'}
+            options={[
+              { id: '1', label: '1 m (fine)' },
+              { id: '2', label: '2 m (a wall long)' },
+            ]}
+            set={(v) => set({ buildGrid: Number(v) })}
+          />
+          <Toggle
+            label="Build: show the grid"
+            on={s.buildGridShow}
+            set={(v) => set({ buildGridShow: v })}
           />
         </Group>
       )}
@@ -359,10 +422,8 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
               'view',
               'flip',
               'leftHanded',
-              'hud',
               'camera',
               'shake',
-              'damageNumbers',
               'vibration',
             ])
           }
@@ -405,16 +466,6 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
             ]}
             set={(v) => set({ view: v })}
           />
-          <Choice
-            label="Button size"
-            value={s.hud}
-            options={[
-              { id: 'small', label: 'Small' },
-              { id: 'normal', label: 'Normal' },
-              { id: 'large', label: 'Large' },
-            ]}
-            set={(v) => set({ hud: v })}
-          />
           <Slider
             label="Camera distance"
             value={s.camera}
@@ -428,17 +479,117 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
             on={s.shake}
             set={(v) => set({ shake: v })}
           />
-          <Toggle
-            label="Damage numbers"
-            on={s.damageNumbers}
-            set={(v) => set({ damageNumbers: v })}
-          />
           {touch && (
             <Toggle
               label="Vibration"
               desc="Feel hits, blasts and big finds."
               on={s.vibration}
               set={(v) => set({ vibration: v })}
+            />
+          )}
+        </Group>
+      )}
+      {tab === 'hud' && (
+        <Group
+          onReset={() =>
+            prefs.reset([
+              'hudOn',
+              'stats',
+              'statsAt',
+              'clock',
+              'minimap',
+              'mapSize',
+              'mapTurn',
+              'quests',
+              'hudScale',
+              'hudOpacity',
+              'hud',
+              'damageNumbers',
+              'keyHints',
+            ])
+          }
+        >
+          <Toggle
+            label="Show the HUD"
+            desc={`Everything over the island; the controls and ☰ stay.${input ? ' H on a keyboard.' : ''}`}
+            on={s.hudOn}
+            set={(v) => set({ hudOn: v })}
+          />
+          <Toggle label="Health, food and water" on={s.stats} set={(v) => set({ stats: v })} />
+          <Choice
+            label="Where they sit"
+            desc="Auto: bottom left on PC and sideways, top left on an upright phone."
+            value={s.statsAt}
+            options={[
+              { id: 'auto', label: 'Auto' },
+              { id: 'top', label: 'Top left' },
+              { id: 'bottom', label: 'Bottom left' },
+            ]}
+            set={(v) => set({ statsAt: v })}
+          />
+          <Toggle label="Day and time" on={s.clock} set={(v) => set({ clock: v })} />
+          <Toggle label="Minimap" on={s.minimap} set={(v) => set({ minimap: v })} />
+          <Choice
+            label="Minimap size"
+            value={s.mapSize}
+            options={[
+              { id: 'small', label: 'Small' },
+              { id: 'normal', label: 'Normal' },
+              { id: 'large', label: 'Large' },
+            ]}
+            set={(v) => set({ mapSize: v })}
+          />
+          <Toggle
+            label="Minimap turns with the camera"
+            desc="Off: north is always up."
+            on={s.mapTurn}
+            set={(v) => set({ mapTurn: v })}
+          />
+          <Choice
+            label="Quests under the minimap"
+            value={s.quests}
+            options={[
+              { id: 'full', label: 'Every step' },
+              { id: 'current', label: 'Next step' },
+              { id: 'off', label: 'Hidden' },
+            ]}
+            set={(v) => set({ quests: v })}
+          />
+          <Slider
+            label="HUD size"
+            value={s.hudScale}
+            min={80}
+            max={140}
+            set={(v) => set({ hudScale: v })}
+          />
+          <Slider
+            label="HUD opacity"
+            value={s.hudOpacity}
+            min={40}
+            max={100}
+            set={(v) => set({ hudOpacity: v })}
+          />
+          <Choice
+            label="Button size"
+            value={s.hud}
+            options={[
+              { id: 'small', label: 'Small' },
+              { id: 'normal', label: 'Normal' },
+              { id: 'large', label: 'Large' },
+            ]}
+            set={(v) => set({ hud: v })}
+          />
+          <Toggle
+            label="Damage numbers"
+            on={s.damageNumbers}
+            set={(v) => set({ damageNumbers: v })}
+          />
+          {!touch && (
+            <Toggle
+              label="Key hints"
+              desc="Show which key does what on the buttons and the hotbar."
+              on={s.keyHints}
+              set={(v) => set({ keyHints: v })}
             />
           )}
         </Group>
@@ -570,7 +721,7 @@ export function Choice<T extends string>(props: {
 // ---------------------------------------------------------------------------
 // Controls (PC): rebind every action.
 
-const GROUPS: ActionDef['group'][] = ['Move', 'Act', 'Screens', 'Hotbar', 'Camera'];
+const GROUPS: ActionDef['group'][] = ['Move', 'Act', 'Build', 'Screens', 'Hotbar', 'Camera'];
 
 function ControlsTab({ input, touch }: { input: Input; touch: boolean }) {
   const [b, setB] = useState(input.bindings);

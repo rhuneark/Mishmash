@@ -181,12 +181,30 @@ export interface GraphicsLevel {
   /** Fog distance, × the normal one. */
   fog: number;
   particles: number;
+  /** Sun shadow map size in pixels (0 = no shadows). */
+  shadows: number;
 }
 
 const LEVELS: Record<Exclude<Quality, 'auto'>, GraphicsLevel> = {
-  low: { pixelRatio: 1, terrain: 2, nodes: 2, grass: 0, fog: 0.8, particles: 0.5 },
-  medium: { pixelRatio: 1.5, terrain: 3, nodes: 2, grass: 180, fog: 1, particles: 0.8 },
-  high: { pixelRatio: 2, terrain: 3, nodes: 2, grass: 320, fog: 1.1, particles: 1 },
+  low: { pixelRatio: 1, terrain: 2, nodes: 2, grass: 0, fog: 0.8, particles: 0.5, shadows: 0 },
+  medium: {
+    pixelRatio: 1.5,
+    terrain: 3,
+    nodes: 2,
+    grass: 180,
+    fog: 1,
+    particles: 0.8,
+    shadows: 1024,
+  },
+  high: {
+    pixelRatio: 2,
+    terrain: 3,
+    nodes: 2,
+    grass: 320,
+    fog: 1.1,
+    particles: 1,
+    shadows: 2048,
+  },
 };
 
 /** What a quality setting means on this device ('auto': medium on phones, high with a mouse). */

@@ -4,7 +4,7 @@
 import * as run from '../sdk/run';
 import type { UgcFail, UgcRow } from '../sdk/run';
 import { createLocalUgc } from './localUgc';
-import { CHAT_TYPE, cleanMessage, messageFromEntry, type ChatMessage } from '../game/chat';
+import { CHAT_TYPE, messageFromEntry, type ChatMessage } from '../game/chat';
 import { countVotes, voteType, voteTypes, type Counts, type Poll } from '../game/poll';
 import { groupReports, type ReportGroup } from '../game/moderation';
 
@@ -31,45 +31,11 @@ export function myId(): string {
 export type Failure = { ok: false; reason: UgcFail; retryAfterMs?: number };
 
 // ---------------------------------------------------------------------------
-// Chat.
-
-export const CHAT_PAGE = 30;
-
-export interface ChatPage {
-  ok: true;
-  messages: ChatMessage[];
-  /** Cursor for older messages; absent when this page reached the start. */
-  next?: string;
-}
-
-function toMessages(rows: UgcRow[]): ChatMessage[] {
-  return rows.map(messageFromEntry).filter((m): m is ChatMessage => m !== null);
-}
-
-/** The newest page (cursor absent) or an older one. */
-export async function chatPage(cursor?: string): Promise<ChatPage | Failure> {
-  const res = await backend().browse({ types: [CHAT_TYPE], limit: CHAT_PAGE, cursor });
-  if (!res.ok) return res;
-  return { ok: true, messages: toMessages(res.value.rows), next: res.value.next };
-}
-
-export type PostResult =
-  | { ok: true; message: ChatMessage | null }
-  | { ok: false; reason: UgcFail | 'empty' | 'unclean'; retryAfterMs?: number };
-
-/** Posts a message. `message` is null when RUN's filter held it for review. */
-export async function postChat(raw: string): Promise<PostResult> {
-  const text = cleanMessage(raw);
-  if (!text) return { ok: false, reason: 'empty' };
-  if (!(await backend().isClean(text))) return { ok: false, reason: 'unclean' };
-  const res = await backend().create(CHAT_TYPE, { v: 1, text });
-  if (!res.ok) return res;
-  return { ok: true, message: messageFromEntry(res.value) };
-}
+// The game's owner.
 
 let ownerCheck: Promise<boolean> | null = null;
 
-/** True only for the game's owner (the user): they may delete anyone's message. */
+/** True only for the game's owner (the user): they get the Dev area. */
 export function isOwner(): Promise<boolean> {
   if (!ownerCheck) {
     ownerCheck = backend()
@@ -83,20 +49,9 @@ export function isOwner(): Promise<boolean> {
   return ownerCheck;
 }
 
-/** Deletes a message: players only their own, the owner anyone's. */
-export async function deleteChat(m: ChatMessage): Promise<boolean> {
-  const me = myId();
-  if (me && m.authorId === me) return backend().remove(m.id);
-  return (await isOwner()) ? backend().adminRemove(m.id) : false;
-}
-
-export function reportChat(id: string): Promise<boolean> {
-  return backend().report(id);
-}
-
 // ---------------------------------------------------------------------------
 // Dev area (owner only): reported messages. RUN refuses these calls for anyone
-// but the game's owner and editors; the tab only shows for the owner.
+// but the game's owner and editors; the Dev button only shows for the owner.
 
 /** visible: players see it; hidden: auto-hidden (e.g. 3 reports); deleted: removed by
  *  the owner; missing: deleted by its author, or too old to look up. */

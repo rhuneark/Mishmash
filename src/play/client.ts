@@ -2,6 +2,7 @@
 // the local survivor (moved here, reported to the authority) and what the
 // action button would do right now.
 
+import { MAX_SAY, SAY_GAP, cleanMessage } from '../game/chat';
 import { BUILDINGS, CAMPFIRE_FUEL_MAX, STATION_RANGE } from '../game/content/buildings';
 import { ITEMS, type ItemDef, type ToolKind } from '../game/content/items';
 import { MONSTERS, type MonsterKind } from '../game/content/monsters';
@@ -73,6 +74,20 @@ export interface BuildMode {
 const TOAST_SECONDS = 3.6;
 /** Auto tool: seconds after the last swing before switching back. */
 const AUTO_BACK = 1.8;
+
+/** A line of the island's chat (co-op). */
+export interface ChatLine {
+  id: number;
+  from: string;
+  name: string;
+  text: string;
+  /** Client clock when it came in. */
+  at: number;
+  mine: boolean;
+}
+/** Seconds a chat line shows over the game (and over the speaker's head). */
+export const CHAT_SHOW = 10;
+const CHAT_KEEP = 40;
 
 export interface Other {
   id: string;
@@ -243,6 +258,20 @@ export class GameClient {
   won = false;
   hurtFlash = 0;
   private uid = 1;
+
+  // Chat (co-op only).
+  chat: ChatLine[] = [];
+  /** Players whose lines this player hides (for this game). */
+  readonly muted = new Set<string>();
+  chatOpen = false;
+  /** Lines from others that came in while the chat was closed. */
+  unread = 0;
+  /** RUN's word filter on lines that come in (set by Game): the text to show, or null. */
+  chatFilter: (text: string) => Promise<string | null> = async (text) => text;
+  /** RUN's word filter on what this player sends (set by Game). */
+  chatCheck: (text: string) => Promise<boolean> = async () => true;
+  private lastSay = -99;
+  private chatShown = 0;
 
   private readonly welcome = new PartBuffer();
   private pending: S2C[] = [];
@@ -419,6 +448,9 @@ export class GameClient {
       case 'rules':
         this.rules = parseRules(msg.rules);
         break;
+      case 'say':
+        this.onSay(msg.from, msg.name, msg.text);
+        return;
       case 'save':
         return;
     }
@@ -635,6 +667,13 @@ export class GameClient {
 
   update(dt: number, input: MoveInput, useHeld: boolean): void {
     this.clock += dt;
+    if (this.chat.length) {
+      const shown = this.recentChat().length;
+      if (shown !== this.chatShown) {
+        this.chatShown = shown;
+        this.touch();
+      }
+    }
     if (this.toasts.length && (this.toasts[0] as Toast).until < this.clock) {
       this.toasts = this.toasts.filter((t) => t.until >= this.clock);
       this.touch();
@@ -1562,6 +1601,72 @@ export class GameClient {
       if (tab) this.quickTab = tab;
     }
     this.touch();
+  }
+
+  // -------------------------------------------------------------------------
+  // Chat (co-op).
+
+  private onSay(from: string, name: string, raw: string): void {
+    if (this.muted.has(from) || typeof raw !== 'string') return;
+    const mine = from === this.you;
+    void this.chatFilter(cleanMessage(raw, MAX_SAY)).then((text) => {
+      if (!text || this.muted.has(from)) return;
+      const line = {
+        id: this.uid++,
+        from,
+        name: cleanMessage(name, 24) || 'Survivor',
+        text,
+        at: this.clock,
+        mine,
+      };
+      this.chat = [...this.chat.slice(1 - CHAT_KEEP), line];
+      if (!mine && !this.chatOpen) this.unread++;
+      this.touch();
+    });
+  }
+
+  /** Sends a chat line to everyone on the island, or says why it can't. */
+  async say(raw: string): Promise<'ok' | 'empty' | 'slow' | 'unfriendly'> {
+    const text = cleanMessage(raw, MAX_SAY);
+    if (!text) return 'empty';
+    if (this.clock - this.lastSay < SAY_GAP) return 'slow';
+    if (!(await this.chatCheck(text))) return 'unfriendly';
+    this.lastSay = this.clock;
+    this.send({ type: 'say', text });
+    return 'ok';
+  }
+
+  /** Opens or closes the chat (there's none in solo play). */
+  toggleChat(open = !this.chatOpen): void {
+    if (this.link.mode === 'solo' && open) return;
+    this.chatOpen = open;
+    if (open) this.unread = 0;
+    this.touch();
+  }
+
+  /** Hides (or shows again) one player's chat lines. */
+  mute(id: string, on: boolean): void {
+    if (on) {
+      this.muted.add(id);
+      this.chat = this.chat.filter((l) => l.from !== id);
+    } else this.muted.delete(id);
+    this.touch();
+  }
+
+  /** The lines that still show over the game, newest last. */
+  recentChat(): ChatLine[] {
+    const out: ChatLine[] = [];
+    for (let i = this.chat.length - 1; i >= 0 && out.length < 4; i--) {
+      const l = this.chat[i] as ChatLine;
+      if (this.clock - l.at >= CHAT_SHOW) break;
+      out.unshift(l);
+    }
+    return out;
+  }
+
+  /** Seconds since a chat line came in. */
+  chatAge(l: ChatLine): number {
+    return this.clock - l.at;
   }
 
   enterCode(code: string): void {

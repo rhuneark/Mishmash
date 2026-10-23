@@ -22,6 +22,7 @@ export type Action =
   | 'build'
   | 'snap'
   | 'hud'
+  | 'chat'
   | 'slot1'
   | 'slot2'
   | 'slot3'
@@ -63,6 +64,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'journal', label: 'Journal', group: 'Screens', def: ['KeyJ'] },
   { id: 'map', label: 'Map', group: 'Screens', def: ['KeyM'] },
   { id: 'hud', label: 'Hide or show the HUD', group: 'Screens', def: ['KeyH'] },
+  { id: 'chat', label: 'Chat (with friends)', group: 'Screens', def: ['Enter', 'NumpadEnter'] },
   { id: 'slot1', label: 'Hotbar 1', group: 'Hotbar', def: ['Digit1', 'Numpad1'] },
   { id: 'slot2', label: 'Hotbar 2', group: 'Hotbar', def: ['Digit2', 'Numpad2'] },
   { id: 'slot3', label: 'Hotbar 3', group: 'Hotbar', def: ['Digit3', 'Numpad3'] },

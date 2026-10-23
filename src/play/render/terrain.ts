@@ -5,14 +5,18 @@ import { noise2 } from '../../game/noise';
 import { hash01 } from '../../game/rng';
 import { BIOME, CELL, CHUNK, CHUNKS, GRID, HALF, type Island } from '../../game/world';
 import { climateLook } from './climate';
+import { WIND } from './wind';
 
 const PER = CHUNK / CELL;
+/** The sea's grid (m): it moves with you in whole cells, so its waves never jump. */
+const WATER_CELL = 6;
+const DRY = new THREE.Color(0xb8c46a);
 
 const BIOME_COLORS: Record<number, number[]> = {
   [BIOME.ocean]: [0xc9b98a],
   [BIOME.beach]: [0xe6d6a0, 0xe0cf96, 0xebdcaa],
-  [BIOME.meadow]: [0x86c35a, 0x7db852, 0x93c962, 0x8bbf55],
-  [BIOME.jungle]: [0x4f8a3f, 0x47803a, 0x58944a],
+  [BIOME.meadow]: [0x7cc24a, 0x72b443, 0x8cca52, 0x84bd48],
+  [BIOME.jungle]: [0x468a35, 0x3f7f31, 0x529543],
   [BIOME.forest]: [0x51744a, 0x4a6c44, 0x5a7c52],
   [BIOME.highland]: [0x8f8e86, 0x86857d, 0x7a8a5a, 0x9a998f],
   [BIOME.bog]: [0x5d5470, 0x4f5a48, 0x564d66, 0x625a74],
@@ -56,15 +60,33 @@ export class Terrain {
       color: this.sea,
       transparent: true,
       opacity: 0.8,
-      shininess: 70,
-      specular: 0x9fd0ee,
+      shininess: 90,
+      specular: 0xbfe4f6,
+      flatShading: true,
     });
+    // Low swells, faceted so they catch the sun.
+    this.waterMat.onBeforeCompile = (shader) => {
+      shader.uniforms['uWindTime'] = WIND;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uWindTime;')
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+  vec4 seaAt = modelMatrix * vec4(position, 1.0);
+  transformed.y += sin(seaAt.x * 0.33 + uWindTime * 1.2) * 0.07
+    + sin(seaAt.z * 0.27 + seaAt.x * 0.11 - uWindTime * 0.9) * 0.06;`,
+        );
+    };
+    const cells = Math.round(420 / WATER_CELL);
     this.water = new THREE.Mesh(
-      new THREE.PlaneGeometry(420, 420, 1, 1).rotateX(-Math.PI / 2),
+      new THREE.PlaneGeometry(cells * WATER_CELL, cells * WATER_CELL, cells, cells).rotateX(
+        -Math.PI / 2,
+      ),
       this.waterMat,
     );
     this.water.position.y = -0.02;
     this.water.renderOrder = 1;
+    this.water.userData['shade'] = 'receive';
     scene.add(this.water);
     this.poolMat = new THREE.MeshPhongMaterial({
       color: 0x5ab0d8,
@@ -79,6 +101,7 @@ export class Terrain {
       );
       disc.position.set(p.x, p.y, p.z);
       disc.renderOrder = 1;
+      disc.userData['shade'] = 'receive';
       scene.add(disc);
     }
   }
@@ -91,8 +114,8 @@ export class Terrain {
 
   /** Keeps chunks within `radius` of (x, z) built; builds a couple per call. */
   update(x: number, z: number, radius: number): void {
-    this.water.position.x = Math.round(x / 10) * 10;
-    this.water.position.z = Math.round(z / 10) * 10;
+    this.water.position.x = Math.round(x / WATER_CELL) * WATER_CELL;
+    this.water.position.z = Math.round(z / WATER_CELL) * WATER_CELL;
     const cx = Math.floor((x + HALF) / CHUNK);
     const cz = Math.floor((z + HALF) / CHUNK);
     const want = new Set<number>();
@@ -171,6 +194,11 @@ export class Terrain {
           const patch = noise2(gi * 0.09, gj * 0.09, island.seed + 33);
           const r = hash01(gi * 2 + t, gj, island.seed + 9);
           colorFor(this.ground, biome, hAvg, slope, r, patch, tmp);
+          // Sun-dried patches in the meadows.
+          if (biome === BIOME.meadow) {
+            const dry = noise2(gi * 0.03, gj * 0.03, island.seed + 71);
+            if (dry > 0.6) tmp.lerp(DRY, Math.min(0.5, (dry - 0.6) * 1.6));
+          }
           for (const v of tri) {
             pos[o] = v[0];
             pos[o + 1] = v[1];
@@ -188,7 +216,9 @@ export class Terrain {
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
-    return new THREE.Mesh(geo, this.material);
+    const mesh = new THREE.Mesh(geo, this.material);
+    mesh.userData['shade'] = 'receive';
+    return mesh;
   }
 }
 
@@ -214,7 +244,7 @@ function colorFor(
   out.setHex(list[i] as number).lerp(blend.setHex((list[i + 1] ?? list[i]) as number), f - i);
   if (h < 0.6 && biome !== BIOME.bog) out.lerp(ground.wetSand, 0.6);
   if (slope > 0.7) out.lerp(rockColor, Math.min(1, (slope - 0.7) * 1.5));
-  out.multiplyScalar(0.97 + r * 0.06);
+  out.multiplyScalar(0.95 + r * 0.1);
 }
 
 function dist2(c: number, cx: number, cz: number): number {

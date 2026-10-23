@@ -16,6 +16,11 @@ const SHADOW_MAT = new THREE.MeshBasicMaterial({
   depthWrite: false,
 });
 
+/** The round blob under everyone (off when the sun casts real shadows). */
+export function setBlobShadows(on: boolean): void {
+  SHADOW_MAT.visible = on;
+}
+
 function pivot(x: number, y: number, z: number, child?: THREE.Object3D): THREE.Group {
   const g = new THREE.Group();
   g.position.set(x, y, z);

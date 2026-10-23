@@ -542,6 +542,34 @@ export async function joinRoom(code: string): Promise<RoomResult> {
 }
 
 // ---------------------------------------------------------------------------
+// Game chat: RUN's word filter (the one its servers use), run on each phone.
+
+/** True when RUN's filter lets a chat line through (true if the filter isn't there). */
+export function isCleanText(text: string): Promise<boolean> {
+  return call('chat.check', true, async () => {
+    const res = await RundotGameAPI.ugc.checkTextAsync(text);
+    return res?.clean !== false;
+  });
+}
+
+/** A chat line from someone else with flagged words starred out, or null to hide it. */
+export function maskText(text: string): Promise<string | null> {
+  return call('chat.mask', text, async () => {
+    const res = await RundotGameAPI.ugc.checkTextAsync(text);
+    if (!res || res.clean) return text;
+    let out = text;
+    for (const word of res.profaneWords ?? []) {
+      if (!word) continue;
+      const re = new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      out = out.replace(re, (m) => '*'.repeat(Array.from(m).length));
+    }
+    if (out === text) return null;
+    const again = await RundotGameAPI.ugc.checkTextAsync(out);
+    return again?.clean === false ? null : out;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Analytics and lifecycle.
 
 export function track(event: string, payload?: Record<string, string | number | boolean>): void {

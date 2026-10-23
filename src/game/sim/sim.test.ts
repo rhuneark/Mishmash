@@ -14,6 +14,7 @@ import { newSave, parseIslandSave } from './types';
 import type { S2C } from './protocol';
 import { DEFAULT_RULES, type WorldRules } from '../rules';
 import { dayInfo } from './time';
+import { MAX_SAY } from '../chat';
 
 const island: Island = generateIsland(4242);
 
@@ -861,5 +862,26 @@ describe('changing the rules and the spawn rate', () => {
       return [...h.sim.mobs.values()].filter((m) => m.roamer).length;
     };
     expect(roamers('frantic')).toBeGreaterThan(roamers('slow'));
+  });
+});
+
+describe('island chat', () => {
+  it('sends a cleaned line to everyone, not too often', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    h.sim.join('b', 'Bo');
+    const says = (id: string) =>
+      (h.inbox.get(id) ?? []).filter((m): m is Extract<S2C, { type: 'say' }> => m.type === 'say');
+    h.sim.handle('a', { type: 'say', text: '  hello\n  there  ' });
+    expect(says('b')).toEqual([{ type: 'say', from: 'a', name: 'Ann', text: 'hello there' }]);
+    expect(says('a')).toHaveLength(1);
+    // Too soon after the last one, blank, or not text: dropped.
+    h.sim.handle('a', { type: 'say', text: 'again' });
+    h.run(2);
+    h.sim.handle('a', { type: 'say', text: '   ' });
+    h.sim.handle('a', { type: 'say', text: 42 as unknown as string });
+    expect(says('b')).toHaveLength(1);
+    h.sim.handle('a', { type: 'say', text: 'x'.repeat(500) });
+    expect(says('b')[1]?.text).toHaveLength(MAX_SAY);
   });
 });

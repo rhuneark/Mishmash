@@ -8,20 +8,21 @@ import { MONSTERS } from '../game/content/monsters';
 import { NODE } from '../game/content/nodes';
 import { POD_FALL } from '../game/sim/events';
 import { MOB_STATE } from '../game/sim/protocol';
-import { daylight } from '../game/sim/time';
+import { NIGHT_END, NIGHT_START, daylight } from '../game/sim/time';
 import { colorFor } from '../game/sim/types';
 import { BIOME, biomeAt, forNodesNear, heightAt, type Island } from '../game/world';
 import type { Sound, Sfx } from './audio';
-import { RUN, type ClientFx, type GameClient, type MoveInput } from './client';
+import { RUN, type ChatLine, type ClientFx, type GameClient, type MoveInput } from './client';
 import { itemIconUrl } from './hud/itemIcons';
 import { buzz } from './prefs';
-import { Actor } from './render/actors';
+import { Actor, setBlobShadows } from './render/actors';
 import { Ambient } from './render/ambient';
 import { climateLook } from './render/climate';
 import { Fx, FX_COLORS } from './render/fx';
 import { bagModel, crateModel, podModel } from './render/items';
 import { NodeView } from './render/nodes';
 import { nodeTint } from './render/props';
+import { SunShadow, setupRenderer, shadeAll, toneMapped } from './render/light';
 import { WIND } from './render/wind';
 import {
   cameraRig,
@@ -49,6 +50,11 @@ const SKY_BLOOM = new THREE.Color(0x1c0b22);
 const HEMI_NIGHT = new THREE.Color(0x3a4c80);
 const HEMI_BLOOM = new THREE.Color(0x5a3a6a);
 const GROUND_NIGHT = new THREE.Color(0x1a1a2a);
+/** Where the moon shines from (towards it). */
+const MOON_DIR = new THREE.Vector3(-0.45, 1, 0.35).normalize();
+const SUN_DAY = new THREE.Color(0xfff1dc);
+const SUN_DUSK = new THREE.Color(0xff9a52);
+const MOON = new THREE.Color(0x9db4ff);
 const tmpColor = new THREE.Color();
 const tmpV2 = new THREE.Vector2();
 /** The build grid reaches this far (m) around the piece. */
@@ -90,6 +96,9 @@ interface Label {
 }
 
 /** DOM labels over the canvas (names, health bars, damage numbers). */
+/** Seconds a chat line shows over the speaker's head. */
+const BUBBLE_SECONDS = 6;
+
 class Labels {
   private readonly pool: Label[] = [];
   private n = 0;
@@ -212,6 +221,9 @@ export class View {
   /** How close the Bloom is, 0..1 (music, camera). */
   danger = 0;
   private readonly dangerSpots: { x: number; z: number }[] = [];
+  private readonly sunShadow: SunShadow;
+  private readonly sunDir = new THREE.Vector3();
+  private shadeAcc = 0;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -228,6 +240,8 @@ export class View {
       powerPreference: 'high-performance',
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    setupRenderer(this.renderer);
+    this.sunShadow = new SunShadow(this.sun);
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0x9fd3ea);
     this.scene.add(this.hemi, this.sun, this.sun.target);
@@ -339,6 +353,8 @@ export class View {
       this.nodes.markDirty();
     }
     this.fx.density = o.gfx.particles;
+    this.sunShadow.setSize(o.gfx.shadows);
+    setBlobShadows(o.gfx.shadows === 0);
     const pr = Math.min(window.devicePixelRatio || 1, o.gfx.pixelRatio);
     if (this.renderer.getPixelRatio() !== pr) {
       this.renderer.setPixelRatio(pr);
@@ -813,6 +829,12 @@ export class View {
   update(dt: number): void {
     this.t += dt;
     WIND.value = this.t;
+    // New models (monsters, buildings, held items) cast and catch shadows.
+    this.shadeAcc -= dt;
+    if (this.shadeAcc <= 0) {
+      this.shadeAcc = 0.5;
+      shadeAll(this.scene);
+    }
     const c = this.client;
     const island = this.island;
     // Hit-stop: the fighters freeze for a beat when a blow lands.
@@ -1248,18 +1270,33 @@ export class View {
     const warm = Math.max(0, 1 - Math.abs(day - 0.5) * 2.2);
     const sky = tmpColor.copy(bloom ? SKY_BLOOM : SKY_NIGHT).lerp(this.skyDay, day);
     sky.lerp(this.skyDusk, warm * 0.6);
-    (this.scene.background as THREE.Color).copy(sky);
     this.fog.color.copy(sky);
+    toneMapped(sky, this.scene.background as THREE.Color);
     const fog = this.fogMul * this.climateFog;
     this.fog.near = this.fogFrom + (-14 + day * 40) * fog;
     this.fog.far = this.fogFrom + (30 + day * 70) * fog;
     this.hemi.color.copy(bloom ? HEMI_BLOOM : HEMI_NIGHT).lerp(this.hemiDay, day);
     this.hemi.groundColor.copy(GROUND_NIGHT).lerp(this.groundDay, day);
-    this.hemi.intensity = 0.8 + day * 0.9;
-    this.sun.intensity = 0.3 + day * 1.9;
-    this.sun.color.setHex(0xffffff).lerp(tmpColor.setHex(0xffa060), warm * 0.8);
-    this.sun.position.set(c.x + 30, 60, c.z + 20);
-    this.sun.target.position.set(c.x, 0, c.z);
+    this.hemi.intensity = 0.6 + day * 0.75;
+    // The sun crosses from east to west, low and warm at dawn and dusk (long shadows); by
+    // night a pale moon stands high in the south-west.
+    const arc = (info.phase - NIGHT_END + 0.04) / (NIGHT_START - NIGHT_END + 0.08);
+    const a = Math.min(1, Math.max(0, arc)) * Math.PI;
+    const sunDir = tmpVec.set(Math.cos(a) * 0.95, 0.3 + Math.sin(a) * 1.05, 0.5).normalize();
+    this.sunDir.copy(MOON_DIR).lerp(sunDir, day).normalize();
+    this.sun.intensity = 0.4 + day * 2.5;
+    this.sun.color
+      .copy(MOON)
+      .lerp(SUN_DAY, day)
+      .lerp(SUN_DUSK, warm * 0.75);
+    // The shadow box sits a little past what the camera looks at (more ground shows there).
+    const far = 6 * this.camDist;
+    this.sunShadow.follow(
+      this.focus.x - Math.sin(this.rig.yaw) * far,
+      this.focus.y,
+      this.focus.z - Math.cos(this.rig.yaw) * far,
+      this.sunDir,
+    );
     this.terrain.setWaterTint(day, bloom);
     this.sound.setMood(1 - day, bloom, this.danger, c.rescue.phase === 'calling');
     // Fire light: the nearest fires and torches get the four point lights.
@@ -1337,6 +1374,27 @@ export class View {
           );
       }
     const base = this.y(c.x, c.z);
+    // Chat bubbles: each speaker's newest line, for a few seconds.
+    const said = new Map<string, ChatLine>();
+    for (const l of c.recentChat()) said.set(l.from, l);
+    for (const l of said.values()) {
+      const age = c.chatAge(l);
+      if (age > BUBBLE_SECONDS) continue;
+      const o = l.mine ? null : c.others.get(l.from);
+      if (!l.mine && !o?.alive) continue;
+      const x = o ? o.x : c.x;
+      const z = o ? o.z : c.z;
+      const p = project(x, this.y(x, z) + 2.3, z);
+      const text = l.text.length > 64 ? `${l.text.slice(0, 62)}…` : l.text;
+      if (p)
+        this.labels.add(
+          p.x,
+          p.y,
+          text,
+          o ? 'tag-say' : 'tag-say me',
+          Math.min(1, BUBBLE_SECONDS - age),
+        );
+    }
     for (const g of this.popups) {
       const p = project(c.x, base + g.y, c.z);
       if (p)

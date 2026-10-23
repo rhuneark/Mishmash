@@ -32,6 +32,8 @@ export type C2S =
   | { type: 'respawn' }
   /** The island's owner changes the world rules (others are ignored). */
   | { type: 'rules'; rules: unknown }
+  /** A chat line to everyone on the island (co-op). */
+  | { type: 'say'; text: string }
   /** Leaving a co-op island: the host gets a last save first. */
   | { type: 'bye' };
 
@@ -176,6 +178,8 @@ export type S2C =
     }
   | { type: 'rescue'; r: RescueNet }
   | { type: 'rules'; rules: WorldRules }
+  /** Someone's chat line: `from` is their player id. */
+  | { type: 'say'; from: string; name: string; text: string }
   | { type: 'save'; part: number; parts: number; data: string };
 
 /** Splits a long string into message-sized parts. */

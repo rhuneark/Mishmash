@@ -6,32 +6,25 @@ import { usePolling } from './app/usePolling';
 import { Logo } from './ui/Logo';
 import { Intro } from './screens/Intro';
 import { Vote } from './screens/Vote';
-import { Chat } from './screens/Chat';
 import { Dev } from './screens/Dev';
+import { SubPage } from './ui/SubPage';
 import { Play, type PlayChoice } from './screens/Play';
 import { Game } from './play/Game';
 import type { GameClient } from './play/client';
 import { FAIL_TEXT, startHost, startJoin, startSolo } from './play/session';
 
-type Tab = 'play' | 'vote' | 'chat' | 'about' | 'dev';
-
-const TABS: { id: Tab; icon: string; label: string; ownerOnly?: boolean }[] = [
-  { id: 'play', icon: '🏝️', label: 'Play' },
-  { id: 'vote', icon: '🗳️', label: 'Vote' },
-  { id: 'chat', icon: '💬', label: 'Chat' },
-  { id: 'about', icon: '❓', label: 'About' },
-  { id: 'dev', icon: '🛠️', label: 'Dev', ownerOnly: true },
-];
+/** The title screen, or a page opened from it (each has a back button). */
+type Screen = 'play' | 'vote' | 'dev';
 
 const REPORT_CHECK_MS = 5 * 60_000;
 
 export default function App() {
   const [save, setSave] = useState<SaveData | null>(null);
-  const [tab, setTab] = useState<Tab>('play');
+  const [screen, setScreen] = useState<Screen>('play');
   const [game, setGame] = useState<GameClient | null>(null);
   const [starting, setStarting] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
-  // The Dev tab only exists for the game's owner (RUN checks the account).
+  // The Dev area only exists for the game's owner (RUN checks the account).
   const [owner, setOwner] = useState(false);
   const [openReports, setOpenReports] = useState(0);
   // The win screen's "New island" lands on the New island screen.
@@ -60,13 +53,13 @@ export default function App() {
     void run.setItem(SAVE_KEY, JSON.stringify(next));
   };
 
-  const go = (next: Tab) => {
+  const go = (next: Screen) => {
     if (save && !save.introSeen) {
       commit({ ...save, introSeen: true });
       run.track('intro_done', { to: next });
       run.funnel(2, 'intro_done');
     }
-    setTab(next);
+    setScreen(next);
   };
 
   const start = async (choice: PlayChoice) => {
@@ -81,7 +74,7 @@ export default function App() {
     setStarting(false);
     if (!res.ok) {
       setPlayError(FAIL_TEXT[res.reason]);
-      setTab('play');
+      setScreen('play');
       return;
     }
     setGame(res.client);
@@ -105,7 +98,7 @@ export default function App() {
           onNewIsland={() =>
             void leave().then(() => {
               setWantNew(true);
-              setTab('play');
+              setScreen('play');
             })
           }
         />
@@ -137,12 +130,7 @@ export default function App() {
   if (!save.introSeen) {
     return (
       <div className="app">
-        <Intro
-          first
-          onPlay={() => go('play')}
-          onVote={() => go('vote')}
-          onChat={() => go('chat')}
-        />
+        <Intro onPlay={() => go('play')} onVote={() => go('vote')} />
       </div>
     );
   }
@@ -151,49 +139,33 @@ export default function App() {
     <div className="app">
       {owner && <ReportWatch onCount={setOpenReports} />}
       <main className="tab-body">
-        {tab === 'play' && (
+        {screen === 'play' && (
           <Play
             onStart={(c) => void start(c)}
-            onVote={() => setTab('vote')}
+            onVote={() => setScreen('vote')}
+            onDev={owner ? () => setScreen('dev') : undefined}
+            openReports={openReports}
             error={playError}
             newIsland={wantNew}
             onNewIslandShown={clearWantNew}
           />
         )}
-        {tab === 'vote' && <Vote onChat={() => setTab('chat')} />}
-        {tab === 'chat' && <Chat />}
-        {tab === 'about' && (
-          <Intro
-            onPlay={() => setTab('play')}
-            onVote={() => setTab('vote')}
-            onChat={() => setTab('chat')}
-          />
+        {screen === 'vote' && (
+          <SubPage title="🗳️ Vote on updates" onBack={() => setScreen('play')}>
+            <Vote />
+          </SubPage>
         )}
-        {tab === 'dev' && owner && <Dev onOpenCount={setOpenReports} />}
+        {screen === 'dev' && owner && (
+          <SubPage title="🛠️ Dev" onBack={() => setScreen('play')}>
+            <Dev onOpenCount={setOpenReports} />
+          </SubPage>
+        )}
       </main>
-      <nav className="tabbar">
-        {TABS.filter((t) => owner || !t.ownerOnly).map((t) => (
-          <button
-            key={t.id}
-            className={`tab${tab === t.id ? ' active' : ''}`}
-            aria-current={tab === t.id ? 'page' : undefined}
-            onClick={() => setTab(t.id)}
-          >
-            <span className="tab-icon" aria-hidden="true">
-              {t.icon}
-              {t.id === 'dev' && openReports > 0 && (
-                <span className="tab-badge">{openReports > 99 ? '99+' : openReports}</span>
-              )}
-            </span>
-            <span className="tab-label">{t.label}</span>
-          </button>
-        ))}
-      </nav>
     </div>
   );
 }
 
-/** Keeps the Dev tab's open-report count fresh (owner only). */
+/** Keeps the Dev area's open-report count fresh (owner only). */
 function ReportWatch({ onCount }: { onCount: (n: number) => void }) {
   usePolling(async () => {
     const n = await openReportCount();

@@ -107,6 +107,41 @@ export function disc(r: number, seg: number, color: number, p: Place = {}) {
   return paint(new THREE.CircleGeometry(r, seg), color, 0, { rx: -Math.PI / 2, ...p });
 }
 
+/**
+ * A geometry from raw triangles: `pos` has 9 numbers per triangle, `colors` one colour per
+ * triangle. `twoSided` adds the back of every triangle (leaves seen from below, and
+ * their shadows).
+ */
+export function triangles(
+  pos: number[],
+  colors: number[],
+  twoSided = false,
+  jitter = 0.06,
+): THREE.BufferGeometry {
+  const all = twoSided ? pos.slice() : pos;
+  if (twoSided)
+    for (let t = 0; t < pos.length; t += 9)
+      all.push(...pos.slice(t, t + 3), ...pos.slice(t + 6, t + 9), ...pos.slice(t + 3, t + 6));
+  const tris = all.length / 9;
+  const col = new Float32Array(tris * 9);
+  let seed = 2654435761;
+  for (let t = 0; t < tris; t++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const k = 1 + ((seed >>> 8) / 16777216 - 0.5) * jitter;
+    tmpColor.setHex(colors[t % colors.length] as number);
+    for (let v = 0; v < 3; v++) {
+      col[t * 9 + v * 3] = tmpColor.r * k;
+      col[t * 9 + v * 3 + 1] = tmpColor.g * k;
+      col[t * 9 + v * 3 + 2] = tmpColor.b * k;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(all), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 /** Merges painted primitives into one geometry. */
 export function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   let total = 0;

@@ -20,6 +20,7 @@ import { FullMap, MiniMap } from './MapView';
 import { PauseMenu } from './Menu';
 import { BagSheet, JournalSheet, KeypadSheet, NoteSheet, StorageSheet } from './Panels';
 import { QuickWindow } from './QuickPanel';
+import { ChatBox, ChatLog } from './ChatBox';
 import { prefs, usePrefs } from '../prefs';
 import { ITEMS } from '../../game/content/items';
 import type { Quest } from '../../game/objectives';
@@ -61,6 +62,7 @@ export function Hud(props: HudProps) {
   const hint = (a: Action) => (keys ? keyHint(input.bindings, a) : '');
   // Settings › HUD: what shows (the controls and ☰ always do).
   const showInfo = settings.hudOn;
+  const coop = client.link.mode !== 'solo';
   const build = client.build;
   // Quests make room for the bag window and for build mode (you tap the island there).
   const quests = showInfo && settings.quests !== 'off' && !quick && !build ? client.quests() : [];
@@ -114,6 +116,19 @@ export function Hud(props: HudProps) {
                 📖
               </button>
             )}
+            {coop && (
+              <button
+                className="round-btn chat-btn"
+                onClick={() => client.toggleChat()}
+                aria-label={client.unread ? `Chat, ${client.unread} new` : 'Chat'}
+                title={withKey('Chat', hint('chat'))}
+              >
+                💬
+                {client.unread > 0 && (
+                  <span className="chat-badge">{Math.min(client.unread, 9)}</span>
+                )}
+              </button>
+            )}
             <button
               className="round-btn"
               onClick={() => client.openPanel('menu')}
@@ -160,7 +175,9 @@ export function Hud(props: HudProps) {
             {t.text}
           </div>
         ))}
+        {coop && !client.chatOpen && <ChatLog client={client} />}
       </div>
+      {coop && client.chatOpen && !panel && <ChatBox client={client} />}
       {quick && <QuickWindow client={client} pc={pc} />}
       {client.banner && !quick && (
         <div key={client.banner.id} className={`banner ${client.banner.kind}`}>

@@ -1,8 +1,13 @@
-// Town Square chat: messages are UGC entries from other players, so every
-// field is validated before it's shown.
+// Chat text: cleaning what players type (in-game chat), and reading the old Town
+// Square's UGC entries (the Dev area still lists their reports), validated field
+// by field.
 
 export const CHAT_TYPE = 'chat';
 export const MAX_MESSAGE = 200;
+/** Longest line in a game's chat (it also shows over the speaker's head). */
+export const MAX_SAY = 120;
+/** Seconds between one player's chat lines in a game. */
+export const SAY_GAP = 1.2;
 
 export interface ChatMessage {
   id: string;
@@ -12,10 +17,10 @@ export interface ChatMessage {
   at: number;
 }
 
-/** What a player typed, ready to post: one line, trimmed, at most MAX_MESSAGE characters. */
-export function cleanMessage(raw: string): string {
+/** What a player typed, ready to post: one line, trimmed, at most `max` characters. */
+export function cleanMessage(raw: string, max = MAX_MESSAGE): string {
   const oneLine = raw.replace(/\s+/g, ' ').trim();
-  return Array.from(oneLine).slice(0, MAX_MESSAGE).join('').trim();
+  return Array.from(oneLine).slice(0, max).join('').trim();
 }
 
 export interface EntryLike {
@@ -45,34 +50,6 @@ export function messageFromEntry(entry: EntryLike): ChatMessage | null {
     at:
       typeof entry.createdAt === 'number' && Number.isFinite(entry.createdAt) ? entry.createdAt : 0,
   };
-}
-
-function byTime(a: ChatMessage, b: ChatMessage): number {
-  return a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-}
-
-/** Union of two message lists (newer copy wins), oldest first. */
-export function mergeMessages(a: ChatMessage[], b: ChatMessage[]): ChatMessage[] {
-  const map = new Map<string, ChatMessage>();
-  for (const m of a) map.set(m.id, m);
-  for (const m of b) map.set(m.id, m);
-  return [...map.values()].sort(byTime);
-}
-
-/**
- * Applies the newest page from the server. Messages inside that page's time
- * window that the server no longer returns were deleted or hidden, so they go.
- * `complete` means the page holds every message (no older ones exist).
- */
-export function applyLatest(
-  existing: ChatMessage[],
-  latest: ChatMessage[],
-  complete: boolean,
-): ChatMessage[] {
-  const ids = new Set(latest.map((m) => m.id));
-  const from = complete ? -Infinity : Math.min(...latest.map((m) => m.at));
-  const kept = existing.filter((m) => ids.has(m.id) || m.at < from);
-  return mergeMessages(kept, latest);
 }
 
 /** Short age label: "now", "5m", "3h", "2d". */

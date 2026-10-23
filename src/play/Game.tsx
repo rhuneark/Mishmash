@@ -245,6 +245,7 @@ export function Game(props: {
     if (!ready || !map || !canvas.current || !overlay.current) return;
     const view = new View(canvas.current, overlay.current, client, sound);
     viewRef.current = view;
+    if (import.meta.env.DEV) (window as unknown as { __view?: View }).__view = view;
     const s = prefs.get();
     view.configure({
       view: s.view,
@@ -319,6 +320,12 @@ export function Game(props: {
     };
   }, [client, ready, map, input, seed, touch]);
 
+  // Chat lines go through RUN's word filter on every phone (co-op).
+  useEffect(() => {
+    client.chatFilter = run.maskText;
+    client.chatCheck = run.isCleanText;
+  }, [client]);
+
   // What keys and mouse buttons do (keys.ts; rebindable under Menu › Settings › Controls).
   useEffect(() => {
     for (let i = 0; i < 6; i++) input.on(`slot${i + 1}` as Action, () => client.select(i));
@@ -330,6 +337,7 @@ export function Game(props: {
     input.on('build', () => client.toggleBuild());
     input.on('snap', () => prefs.set({ buildSnap: !prefs.get().buildSnap }));
     input.on('hud', () => prefs.set({ hudOn: !prefs.get().hudOn }));
+    input.on('chat', () => !client.panel && client.toggleChat(true));
     input.on('quick', () => {
       if (client.panel === 'bag' || client.panel === 'craft') client.openPanel(null);
       else if (!client.panel) client.toggleQuick();
@@ -353,6 +361,7 @@ export function Game(props: {
     input.onEscape(() => {
       if (client.panel === 'menu' && client.menuPage !== 'main') client.setMenuPage('main');
       else if (client.panel) client.openPanel(null);
+      else if (client.chatOpen) client.toggleChat(false);
       else if (client.quickOpen) client.toggleQuick();
       else if (client.build) client.toggleBuild(false);
       else client.openPanel('menu');

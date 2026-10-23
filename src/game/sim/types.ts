@@ -35,6 +35,8 @@ export interface SimPlayer {
   escaped: boolean;
   /** Torch burn accumulator (seconds). */
   torchAcc: number;
+  /** Sim time of their last chat line. */
+  lastSay: number;
 }
 
 export interface Building {

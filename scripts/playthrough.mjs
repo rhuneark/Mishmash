@@ -186,11 +186,11 @@ async function newIsland(page, tag, code, preset, noSideScroll) {
 /** Solo survival: move, read, gather, craft, build, fight, die, save and continue. */
 async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.goto(URL);
-  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
   await page.getByRole('button', { name: /Start surviving/ }).click();
   await shot('5-new-island');
   const islandName = await newIsland(page, tag, 'TR-C0-4242', 'Survivor', noSideScroll);
   await page.locator('.hud').waitFor({ timeout: 60000 });
+  check((await page.locator('.chat-btn').count()) === 0, `${tag} solo: a chat button`);
   // World events come on their own; the playthrough sends one when it wants it.
   await game(page, () => {
     window.__game.client.link.sim.nextEvent = Infinity;
@@ -952,6 +952,30 @@ async function playCoop() {
     'co-op: the friend never saw the host',
   );
   await friend.page.screenshot({ path: `${SHOTS}/coop-friend.png` });
+  // Island chat: the friend's line shows for the host (the log, a bubble, a badge).
+  await friend.page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await friend.page.getByLabel('Chat message').fill('  hi from   the friend ');
+  await friend.page.getByRole('button', { name: 'Send' }).click();
+  await host.page.locator('.chat-log', { hasText: 'hi from the friend' }).waitFor();
+  await host.page.locator('.tag-say', { hasText: 'hi from the friend' }).waitFor();
+  await host.page.getByRole('button', { name: 'Chat, 1 new' }).waitFor();
+  await host.page.screenshot({ path: `${SHOTS}/coop-chat.png` });
+  // The host mutes the friend; the friend opens the chat with Enter: their next line
+  // shows for them, not for the host.
+  await host.page.getByRole('button', { name: 'Chat, 1 new' }).click();
+  await host.page.getByRole('button', { name: /👥/ }).click();
+  await host.page.getByRole('button', { name: /Mute/ }).click();
+  await host.page.getByRole('button', { name: 'Close chat' }).click();
+  await friend.page.waitForTimeout(1500);
+  await friend.page.keyboard.press('Enter');
+  await friend.page.getByLabel('Chat message').fill('a muted line');
+  await friend.page.keyboard.press('Enter');
+  await friend.page.locator('.chat-log', { hasText: 'a muted line' }).waitFor();
+  await host.page.waitForTimeout(1500);
+  check(
+    (await host.page.getByText('a muted line').count()) === 0,
+    "co-op: a muted player's line showed",
+  );
   for (const who of [host, friend]) {
     const [code, rules] = await game(who.page, () => {
       const c = window.__game.client;
@@ -1000,10 +1024,11 @@ for (const [width, height] of VIEWPORTS) {
   await page.getByText('A game the players build.').waitFor();
   await noSideScroll('intro');
   await shot('1-intro');
-  const chatButton = page.getByRole('button', { name: 'Say hi in chat' });
-  const box = await chatButton.boundingBox();
+  const voteNext = page.getByRole('button', { name: "Vote on what's next" });
+  const box = await voteNext.boundingBox();
   check(box && box.y + box.height <= height, `${tag} intro: buttons below the fold`);
-  await page.getByRole('button', { name: "Vote on what's next" }).click();
+  check((await page.locator('.tabbar').count()) === 0, `${tag} hub: a tab bar`);
+  await voteNext.click();
 
   // One vote per person: the local stand-in seeds 14 vote entries from 13 voters
   // (one voted twice), so 13 count. Voting adds one; moving it adds none.
@@ -1020,55 +1045,31 @@ for (const [width, height] of VIEWPORTS) {
   check((await page.locator('.option.picked').count()) === 1, `${tag} vote: not exactly one pick`);
   await noSideScroll('vote');
   await shot('2-vote');
-  check(
-    (await page.getByRole('button', { name: 'Dev', exact: true }).count()) === 0,
-    `${tag} a player sees the Dev tab`,
-  );
 
-  // Chat: post, delete, report, and the friendly-words filter.
-  await page.getByRole('button', { name: 'Chat', exact: true }).click();
-  await page.getByText('ARPG with loot please').waitFor();
-  const input = page.getByLabel('Message');
-  await input.fill('  hello   from the playthrough  ');
-  await page.getByRole('button', { name: 'Send' }).click();
-  await page.getByText('hello from the playthrough').waitFor();
-  check((await input.inputValue()) === '', `${tag} chat: draft not cleared`);
-  await noSideScroll('chat');
-  await shot('3-chat');
-  await page.getByText('hello from the playthrough').click();
-  await page.getByRole('button', { name: 'Delete' }).click();
-  await page.getByText('hello from the playthrough').waitFor({ state: 'detached' });
-  // Players can delete only their own messages; others' can only be reported.
-  await page.getByText('ARPG with loot please').click();
-  await page.getByRole('button', { name: 'Report' }).waitFor();
+  // Back on the title: no tab bar, no Town Square, and a player has no Dev area.
+  await page.getByRole('button', { name: '‹ Back' }).click();
+  await page.getByRole('button', { name: /Start surviving/ }).waitFor();
   check(
-    (await page.getByRole('button', { name: 'Delete' }).count()) === 0,
-    `${tag} chat: a player can delete someone else's message`,
+    (await page.getByRole('button', { name: /Dev/ }).count()) === 0,
+    `${tag} a player sees Dev`,
   );
-  await page.getByRole('button', { name: 'Report' }).click();
-  await page.getByText('ARPG with loot please').waitFor({ state: 'detached' });
-  await page.getByText('reported and hidden').waitFor();
-  await input.fill('this is a badword');
-  await page.getByRole('button', { name: 'Send' }).click();
-  await page.getByText("Let's keep it friendly").waitFor();
   check(
-    (await page.getByText('this is a badword').count()) === 0,
-    `${tag} chat: unclean message posted`,
+    (await page.getByRole('button', { name: /chat/i }).count()) === 0,
+    `${tag} hub: the global chat is still there`,
   );
-
-  // About repeats the intro; a reload skips it.
-  await page.getByRole('button', { name: 'About', exact: true }).click();
-  await page.getByText('A game the players build.').waitFor();
-  await noSideScroll('about');
+  // Vote for updates opens the vote again; a reload skips the intro.
+  await page.getByRole('button', { name: /Vote for updates/ }).click();
+  await page.getByText('Round 1 is closed').waitFor();
+  await page.getByRole('button', { name: '‹ Back' }).click();
   await page.waitForTimeout(400); // the mock writes appStorage after ~100 ms
   await page.reload();
-  await page.getByText('Bloom Island').waitFor();
+  await page.getByRole('button', { name: /Start surviving/ }).waitFor();
   check(
     (await page.getByText('A game the players build.').count()) === 0,
     `${tag} intro shown again`,
   );
 
-  // Settings from the Play tab too.
+  // Settings from the title too.
   await page.getByRole('button', { name: /Settings/ }).click();
   const autoTool = page.getByRole('switch', { name: 'Auto tool' });
   await autoTool.click();
@@ -1099,19 +1100,11 @@ for (const [width, height] of VIEWPORTS) {
   await noSideScroll('title');
   await shot('3b-title');
 
-  // The game's owner (?owner plays the owner in the local preview) can delete
-  // anyone's message.
+  // Dev area (owner only; ?owner plays the owner in the local preview), from a title
+  // button that counts open reports. The seeded spam was hidden by 3 reports, Bram's
+  // message has one open report. Delete the spam, keep Bram's, then both are resolved.
   await page.goto(`${URL}?owner`);
-  await page.getByRole('button', { name: 'Chat', exact: true }).click();
-  await page.getByText('first! what is this game going to be?').click();
-  await page.getByRole('button', { name: 'Delete' }).click();
-  await page.getByText('first! what is this game going to be?').waitFor({ state: 'detached' });
-
-  // Dev area (owner only): the seeded spam was hidden by 3 reports, Bram's message
-  // has one open report. Delete the spam, keep Bram's, then both are resolved.
-  const devTab = page.getByRole('button', { name: 'Dev', exact: true });
-  await page.locator('.tab-badge', { hasText: '2' }).waitFor();
-  await devTab.click();
+  await page.getByRole('button', { name: '🛠️ Dev · 2 to check' }).click();
   const spamCard = page.locator('.flag', { hasText: 'FREE GOLD click my profile' });
   const bramCard = page.locator('.flag', { hasText: 'a roguelike where every run' });
   await spamCard.waitFor();
@@ -1129,17 +1122,11 @@ for (const [width, height] of VIEWPORTS) {
   await spamCard.waitFor({ state: 'detached' });
   await bramCard.getByRole('button', { name: 'Keep' }).click();
   await page.getByText('No open reports').waitFor();
-  check((await page.locator('.tab-badge').count()) === 0, `${tag} dev: badge after clearing`);
   await page.getByRole('tab', { name: 'Resolved' }).click();
   await spamCard.getByText('Resolved: deleted').waitFor();
   await bramCard.getByText('Resolved: kept').waitFor();
-  // Kept messages stay in the chat; deleted ones don't.
-  await page.getByRole('button', { name: 'Chat', exact: true }).click();
-  await page.getByText('a roguelike where every run').waitFor();
-  check(
-    (await page.getByText('FREE GOLD click my profile').count()) === 0,
-    `${tag} dev: deleted message still in chat`,
-  );
+  await page.getByRole('button', { name: '‹ Back' }).click();
+  await page.getByRole('button', { name: '🛠️ Dev', exact: true }).waitFor();
 
   await playGame(page, tag, width, height, shot, noSideScroll);
 

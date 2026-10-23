@@ -1,22 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BASE_POLL, countVotes, moveVote, optionForType, tally, voteType, voteTypes } from './poll';
-import {
-  MAX_MESSAGE,
-  applyLatest,
-  cleanMessage,
-  mergeMessages,
-  messageFromEntry,
-  timeAgo,
-  type ChatMessage,
-} from './chat';
-
-const msg = (id: string, at: number): ChatMessage => ({
-  id,
-  at,
-  authorId: 'a',
-  authorName: 'A',
-  text: id,
-});
+import { MAX_MESSAGE, cleanMessage, messageFromEntry, timeAgo } from './chat';
 
 describe('poll', () => {
   it('maps options to unique content types and back', () => {
@@ -109,29 +93,6 @@ describe('chat', () => {
     expect(messageFromEntry({ ...base, data: { text: '   ' } })).toBeNull();
     expect(messageFromEntry({ ...base, id: 3 })).toBeNull();
     expect(messageFromEntry({ ...base, authorName: '' })?.authorName).toBe('Player');
-  });
-
-  it('merges lists oldest first without duplicates', () => {
-    const merged = mergeMessages([msg('b', 2), msg('a', 1)], [msg('c', 3), msg('b', 2)]);
-    expect(merged.map((m) => m.id)).toEqual(['a', 'b', 'c']);
-  });
-
-  it('drops messages the newest page no longer returns, inside its window only', () => {
-    const existing = [msg('old', 1), msg('gone', 5), msg('kept', 6)];
-    const latest = [msg('kept', 6), msg('new', 7), msg('edge', 4)];
-    expect(applyLatest(existing, latest, false).map((m) => m.id)).toEqual([
-      'old',
-      'edge',
-      'kept',
-      'new',
-    ]);
-  });
-
-  it('a complete page replaces everything', () => {
-    expect(applyLatest([msg('a', 1), msg('b', 2)], [msg('b', 2)], true).map((m) => m.id)).toEqual([
-      'b',
-    ]);
-    expect(applyLatest([msg('a', 1)], [], true)).toEqual([]);
   });
 
   it('formats ages', () => {

@@ -8,6 +8,7 @@ import { describeSave, islandFor, loadIsland, playerId, type NewIsland } from '.
 import { TitleScene } from '../play/TitleScene';
 import { Logo } from '../ui/Logo';
 import { NewIslandScreen } from './NewIsland';
+import { STEPS } from './Intro';
 
 export type PlayChoice =
   { kind: 'solo'; fresh: NewIsland | null } | { kind: 'host' } | { kind: 'join'; code: string };
@@ -21,12 +22,17 @@ const isPc = () =>
 export function Play({
   onStart,
   onVote,
+  onDev,
+  openReports = 0,
   error,
   newIsland,
   onNewIslandShown,
 }: {
   onStart: (c: PlayChoice) => void;
   onVote: () => void;
+  /** The owner's Dev area (absent for everyone else). */
+  onDev?: () => void;
+  openReports?: number;
   error: string | null;
   /** Open straight on the New island screen (from the win screen). */
   newIsland: boolean;
@@ -162,17 +168,21 @@ export function Play({
                   ❓ How to play
                 </button>
               </div>
+              <button className="menu-btn" onClick={onVote}>
+                🗳️ Vote for updates
+              </button>
               <button className="menu-btn jam-btn" onClick={voteJam}>
                 🎃 Vote for us in October Jam
               </button>
               {jam !== 'idle' && <JamLink copied={jam === 'copied'} />}
+              {onDev && (
+                <button className="menu-btn" onClick={onDev}>
+                  🛠️ Dev{openReports > 0 ? ` · ${openReports} to check` : ''}
+                </button>
+              )}
             </>
           )}
         </div>
-
-        <button className="btn ghost title-vote" onClick={onVote}>
-          🗳️ Vote on what gets added next
-        </button>
       </div>
 
       {dialog === 'settings' && (
@@ -189,6 +199,14 @@ export function Play({
           <p className="muted small-text">
             Every island can have its own rules: pick them on the New island screen.
           </p>
+          <div className="label">A game the players build</div>
+          <ul className="tips">
+            {STEPS.map((s) => (
+              <li key={s.name}>
+                {s.icon} <b>{s.name}</b>: {s.text}
+              </li>
+            ))}
+          </ul>
         </Dialog>
       )}
     </div>

@@ -7,7 +7,7 @@ import { Notice, type NoticeState } from '../ui/Notice';
 
 const REFRESH_MS = 60_000;
 
-export function Vote({ onChat }: { onChat: () => void }) {
+export function Vote() {
   const poll = CURRENT_POLL;
   const base = BASE_POLL.options.find((o) => o.id === 'survival');
   const [counts, setCounts] = useState<Counts | null>(null);
@@ -73,7 +73,7 @@ export function Vote({ onChat }: { onChat: () => void }) {
         {base && (
           <div className="card round-done">
             <span aria-hidden="true">{base.icon}</span> Round 1 is closed: Bloom Island is a{' '}
-            <b>{base.name.toLowerCase()}</b> game. Play it in the Play tab.
+            <b>{base.name.toLowerCase()}</b> game: play it from the title screen.
           </div>
         )}
 
@@ -116,10 +116,6 @@ export function Vote({ onChat }: { onChat: () => void }) {
         <p className="muted center">
           {counts ? `${total} ${total === 1 ? 'vote' : 'votes'} so far` : 'Loading votes…'}
         </p>
-
-        <button className="btn" onClick={onChat}>
-          Something else in mind? Pitch it in chat
-        </button>
       </div>
     </div>
   );

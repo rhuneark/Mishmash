@@ -137,6 +137,7 @@ const CLIENT_TYPES = new Set([
   'code',
   'respawn',
   'rules',
+  'say',
 ]);
 
 function isClientMessage(m: Msg): m is C2S {

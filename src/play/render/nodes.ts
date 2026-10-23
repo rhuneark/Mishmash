@@ -72,6 +72,7 @@ export class NodeView {
         f.count = 0;
         f.frustumCulled = false;
         f.renderOrder = 2;
+        f.userData['shade'] = 'cast';
         f.setColorAt(0, color.setRGB(1, 1, 1));
         this.fadeMeshes[type] = f;
         scene.add(f);

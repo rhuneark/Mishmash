@@ -598,7 +598,7 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
         <Group onReset={() => prefs.reset(['quality', 'life', 'fps'])}>
           <Choice
             label="Quality"
-            desc="Lower it if the game feels slow or your phone gets warm."
+            desc="Medium and High draw shadows. Lower it if the game feels slow or your phone gets warm."
             value={s.quality}
             options={[
               { id: 'auto', label: 'Auto' },

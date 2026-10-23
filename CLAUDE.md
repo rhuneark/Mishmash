@@ -7,8 +7,9 @@ and the winners get built, one update at a time, so it becomes a mishmash of eve
 Round 1 (the base genre) got no votes, so the user picked the base: **Bloom Island**, a 2.5D
 survival / crafting / horror game (a small 7 Days to Die with an escape-room chain) where your
 plane crashes on a big island and the other passengers turn into walking plants (the Bloom).
-Around it sits the community hub: the Play tab, a Round 2 vote on what to add next, the Town
-Square chat, About, and the owner's Dev area.
+Around it sits a small hub on the title screen: the Round 2 vote on what to add next (🗳️ Vote
+for updates) and the owner's Dev area. Chat lives inside co-op games (no global chat since
+v1.17.0).
 
 Share link (private, unlisted): https://w.run/rhuneark/bloom-island?tag=private&k=5ba4a9c6c90a7da7908d7c7dbb35a5f3
 (since the rename to Bloom Island, v1.15.0; before that the slug was `mishmash`, same key;
@@ -18,19 +19,21 @@ update to the user with this link)
 
 ## The hub
 
-- **Tabs** (`App.tsx`): Play (default), Vote, Chat, About, Dev (owner only). While a game runs
-  the tab bar is gone (`Game` full screen).
-- **Intro** (`screens/Intro.tsx`): full screen on first launch (`save.introSeen`), then the
-  About tab. "A game the players build" → it starts as a survival game → suggest / vote / we
-  build it → "Now voting: what to add next". Buttons (pinned under the text): Play, Vote on
-  what's next, Say hi in chat.
+- **No tab bar** (the user's call, 2026-10-23: "now that it's established"): the title screen
+  (`Play`) is home. Vote and the owner's Dev area open from it as pages with a ‹ Back button
+  (`ui/SubPage.tsx`; `App.tsx` `screen`: play / vote / dev). While a game runs `Game` is full
+  screen.
+- **Intro** (`screens/Intro.tsx`): full screen on first launch only (`save.introSeen`). "A game
+  the players build" → it starts as a survival game → play / vote / we build it (`STEPS`, also
+  in the title's ❓ How to play) → "Now voting: what to add next". Buttons (pinned under the
+  text): Play, Vote on what's next.
 - **Play** (`screens/Play.tsx`): a game title screen. Behind the menu your saved island turns
   slowly around the crash site (`play/TitleScene.ts`: the game's own terrain, nodes, grass and
   landmarks, 30 fps, gives the WebGL context back on unmount; no save: an autumn showcase
   island). Buttons: Continue (island name · Day N) or Start surviving, New island, Play with
   friends (host my island), Join a friend (room code), ⚙️ Settings (the game's settings panel
-  without the key list), ❓ How to play, 🎃 Vote for us in October Jam, and Vote on what gets
-  added next. **New island** (`screens/NewIsland.tsx`): map preview, name and code, 🎲
+  without the key list), ❓ How to play, 🗳️ Vote for updates, 🎃 Vote for us in October Jam,
+  and for the owner only 🛠️ Dev (· N to check: messages with open reports). **New island** (`screens/NewIsland.tsx`): map preview, name and code, 🎲
   Surprise me / Same kind, new island, climate, terrain, layout (quarter turns + mirror), an
   island code box, then the world rules (`hud/RulesPanel.tsx`); starting asks before it
   replaces a save. The win screen's New island lands here too (`App` `wantNew`).
@@ -48,29 +51,29 @@ update to the user with this link)
   options in one browse, 100 a page, up to `VOTE_PAGES` 30 pages, so exact up to 3,000
   entries; revisit past that) and `countVotes` counts only each author's newest one, so a
   second entry (a failed delete, a tampered client) never counts. Refreshed every 60 s while
-  the tab is open. Moving a vote creates the new entry, then deletes the old one; the
+  the page is open. Moving a vote creates the new entry, then deletes the old one; the
   player's own extra entries are deleted when found. The buttons stay disabled until the
   player's current vote is known, so the client never makes a second vote blind.
   **Never rename a live poll or option id**: its votes stay under the old content type. To
   close a poll set `open: false`; a new round is a new `Poll` with a new id (point
-  `CURRENT_POLL` at it). When a round's winner is built, say so on the Vote tab and in About.
+  `CURRENT_POLL` at it). When a round's winner is built, say so on the Vote page and in the
+  intro.
   **Don't build a ballot option before it wins** (weather, boats, farming, pets, ranged
   weapons, new monsters, bigger bases, puzzles & secrets): the vote decides those.
-- **Chat** (`screens/Chat.tsx`, `game/chat.ts`): the Town Square. Messages are UGC entries of
-  type `chat` (`{ v: 1, text }`, one line, ≤200 characters, `cleanMessage`). Newest 30 every
-  15 s while the tab is open (`applyLatest` drops messages the server stopped returning:
-  deleted or hidden); "Load older messages" pages back. Text is pre-checked with RUN's filter
-  (`ugc.checkTextAsync`) and checked again by the server (`moderationFields: data.text`), which
-  may hold a message (it then doesn't show, and the sender is told). Tap a message: **Delete
-  only your own** (`ugc.delete`; RUN's server also refuses anyone else's) or Report others'
-  (hidden for the reporter at once, auto-hidden for everyone after 3 reports). **Only the
-  game's owner (the user) may delete anyone's message** (the user's rule): `isOwner` asks
-  `app.getMyRole()` (RUN checks the signed-in account's email against the game owner's) and
-  the owner's Delete calls `app.adminUgc.removeEntry` (RUN refuses non-owners/editors; editors
-  don't get the button). Removed entries are soft-deleted (`status: 'removed'`). Failures show
-  a `Notice` (sign in, slow down, keep it friendly, limit reached).
-- **Dev area** (`screens/Dev.tsx`, `game/moderation.ts`): a 🛠️ Dev tab that **only the game's
-  owner (the user) sees** (`isOwner` → `app.getMyRole()`, checked by RUN against the account;
+- **Island chat (co-op only)** (`hud/ChatBox.tsx`, `game/chat.ts`; the user's call: chat only
+  in games, the Town Square is gone since v1.17.0). 💬 next to ☰ (with an unread badge) or
+  Enter on PC opens a box at the top: the lines so far, a line to type (≤`MAX_SAY` 120
+  characters, `cleanMessage`) and 👥 the crew with 🔇 Mute (hides their lines for you, this
+  game only). Closed, the newest lines show over the game for `CHAT_SHOW` 10 s (`ChatLog`, tap
+  to open) and over the speaker's head for 6 s (`view.ts` `tag-say` labels). The authority
+  relays them (C2S `say` → S2C `say {from, name, text}`; `IslandSim.onSay` cleans them and
+  drops lines faster than `SAY_GAP` 1.2 s). Nothing is stored. RUN's word filter runs on
+  every phone (`run.isCleanText` before sending: "keep it friendly"; `run.maskText` on lines
+  that come in: flagged words starred out, hidden if they can't be). Solo has no chat. The
+  old Town Square's UGC entries (type `chat`) stay on RUN's servers; the Dev area still lists
+  their reports.
+- **Dev area** (`screens/Dev.tsx`, `game/moderation.ts`): a 🛠️ Dev button on the title that
+  **only the game's owner (the user) sees** (`isOwner` → `app.getMyRole()`, checked by RUN against the account;
   RUN also refuses the admin calls it makes for anyone but the owner and editors). Lists player
   reports grouped per message (`groupReports`: most reported first), with the reported text even
   when the message is hidden (`adminEntries`: `ugc.getMany`, then `app.adminUgc.browse` over the
@@ -78,12 +81,12 @@ update to the user with this link)
   already gone), report count, reasons and notes. Open: **Delete message**
   (`adminUgc.removeEntry`, reports resolved as `reviewed`) or **Keep** (resolved as
   `dismissed`). Resolved: the history. The SDK can't lift an auto-hide (3 reports), so a
-  hidden message shows the CLI command (`rundot ugc approve <id>`). The tab shows a badge with
-  the number of messages with open reports (`ReportWatch` in App.tsx, every 5 min; the list
+  hidden message shows the CLI command (`rundot ugc approve <id>`). The button counts the
+  messages with open reports (`ReportWatch` in App.tsx, every 5 min; the list
   refreshes every 60 s while open).
-- **Community data is UGC** (`rundot/ugc.config.json`: 500 entries per player, chat and votes
-  combined; 2 KB data; 3 reports hide an entry). UGC needs a RUN sign-in to post (the SDK
-  prompts). `src/app/community.ts` holds the chat and vote logic over a `UgcApi`: `run.ugc` in
+- **Community data is UGC** (`rundot/ugc.config.json`: 500 entries per player; 2 KB data; 3
+  reports hide an entry): votes now (and the old chat entries). UGC needs a RUN sign-in to post
+  (the SDK prompts). `src/app/community.ts` holds the vote and Dev area logic over a `UgcApi`: `run.ugc` in
   the RUN host, `src/app/localUgc.ts` in `npm run dev` (the mock SDK can't store UGC). The
   local stand-in is in memory (resets on reload), seeded with sample players (one voted twice),
   and the screens show a "Local preview" tag; add `?owner` to the dev URL to play the owner.
@@ -231,9 +234,23 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   InstancedMesh per node type (`nodes.ts`; trees between the camera and the survivor turn
   see-through), procedural rigs for survivors and the Bloom (`actors.ts`), buildings and
   landmarks (`structures.ts`), particles/rings/damage numbers (`fx.ts`), day/night lighting
-  with fog, 4 pooled point lights for fires and torches. `three` is the host's embedded copy
-  (exact `0.183.2`, no addons). `view.configure` applies the settings (camera distance, shake,
-  damage numbers, quality: `settings.ts` `graphicsFor`).
+  with fog, 4 pooled point lights for fires and torches. **Light** (`render/light.ts`, since
+  v1.17.0, the user asked for much better graphics): ACES filmic tone mapping (`EXPOSURE`;
+  the sky is a clear colour, which isn't tone mapped, so it is set to `toneMapped(sky)` and
+  matches the fog), and a sun that crosses from east to west with the day (low and warm at
+  dawn and dusk, a pale moon at night) casting soft shadows (`SunShadow`: PCF, a box of ±38 m
+  that follows the camera's view, snapped to shadow texels; map size by quality:
+  `GraphicsLevel.shadows` 0 / 1024 / 2048). `shadeAll` (every 0.5 s) makes lit meshes cast and
+  catch shadows unless `userData.shade` says 'cast' / 'receive' / 'none' (terrain, sea, pools
+  and grass only catch them; the see-through tree copies only cast). Actors' blob shadows show
+  only when shadows are off (`setBlobShadows`). The sea swells (vertex waves, faceted, on a 6 m
+  grid that moves in whole cells). Models (`render/props.ts`): coconut palms (a ringed, curved
+  trunk, 10 arching fronds with leaflets built by `frond()` from raw triangles via
+  `geo.triangles`, young fronds, a dead one, coconuts), rainforest trees (buttress roots,
+  layered canopy, hanging vines), five-tier pines, fuller bushes; meadows get sun-dried
+  patches. The title backdrop uses the same light (shadows drawn every 2 s). `three` is the
+  host's embedded copy (exact `0.183.2`, no addons). `view.configure` applies the settings
+  (camera distance, shake, damage numbers, quality: `settings.ts` `graphicsFor`).
 - **Making it feel alive** (all client-side, nothing synced): trees, bushes and vines sway
   (`render/wind.ts` `windy()`: vertex-shader sway, one shared time uniform); grass chunks around
   you that sway and part as you walk (`render/ambient.ts`, deterministic per 32 m chunk, not on
@@ -273,7 +290,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   bottom left), day and time, minimap on/off, size and turning, quests (every step / next
   step / hidden), HUD size 80–140% and opacity (`--hud-scale`, `--hud-alpha`), button size,
   damage numbers, key hints; the controls and ☰ always stay), Graphics
-  (quality auto/low/medium/high, grass and wildlife, FPS), Controls (key list). Settings live
+  (quality auto/low/medium/high: medium and high draw shadows; grass and wildlife, FPS), Controls (key list). Settings live
   in `play/settings.ts` (pure: `parseSettings` repairs saved data) and `play/prefs.ts` (store,
   `usePrefs`, saved in appStorage under `mishmash_settings` 0.4 s after a change, loaded at
   start-up in `main.tsx`).
@@ -325,7 +342,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   (`bind` moves it); saved per player in appStorage under `mishmash_keys` (`parseBindings`
   repairs it). Defaults: WASD/arrows, Shift sprint, Space/E/left click action, F eat, Q drop,
   R turn, V build mode, G snap, Tab bag window, I/B bag, C craft (both the window), J journal,
-  M map, H hide/show the HUD, 1–6 hotbar, wheel cycles the hotbar (turns the piece in build
+  M map, H hide/show the HUD, Enter chat (co-op), 1–6 hotbar, wheel cycles the hotbar (turns the piece in build
   mode), = and - move the camera (saved as the camera setting). Esc is fixed (opens and closes
   the menu, steps back a menu page). Key hints show on devices with a mouse
   (`isPc`: `(pointer: fine)`).
@@ -399,7 +416,7 @@ deploys a private build (v1.1.0 was the placeholder). The one-time steps stay in
 src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inputs + seed.
   save.ts            hub save (SAVE_KEY, SAVE_VERSION; visits, introSeen)
   poll.ts            polls, vote content types, tallies (BASE_POLL closed, NEXT_POLL current)
-  chat.ts            message cleaning, validation of entries, merging pages, ages
+  chat.ts            chat line cleaning (MAX_SAY, SAY_GAP), old Town Square entries (Dev area)
   moderation.ts      reports grouped per message (Dev area)
   rng.ts, noise.ts   seeded hashes and value noise (engine-independent)
   world.ts           island generation and queries (heights, biomes, nodes, colliders, pools)
@@ -420,15 +437,17 @@ src/play/          the game client: session.ts (solo/host/join, saves), link.ts 
                    settings.ts + prefs.ts (settings), screen.ts (landscape), audio.ts +
                    music.ts, view.ts (scene), Game.tsx (canvas, frame loop, settings),
                    TitleScene.ts (the title backdrop), render/ (terrain, nodes, actors,
-                   structures, items, props, fx, geo, wind, ambient, climate), hud/ (Hud, Menu,
-                   Panels, QuickPanel, Craft, Slots, drag, itemIcons, MapView, map, RulesPanel)
-src/app/           community.ts (chat, votes, Dev area over UgcApi), localUgc.ts (dev stand-in),
+                   structures, items, props, fx, geo, wind, ambient, climate, light), hud/ (Hud,
+                   Menu, Panels, QuickPanel, Craft, Slots, drag, itemIcons, MapView, map,
+                   RulesPanel, ChatBox)
+src/app/           community.ts (votes, Dev area over UgcApi), localUgc.ts (dev stand-in),
                    usePolling.ts, appEvents.ts (host lifecycle → game pause/resume), links.ts
                    (the October Jam link, copied)
-src/screens/       Play (title), NewIsland, Intro (also the About tab), Vote, Chat, Dev (owner)
-src/ui/            Logo (the BLOOM / ISLAND wordmark, `.brand`), Notice (failure messages)
+src/screens/       Play (title, home), NewIsland, Intro (first launch), Vote, Dev (owner)
+src/ui/            Logo (the BLOOM / ISLAND wordmark, `.brand`), Notice (failure messages),
+                   SubPage (a page with ‹ Back: Vote, Dev)
 src/components/    ErrorBoundary
-src/App.tsx        hub save, first-launch intro, tab bar, starts/leaves games
+src/App.tsx        hub save, first-launch intro, title / vote / dev pages, starts/leaves games
 src/main.tsx       entry: safe-area/font-scale CSS vars, lifecycle hooks, render
 scripts/playthrough.mjs  Playwright: hub + solo game + co-op at 375×667 and 390×844
 scripts/islandmap.ts     `npx tsx scripts/islandmap.ts <seed> <out.png>`
@@ -478,8 +497,9 @@ npm test                    # vitest, pure rules
 npm run build
 rundot preflight --strict   # must be 0 warnings
 npm run dev                 # then, in another shell:
-npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, vote, chat, owner
-                            # delete, Dev area, jam link), New island (code, presets), the game
+npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, no tab bar or
+                            # global chat, vote, owner Dev area, jam link), New island (code,
+                            # presets), the game
                             # (walk, read, gather, craft, build, night fight, death, item
                             # pictures, quick panel, drag and drop, Mashbench, research page,
                             # auto tool, a supply pod, the bag window's place, isometric and
@@ -487,7 +507,8 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, v
                             # snap, take down), pause menu, This island (change the spawn
                             # rate), HUD settings, settings, rebinding a key, landscape,
                             # save/continue, replace confirm), hub settings and local co-op on
-                            # a made island with Relaxed rules;
+                            # a made island with Relaxed rules (island chat: log, bubble,
+                            # badge, Enter, mute);
                             # must print "clean"
 ```
 
@@ -495,7 +516,7 @@ The store thumbnail is the user's own art (`art/thumbnail-source.png`); don't re
 asking. If the source changes, run `npm run thumbnail` (no dev server needed).
 
 The playthrough only covers the local stand-in; UGC itself only runs in the RUN host, so ask the
-user to try chat and voting on the live build after changes there. Same for co-op: the local
+user to try voting on the live build after changes there. Same for co-op: the local
 room server is close to RUN's, but ask the user to try hosting and joining on the live build.
 Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging performance.
 
@@ -533,8 +554,10 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   tool, landscape, world events and a livelier island) and v1.12.0 (isometric camera, bag
   window by the survivor) and v1.13.0 (islands from parts, world rules, title screen, October
   Jam link) were private builds; all of it went public with v1.15.0. v1.16.0 (build mode and
-  shapes, quests under the minimap, HUD settings, spawn rate, rules changed mid-game) is a
-  private build until the user asks to publish it.
+  shapes, quests under the minimap, HUD settings, spawn rate, rules changed mid-game) and
+  v1.17.0 (no tab bar, the title is home with Vote for updates; no global chat, island chat in
+  co-op; shadows, tone mapping, a moving sun, new palms and trees, sea swells) are private
+  builds until the user asks to publish them.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

@@ -1,25 +1,23 @@
 import { Logo } from '../ui/Logo';
 
+/** The welcome on first launch. */
 interface Props {
-  /** First launch: the full-screen welcome. Otherwise the About tab. */
-  first?: boolean;
   onPlay: () => void;
   onVote: () => void;
-  onChat: () => void;
 }
 
-const STEPS = [
-  { icon: '💡', name: 'Suggest', text: 'Pitch ideas in the Town Square chat.' },
+export const STEPS = [
+  { icon: '🏝️', name: 'Play', text: 'Survive the island, alone or with friends.' },
   { icon: '🗳️', name: 'Vote', text: 'Everyone votes on what gets added next.' },
   { icon: '🔨', name: 'We build it', text: 'The winner lands in the next update.' },
 ];
 
-export function Intro({ first = false, onPlay, onVote, onChat }: Props) {
+export function Intro({ onPlay, onVote }: Props) {
   return (
-    <div className={`intro-screen${first ? ' first' : ''}`}>
+    <div className="intro-screen first">
       <div className="scroll">
         <div className="intro">
-          <Logo size={first ? 'big' : 'small'} />
+          <Logo />
           <div>
             <h2 className="intro-title">A game the players build.</h2>
             <p className="intro-lead">
@@ -56,9 +54,6 @@ export function Intro({ first = false, onPlay, onVote, onChat }: Props) {
         </button>
         <button className="btn" onClick={onVote}>
           Vote on what's next
-        </button>
-        <button className="btn ghost" onClick={onChat}>
-          Say hi in chat
         </button>
       </div>
     </div>

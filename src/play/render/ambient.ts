@@ -132,6 +132,7 @@ function buildGrass(
   geo.computeBoundingSphere();
   const mesh = new THREE.Mesh(geo, mat);
   mesh.matrixAutoUpdate = false;
+  mesh.userData['shade'] = 'receive';
   return mesh;
 }
 

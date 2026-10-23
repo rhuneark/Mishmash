@@ -27,6 +27,7 @@ import {
 } from '../rules';
 import { RECIPES, type Station } from '../content/recipes';
 import { hash01 } from '../rng';
+import { MAX_SAY, SAY_GAP, cleanMessage } from '../chat';
 import { HALF, poolNear, type Island } from '../world';
 import {
   add,
@@ -176,6 +177,7 @@ export class IslandSim {
         crafted: p.crafted,
         escaped: p.escaped,
         torchAcc: 0,
+        lastSay: -99,
       });
     }
     for (const f of save.flags) this.flags.add(f);
@@ -296,6 +298,7 @@ export class IslandSim {
         crafted: 0,
         escaped: false,
         torchAcc: 0,
+        lastSay: -99,
       };
       this.players.set(id, p);
     } else if (name) {
@@ -445,9 +448,20 @@ export class IslandSim {
         return;
       case 'respawn':
         return this.onRespawn(p);
+      case 'say':
+        return this.onSay(p, msg.text);
       default:
         return;
     }
+  }
+
+  /** A chat line for everyone on the island: one line, short, not too often. */
+  private onSay(p: SimPlayer, raw: unknown): void {
+    if (typeof raw !== 'string' || this.time - p.lastSay < SAY_GAP) return;
+    const text = cleanMessage(raw, MAX_SAY);
+    if (!text) return;
+    p.lastSay = this.time;
+    this.broadcast({ type: 'say', from: p.id, name: p.name, text });
   }
 
   private onPos(p: SimPlayer, x: number, z: number, ry: number, mv: number): void {

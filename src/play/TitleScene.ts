@@ -7,6 +7,7 @@ import { heightAt, type Island } from '../game/world';
 import { isTouch, prefs } from './prefs';
 import { Ambient } from './render/ambient';
 import { climateLook } from './render/climate';
+import { SunShadow, setupRenderer, shadeAll, toneMapped } from './render/light';
 import { NodeView } from './render/nodes';
 import { buildPois } from './render/structures';
 import { Terrain } from './render/terrain';
@@ -24,6 +25,8 @@ export class TitleScene {
   private readonly nodes: NodeView;
   private readonly ambient: Ambient;
   private readonly focus: THREE.Vector3;
+  private readonly sun: SunShadow;
+  private shadowAcc = 0;
   private raf = 0;
   private last = 0;
   private acc = 0;
@@ -37,27 +40,33 @@ export class TitleScene {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     const gfx = graphicsFor(prefs.get().quality, isTouch());
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, gfx.pixelRatio, 1.5));
+    setupRenderer(this.renderer);
+    // The sun stands still here: its shadows are drawn now and then, not every frame.
+    this.renderer.shadowMap.autoUpdate = false;
     const look = climateLook(island.spec.climate);
     // Late afternoon: the day colours, warmed toward dusk.
     const sky = new THREE.Color(look.skyDay ?? 0x9fd3ea).lerp(
       new THREE.Color(look.skyDusk ?? 0xe39a6a),
       0.45,
     );
-    this.scene.background = sky;
+    this.scene.background = toneMapped(sky, new THREE.Color());
     this.scene.fog = new THREE.Fog(sky, 30, 80 + 40 * (look.fog ?? 1));
     const hemi = new THREE.HemisphereLight(
       look.hemiDay ?? 0xd8eeff,
       look.groundDay ?? 0x6a7a4a,
-      1.4,
+      1.0,
     );
-    const sun = new THREE.DirectionalLight(0xffd0a0, 1.7);
-    sun.position.set(-40, 50, 30);
-    this.scene.add(hemi, sun);
+    const sun = new THREE.DirectionalLight(0xffc890, 2.6);
+    this.scene.add(hemi, sun, sun.target);
+    this.sun = new SunShadow(sun, 48);
+    this.sun.setSize(Math.min(gfx.shadows, 1024));
 
     const crash = island.poiById['crash'];
     const fx = crash?.x ?? island.spawn.x;
     const fz = crash?.z ?? island.spawn.z;
     this.focus = new THREE.Vector3(fx, heightAt(island, fx, fz) + 1.5, fz);
+    // Low western sun: long shadows across the crash site.
+    this.sun.follow(fx, this.focus.y, fz, new THREE.Vector3(-0.8, 0.75, 0.45));
     // Start on the side facing the island's middle (the sea behind the wreck).
     this.angle = Math.atan2(-fx, -fz) + Math.PI * 0.85;
 
@@ -71,6 +80,7 @@ export class TitleScene {
     for (const p of buildPois(island.pois, island.spec, (x, z) => heightAt(island, x, z))) {
       if (Math.hypot(p.poi.x - fx, p.poi.z - fz) < 150) this.scene.add(p.group);
     }
+    shadeAll(this.scene);
   }
 
   start(): void {
@@ -112,6 +122,11 @@ export class TitleScene {
     // Trees between the camera and the wreck turn see-through, as in the game.
     this.nodes.update(f.x, f.z, 2, dt, { x: Math.sin(this.angle), z: Math.cos(this.angle) });
     this.ambient.update(dt, this.t, f.x, f.z, 1, false, []);
+    this.shadowAcc -= dt;
+    if (this.shadowAcc <= 0) {
+      this.shadowAcc = 2;
+      this.renderer.shadowMap.needsUpdate = true;
+    }
     this.renderer.render(this.scene, this.camera);
   }
 

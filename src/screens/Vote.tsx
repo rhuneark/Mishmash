@@ -72,7 +72,7 @@ export function Vote({ onChat }: { onChat: () => void }) {
 
         {base && (
           <div className="card round-done">
-            <span aria-hidden="true">{base.icon}</span> Round 1 is closed: Mishmash is a{' '}
+            <span aria-hidden="true">{base.icon}</span> Round 1 is closed: Bloom Island is a{' '}
             <b>{base.name.toLowerCase()}</b> game. Play it in the Play tab.
           </div>
         )}

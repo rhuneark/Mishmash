@@ -150,7 +150,7 @@ export function Chat() {
     <div className="chat">
       <header className="chat-head">
         <h2 className="page-title">Town Square</h2>
-        <p className="muted">Talk about what Mishmash should become.</p>
+        <p className="muted">Talk about what Bloom Island should become.</p>
         {isLocalPreview() && (
           <div className="preview-tag">Local preview: chat stays in this tab</div>
         )}
@@ -167,7 +167,7 @@ export function Chat() {
           </button>
         ) : (
           <div className="card pinned">
-            📌 Welcome to the Town Square! Say hi, pitch ideas, and tell everyone what Mishmash
+            📌 Welcome to the Town Square! Say hi, pitch ideas, and tell everyone what Bloom Island
             should become.
           </div>
         )}

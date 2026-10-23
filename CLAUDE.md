@@ -1,6 +1,8 @@
-# Mishmash — CLAUDE.md
+# Bloom Island (repo: Mishmash) — CLAUDE.md
 
-A game for RUN.world that **the community designs**: players suggest features, everyone votes,
+**The game is called Bloom Island** (since 2026-10-23: store name, logo, page title; the repo,
+save keys and code still say Mishmash, keep those). A game for RUN.world that **the community
+designs**: players suggest features, everyone votes,
 and the winners get built, one update at a time, so it becomes a mishmash of everyone's ideas.
 Round 1 (the base genre) got no votes, so the user picked the base: **Bloom Island**, a 2.5D
 survival / crafting / horror game (a small 7 Days to Die with an escape-room chain) where your
@@ -391,15 +393,16 @@ src/app/           community.ts (chat, votes, Dev area over UgcApi), localUgc.ts
                    usePolling.ts, appEvents.ts (host lifecycle → game pause/resume), links.ts
                    (the October Jam link, copied)
 src/screens/       Play (title), NewIsland, Intro (also the About tab), Vote, Chat, Dev (owner)
-src/ui/            Logo (letter tiles), Notice (failure messages)
+src/ui/            Logo (the BLOOM / ISLAND wordmark, `.brand`), Notice (failure messages)
 src/components/    ErrorBoundary
 src/App.tsx        hub save, first-launch intro, tab bar, starts/leaves games
 src/main.tsx       entry: safe-area/font-scale CSS vars, lifecycle hooks, render
 scripts/playthrough.mjs  Playwright: hub + solo game + co-op at 375×667 and 390×844
 scripts/islandmap.ts     `npx tsx scripts/islandmap.ts <seed> <out.png>`
 public/thumbnail.jpg     store thumbnail, exported from art/ (exactly 512×512 JPEG, < ~150 KB)
-art/thumbnail-source.png store thumbnail art from the user ("Mishmash · Community Build",
-                         Halloween look; full size, not shipped)
+art/thumbnail-source.png store thumbnail art from the user ("BLOOM ISLAND" over the crashed
+                         plane, a Bloom horde and a survivor at sunset; 1254², not shipped;
+                         replaced the "Mishmash · Community Build" art on 2026-10-23)
 scripts/thumbnail.mjs    `npm run thumbnail`: re-exports public/thumbnail.jpg from the art (PIL)
 rundot/realtime.config.json  room type `island` → src/server/IslandRoom.ts (max 4 players)
 rundot/ugc.config.json   UGC limits and moderation
@@ -466,12 +469,12 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
 - `.github/workflows/deploy.yml`: on every push to `claude/happy-mayer-ufwo5m` or `main`
   (docs-only changes skipped): npm ci → RUN CLI → typecheck, tests, build, preflight →
   `rundot login` with the `RUNDOT_API_KEY` secret → `rundot deploy --orientation Portrait` →
-  `set-keywords` / `set-description` from the `GAME_KEYWORDS` / `GAME_DESCRIPTION` env lines
-  when they're set. The user wants them updated as the game takes shape; since the survival
-  game (2026-10-22) they describe Bloom Island (keywords: survival, crafting, base-building,
-  horror, island, co-op, multiplayer, open-world, exploration, monsters, community-build,
-  voting, halloween, spooky, plus the hub's community, player-made, chat, social; halloween
-  and spooky match the Halloween thumbnail). Despite RUN's docs, `set-keywords` **adds** to
+  `set-name` / `set-keywords` / `set-description` from the `GAME_NAME` / `GAME_KEYWORDS` /
+  `GAME_DESCRIPTION` env lines when they're set. The user wants them updated as the game
+  takes shape. Since 2026-10-23 the name is **Bloom Island** and the tags are survival,
+  crafting, base-building, horror, zombies, island, co-op, multiplayer, open-world,
+  exploration, monsters, sandbox, procedural, plane-crash, escape, low-poly, halloween,
+  spooky, community-build, voting, player-made, chat (community and social retired). Despite RUN's docs, `set-keywords` **adds** to
   the game's tags and fails past 30 (v1.9.0's deploy hit "at most 30 tags"), so the step
   first runs `delete-keyword` on every listed tag and on `GAME_KEYWORDS_RETIRED` (tags to
   drop: put a removed tag there rather than just deleting it from the list). The share link
@@ -482,7 +485,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   version into RUN's review; it goes on Explore once review passes. GitHub only registered this
   workflow after a later push touched it (dispatching it 404'd before).
 - **Going public:** v1.7.0 (the hub, Dev area, thumbnail, tags) was submitted with the Publish
-  workflow on 2026-10-22 at the user's request. Pushes after that still deploy private builds
+  workflow on 2026-10-22 at the user's request, and v1.14.0 (Bloom Island: the survival game
+  with everything up to the islands, rules and title screen, the new name and thumbnail) on
+  2026-10-23, also at the user's request. Pushes after that still deploy private builds
   (the share link opens the newest); Explore only gets a newer version when the Publish
   workflow runs again, and only when the user asks. Server config (UGC limits, textGen off,
   realtime rooms) reaches public players with each publish. The survival game (v1.8.0,
@@ -490,7 +495,7 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   keys, lore, Mashbench) and v1.11.0 (pause menu and settings, volume sliders and music, auto
   tool, landscape, world events and a livelier island) and v1.12.0 (isometric camera, bag
   window by the survivor) and v1.13.0 (islands from parts, world rules, title screen, October
-  Jam link) are private until the user asks to publish them.
+  Jam link) were private builds; all of it went public with v1.14.0.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

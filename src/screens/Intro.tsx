@@ -43,7 +43,7 @@ export function Intro({ first = false, onPlay, onVote, onChat }: Props) {
               </li>
             ))}
           </ol>
-          <p className="intro-lead">Update by update, it becomes a mishmash of everyone's ideas.</p>
+          <p className="intro-lead">Update by update, it becomes a mix of everyone's ideas.</p>
           <div className="card callout">
             <div className="label">Now voting</div>
             <p>What should we add to the island next? Boats? Farming? Pets? Storms? You decide.</p>

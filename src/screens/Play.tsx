@@ -6,6 +6,7 @@ import * as run from '../sdk/run';
 import { HowTo, SettingsPanel } from '../play/hud/Menu';
 import { describeSave, islandFor, loadIsland, playerId, type NewIsland } from '../play/session';
 import { TitleScene } from '../play/TitleScene';
+import { Logo } from '../ui/Logo';
 import { NewIslandScreen } from './NewIsland';
 
 export type PlayChoice =
@@ -76,10 +77,8 @@ export function Play({
       <div className="title-shade" aria-hidden="true" />
       <div className="title-scroll">
         <header className="title-logo">
-          <div className="title-kicker">Mishmash · a game the players build</div>
-          <h1 className="title-name">
-            Bloom <span>Island</span>
-          </h1>
+          <div className="title-kicker">A game the players build</div>
+          <Logo />
           <div className="title-tag">Flight MX207 went down. Something here is growing.</div>
         </header>
 

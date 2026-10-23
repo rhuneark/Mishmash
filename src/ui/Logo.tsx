@@ -1,13 +1,8 @@
-const LETTERS = 'MISHMASH'.split('');
-
+/** The game's name, styled like the store art: BLOOM over a pink ISLAND. */
 export function Logo({ size = 'big' }: { size?: 'big' | 'small' }) {
   return (
-    <h1 className={`wordmark ${size}`} aria-label="Mishmash">
-      {LETTERS.map((letter, i) => (
-        <span key={i} className={`tile tile-${i % 4}`} aria-hidden="true">
-          {letter}
-        </span>
-      ))}
+    <h1 className={`brand ${size}`}>
+      Bloom <span>Island</span>
     </h1>
   );
 }

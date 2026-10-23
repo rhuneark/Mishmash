@@ -1,6 +1,7 @@
 // Inventory: a fixed array of slots; the first HOTBAR slots are the hotbar.
 
 import { ITEMS, type ItemDef, type ToolKind } from '../content/items';
+import { stackLimit } from '../rules';
 import type { Slot } from './protocol';
 
 export const INV_SIZE = 24;
@@ -40,8 +41,9 @@ export function bestSlot(inv: Inv, job: ToolKind | 'weapon'): number {
   return best;
 }
 
-export function stackOf(id: string): number {
-  return ITEMS[id]?.stack ?? 1;
+/** Largest stack of an item (`infinite`: the world rule, no limit but for tools). */
+export function stackOf(id: string, infinite = false): number {
+  return stackLimit(ITEMS[id]?.stack ?? 1, infinite);
 }
 
 export function count(inv: Inv, id: string): number {
@@ -55,8 +57,8 @@ export function hasAll(inv: Inv, needs: Record<string, number>): boolean {
 }
 
 /** Adds items (stacking first); returns how many didn't fit. */
-export function add(inv: Inv, id: string, n: number, d?: number): number {
-  const max = stackOf(id);
+export function add(inv: Inv, id: string, n: number, d?: number, infinite = false): number {
+  const max = stackOf(id, infinite);
   const durable = ITEMS[id]?.durability !== undefined;
   let left = n;
   if (!durable) {
@@ -84,7 +86,7 @@ export function add(inv: Inv, id: string, n: number, d?: number): number {
  * Moves slot `fi` of `from` into `to`: into slot `ti` when it's empty or holds the same
  * stackable item, the rest wherever it fits. Returns how many moved.
  */
-export function transfer(from: Inv, fi: number, to: Inv, ti?: number): number {
+export function transfer(from: Inv, fi: number, to: Inv, ti?: number, infinite = false): number {
   const s = from[fi];
   if (!s) return 0;
   let moved = 0;
@@ -96,7 +98,7 @@ export function transfer(from: Inv, fi: number, to: Inv, ti?: number): number {
       return s.n;
     }
     if (t.id === s.id && t.d === undefined && s.d === undefined) {
-      const k = Math.min(stackOf(s.id) - t.n, s.n);
+      const k = Math.min(stackOf(s.id, infinite) - t.n, s.n);
       if (k > 0) {
         t.n += k;
         s.n -= k;
@@ -108,7 +110,7 @@ export function transfer(from: Inv, fi: number, to: Inv, ti?: number): number {
       }
     }
   }
-  const rest = add(to, s.id, s.n, s.d);
+  const rest = add(to, s.id, s.n, s.d, infinite);
   moved += s.n - rest;
   if (rest > 0) s.n = rest;
   else from[fi] = null;
@@ -142,14 +144,30 @@ export function removeAll(inv: Inv, needs: Record<string, number>): boolean {
   return true;
 }
 
+/** Takes what's needed from several inventories in turn (the bag first); false if short. */
+export function removeFrom(invs: Inv[], needs: Record<string, number>): boolean {
+  for (const [id, n] of Object.entries(needs)) {
+    if (invs.reduce((t, inv) => t + count(inv, id), 0) < n) return false;
+  }
+  for (const [id, n] of Object.entries(needs)) {
+    let left = n;
+    for (const inv of invs) {
+      const k = Math.min(left, count(inv, id));
+      if (k > 0) remove(inv, id, k);
+      left -= k;
+    }
+  }
+  return true;
+}
+
 /** Moves or merges slot `from` onto slot `to` (swap if different items). */
-export function moveSlot(inv: Inv, from: number, to: number): void {
+export function moveSlot(inv: Inv, from: number, to: number, infinite = false): void {
   if (from === to || from < 0 || to < 0 || from >= inv.length || to >= inv.length) return;
   const a = inv[from] ?? null;
   const b = inv[to] ?? null;
   if (!a) return;
   if (b && b.id === a.id && b.d === undefined && a.d === undefined) {
-    const k = Math.min(stackOf(a.id) - b.n, a.n);
+    const k = Math.min(stackOf(a.id, infinite) - b.n, a.n);
     b.n += k;
     a.n -= k;
     if (a.n <= 0) inv[from] = null;
@@ -172,13 +190,13 @@ export function wear(inv: Inv, slot: number, amount = 1): boolean {
 }
 
 /** A valid, cleaned inventory from untrusted data (saves, other players). */
-export function cleanInv(data: unknown): Inv {
-  const inv = emptyInv();
+export function cleanInv(data: unknown, infinite = false, size = INV_SIZE): Inv {
+  const inv = new Array<Slot | null>(size).fill(null);
   if (!Array.isArray(data)) return inv;
-  for (let i = 0; i < Math.min(INV_SIZE, data.length); i++) {
+  for (let i = 0; i < Math.min(size, data.length); i++) {
     const s = data[i] as Partial<Slot> | null;
     if (!s || typeof s.id !== 'string' || !ITEMS[s.id] || typeof s.n !== 'number') continue;
-    const n = Math.max(1, Math.min(stackOf(s.id), Math.floor(s.n)));
+    const n = Math.max(1, Math.min(stackOf(s.id, infinite), Math.floor(s.n)));
     const slot: Slot = { id: s.id, n };
     const max = ITEMS[s.id]?.durability;
     if (max !== undefined) slot.d = typeof s.d === 'number' && s.d > 0 ? Math.min(max, s.d) : max;

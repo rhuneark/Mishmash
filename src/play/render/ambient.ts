@@ -4,7 +4,6 @@
 // day, fireflies at night, and pink spores drifting on Bloom nights.
 
 import * as THREE from 'three';
-import { POIS } from '../../game/content/pois';
 import { hash01 } from '../../game/rng';
 import {
   BIOME,
@@ -17,6 +16,7 @@ import {
   poolNear,
   type Island,
 } from '../../game/world';
+import { climateLook } from './climate';
 import { WIND } from './wind';
 
 interface GrassKind {
@@ -75,6 +75,7 @@ function grassMaterial(player: { value: THREE.Vector3 }): THREE.MeshLambertMater
 /** One 32 m chunk of grass as a single mesh (blades in world coordinates). */
 function buildGrass(
   island: Island,
+  grass: Partial<Record<number, GrassKind>>,
   c: number,
   perChunk: number,
   mat: THREE.Material,
@@ -90,11 +91,11 @@ function buildGrass(
   for (let k = 0; k < perChunk; k++) {
     const x = x0 + hash01(c, k, seed) * CHUNK;
     const z = z0 + hash01(k, c, seed + 1) * CHUNK;
-    const kind = GRASS[biomeAt(island, x, z)];
+    const kind = grass[biomeAt(island, x, z)];
     if (!kind || hash01(k, c, seed + 2) > kind.density) continue;
     const y = heightAt(island, x, z);
     if (y < 0.25 || poolNear(island, x, z, 0.5) || hitCollider(island, x, z, 0.3)) continue;
-    if (POIS.some((p) => Math.hypot(p.x - x, p.z - z) < p.flat * 0.85)) continue;
+    if (island.pois.some((p) => Math.hypot(p.x - x, p.z - z) < p.flat * 0.85)) continue;
     const blades = 3 + Math.floor(hash01(c, k, seed + 3) * 3);
     const color = kind.colors[Math.floor(hash01(k, c, seed + 4) * kind.colors.length)] as number;
     for (let b = 0; b < blades; b++) {
@@ -223,6 +224,8 @@ export class Ambient {
   private flocks: Flock[] = [];
   private bugs: Bug[] = [];
   private lights: Bug[] = [];
+  /** Grass per biome, in the island's climate colours. */
+  private readonly grassKinds: Partial<Record<number, GrassKind>> = {};
   private spawnAcc = 0;
   private overAcc = 20;
 
@@ -230,6 +233,11 @@ export class Ambient {
     this.island = island;
     this.scene = scene;
     this.grassMat = grassMaterial(this.player);
+    const look = climateLook(island.spec.climate).grass;
+    for (const [b, kind] of Object.entries(GRASS)) {
+      const colors = look[Number(b)];
+      this.grassKinds[Number(b)] = colors && kind ? { ...kind, colors } : kind;
+    }
     const lit = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
     this.bodies = new THREE.InstancedMesh(new THREE.BoxGeometry(0.09, 0.08, 0.22), lit, BIRD_CAP);
     this.wingsL = new THREE.InstancedMesh(wingGeo(-1), lit, BIRD_CAP);
@@ -368,7 +376,7 @@ export class Ambient {
       }
     }
     if (best >= 0) {
-      const m = buildGrass(this.island, best, this.perChunk, this.grassMat);
+      const m = buildGrass(this.island, this.grassKinds, best, this.perChunk, this.grassMat);
       if (m) this.scene.add(m);
       this.grass.set(best, m);
     }

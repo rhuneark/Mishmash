@@ -15,7 +15,9 @@ import {
 import { ITEMS, powerFor, type ItemDef } from '../content/items';
 import { LUGGAGE_LOOT, NODE, NODES } from '../content/nodes';
 import { NOTES, PAGES } from '../content/notes';
-import { POIS, RESCUE_SECONDS, SPAWN, type PoiDef, type Spot } from '../content/pois';
+import { RESCUE_SECONDS, type PoiDef, type Spot } from '../content/pois';
+import { isClassic, type IslandParts } from '../islands';
+import { changedRules, hungerScale, parseRules, yieldOf, type WorldRules } from '../rules';
 import { RECIPES, type Station } from '../content/recipes';
 import { hash01 } from '../rng';
 import { HALF, poolNear, type Island } from '../world';
@@ -25,10 +27,11 @@ import {
   emptyInv,
   HOTBAR,
   moveSlot,
+  removeFrom,
   remove,
-  removeAll,
   transfer,
   wear,
+  type Inv,
 } from './inventory';
 import { FIRST_EVENT, runEvents } from './events';
 import { burrowAll, damageMob, runDirector, updateMobs } from './mobs';
@@ -56,6 +59,7 @@ import {
   footprint,
   type Building,
   type Drop,
+  CHEST_SLOTS,
   type IslandSave,
   type Mob,
   type RescueState,
@@ -102,6 +106,11 @@ export class IslandSim {
   rescue: RescueState;
   /** World events (events.ts): when the next one comes, and pods on their way down. */
   nextEvent: number;
+  /** World rules (rules.ts), fixed when the island was made. */
+  readonly rules: WorldRules;
+  readonly parts: IslandParts;
+  /** The storage every box opens when the rules connect them. */
+  readonly chest: Inv;
   readonly falling: { x: number; z: number; at: number }[] = [];
   readonly snapDeadUntil = new Map<number, number>();
   readonly snapMob = new Map<number, number>();
@@ -124,6 +133,9 @@ export class IslandSim {
     this.random = random;
     this.time = save.time;
     this.nextId = save.nextId;
+    this.rules = parseRules(save.rules);
+    this.parts = island.spec;
+    this.chest = cleanInv(save.chest, this.rules.infiniteStacks, CHEST_SLOTS);
     for (const [id, hp, until] of save.nodes) {
       if (id >= 0 && id < island.nodeCount) this.nodes.set(id, { hp, until });
     }
@@ -142,7 +154,7 @@ export class IslandSim {
         hp: p.hp,
         food: p.food,
         water: p.water,
-        inv: cleanInv(p.inv),
+        inv: cleanInv(p.inv, this.rules.infiniteStacks),
         held: p.held,
         alive: p.alive,
         spawn: p.spawn,
@@ -162,12 +174,12 @@ export class IslandSim {
     this.motherHp = save.motherHp;
     this.rescue = { ...save.rescue };
     this.nextEvent = save.nextEvent ?? this.time + FIRST_EVENT;
-    for (const poi of POIS) {
+    for (const poi of island.pois) {
       for (const spot of poi.spots) {
         this.spots.set(spot.id, { poi, spot, x: poi.x + spot.dx, z: poi.z + spot.dz });
       }
     }
-    this.lastInfo = dayInfo(this.time);
+    this.lastInfo = this.info();
   }
 
   // -------------------------------------------------------------------------
@@ -204,6 +216,35 @@ export class IslandSim {
     return this.nextId++;
   }
 
+  /** Day, night and Bloom nights by this island's rules. */
+  info(): DayInfo {
+    return dayInfo(this.time, this.rules.bloomEvery);
+  }
+
+  /** A building as players see it (storage boxes show the shared chest when connected). */
+  net(b: Building): BuildingNet {
+    const n = buildingNet(b);
+    if (b.kind === 'storage' && this.rules.sharedChests)
+      n.inv = this.chest.map((s) => (s ? { ...s } : null));
+    return n;
+  }
+
+  /** The inventory a storage box holds (the shared chest when connected). */
+  chestOf(b: Building): Inv | null {
+    if (b.kind !== 'storage') return null;
+    return this.rules.sharedChests ? this.chest : (b.inv ?? null);
+  }
+
+  /** Tells everyone a box changed (every box, when they share one chest). */
+  private chestChanged(b: Building): void {
+    if (!this.rules.sharedChests) {
+      this.broadcast({ type: 'build', b: this.net(b) });
+      return;
+    }
+    for (const o of this.buildings.values())
+      if (o.kind === 'storage') this.broadcast({ type: 'build', b: this.net(o) });
+  }
+
   // -------------------------------------------------------------------------
   // Joining.
 
@@ -214,12 +255,13 @@ export class IslandSim {
       add(inv, 'ration', 1);
       add(inv, 'water_bottle', 1);
       const a = this.random() * Math.PI * 2;
+      const spawn = this.island.spawn;
       p = {
         id,
         name: name.slice(0, 24) || 'Survivor',
         color: colorFor(id),
-        x: SPAWN.x + Math.cos(a) * 2,
-        z: SPAWN.z + Math.sin(a) * 2,
+        x: spawn.x + Math.cos(a) * 2,
+        z: spawn.z + Math.sin(a) * 2,
         ry: Math.PI,
         mv: 0,
         hp: 100,
@@ -272,12 +314,14 @@ export class IslandSim {
       seed: this.seed,
       time: this.time,
       nodes: [...this.nodes].map(([id, s]) => [id, s.hp, s.until]),
-      buildings: [...this.buildings.values()].map(buildingNet),
+      buildings: [...this.buildings.values()].map((b) => this.net(b)),
       drops: [...this.drops.values()].map(dropNet),
       flags: [...this.flags],
       notes: [...this.notes],
       players: this.playerList(),
       rescue: this.rescueNet(),
+      island: { ...this.parts },
+      rules: { ...this.rules },
     };
   }
 
@@ -331,6 +375,9 @@ export class IslandSim {
       motherHp: this.currentMotherHp(),
       rescue: { ...this.rescue },
       nextEvent: Math.round(this.nextEvent),
+      ...(isClassic(this.parts) ? {} : { island: { ...this.parts } }),
+      ...(Object.keys(changedRules(this.rules)).length ? { rules: { ...this.rules } } : {}),
+      ...(this.chest.some((s) => s) ? { chest: this.chest.map((s) => (s ? { ...s } : null)) } : {}),
     };
   }
 
@@ -367,7 +414,7 @@ export class IslandSim {
       case 'demolish':
         return this.onDemolish(p, msg.id);
       case 'move':
-        moveSlot(p.inv, Math.floor(msg.from), Math.floor(msg.to));
+        moveSlot(p.inv, Math.floor(msg.from), Math.floor(msg.to), this.rules.infiniteStacks);
         return this.dirty(p);
       case 'drop':
         return this.onDropSlot(p, msg.slot);
@@ -465,7 +512,7 @@ export class IslandSim {
     }
     if (usedTool && wear(p.inv, p.held)) this.toast(p.id, `Your ${held?.name ?? 'tool'} broke.`);
     const state = this.nodes.get(id) ?? { hp: def.hp, until: 0 };
-    state.hp -= power;
+    state.hp -= (power * this.rules.blockDamage) / 100;
     const fxKind = def.tool === 'axe' ? 'chop' : def.tool === 'pick' ? 'mine' : 'gather';
     this.fx(fxKind, nx, nz, p.id);
     if (state.hp > 0) {
@@ -481,13 +528,13 @@ export class IslandSim {
     if (type === NODE.luggage) {
       for (let k = 0; k < 2; k++) {
         const pick = pickWeighted(LUGGAGE_LOOT, hash01(id, k, this.seed + 77));
-        this.give(p, pick.item, pick.n);
+        this.give(p, pick.item, yieldOf(pick.n, this.rules.yield));
       }
     } else {
       for (const drop of def.drops) {
         const chance = drop.chance ?? 1;
         if (chance < 1 && this.random() >= chance) continue;
-        this.give(p, drop.item, drop.n);
+        this.give(p, drop.item, yieldOf(drop.n, this.rules.yield));
       }
     }
     if (this.island.towerVines.includes(id) && this.towerClear()) {
@@ -533,14 +580,14 @@ export class IslandSim {
           return;
         }
         b.v = Math.min(CAMPFIRE_FUEL_MAX, b.v + CAMPFIRE_FUEL_PER_WOOD);
-        this.broadcast({ type: 'build', b: buildingNet(b) });
+        this.broadcast({ type: 'build', b: this.net(b) });
         this.fx('build', b.x, b.z, p.id);
         this.dirty(p);
         return;
       }
       case 'door_wood':
         b.v = b.v === 1 ? 0 : 1;
-        this.broadcast({ type: 'build', b: buildingNet(b) });
+        this.broadcast({ type: 'build', b: this.net(b) });
         return;
       case 'bedroll':
         p.spawn = b.id;
@@ -555,7 +602,7 @@ export class IslandSim {
         b.v -= 1;
         p.water = Math.min(100, p.water + 30);
         this.fx('drink', b.x, b.z, p.id);
-        this.broadcast({ type: 'build', b: buildingNet(b) });
+        this.broadcast({ type: 'build', b: this.net(b) });
         this.dirty(p);
         return;
       default:
@@ -755,9 +802,18 @@ export class IslandSim {
       );
       return;
     }
-    if (!removeAll(p.inv, r.needs)) {
+    const from = this.rules.craftFromChests ? [p.inv, ...this.chests()] : [p.inv];
+    if (!removeFrom(from, r.needs)) {
       this.toast(p.id, 'Not enough materials.');
       return;
+    }
+    if (from.length > 1) {
+      for (const b of this.buildings.values()) {
+        if (b.kind !== 'storage') continue;
+        this.chestChanged(b);
+        // Connected boxes go out together.
+        if (this.rules.sharedChests) break;
+      }
     }
     this.give(p, r.out, r.n);
     p.crafted++;
@@ -816,7 +872,7 @@ export class IslandSim {
     if (kind === 'storage') b.inv = new Array<Slot | null>(STORAGE_SLOTS).fill(null);
     if (kind === 'bedroll' && p.spawn === null) p.spawn = b.id;
     this.buildings.set(b.id, b);
-    this.broadcast({ type: 'build', b: buildingNet(b) });
+    this.broadcast({ type: 'build', b: this.net(b) });
     this.fx('build', x, z, p.id);
     this.dirty(p);
   }
@@ -845,25 +901,27 @@ export class IslandSim {
 
   private onStore(p: SimPlayer, id: number, slot: number, to?: number): void {
     const b = this.buildings.get(id);
+    const box = b ? this.chestOf(b) : null;
     const s = p.inv[slot];
-    if (!b?.inv || !s || dist(p.x, p.z, b.x, b.z) > REACH + 1.5) return;
-    if (transfer(p.inv, slot, b.inv, cleanIndex(to, b.inv.length)) === 0) {
+    if (!b || !box || !s || dist(p.x, p.z, b.x, b.z) > REACH + 1.5) return;
+    if (transfer(p.inv, slot, box, cleanIndex(to, box.length), this.rules.infiniteStacks) === 0) {
       this.toast(p.id, 'The box is full.');
       return;
     }
-    this.broadcast({ type: 'build', b: buildingNet(b) });
+    this.chestChanged(b);
     this.dirty(p);
   }
 
   private onTake(p: SimPlayer, id: number, slot: number, to?: number): void {
     const b = this.buildings.get(id);
-    const s = b?.inv?.[slot];
-    if (!b?.inv || !s || dist(p.x, p.z, b.x, b.z) > REACH + 1.5) return;
-    if (transfer(b.inv, slot, p.inv, cleanIndex(to, p.inv.length)) === 0) {
+    const box = b ? this.chestOf(b) : null;
+    const s = box?.[slot];
+    if (!b || !box || !s || dist(p.x, p.z, b.x, b.z) > REACH + 1.5) return;
+    if (transfer(box, slot, p.inv, cleanIndex(to, p.inv.length), this.rules.infiniteStacks) === 0) {
       this.toast(p.id, 'Your bag is full.');
       return;
     }
-    this.broadcast({ type: 'build', b: buildingNet(b) });
+    this.chestChanged(b);
     this.dirty(p);
   }
 
@@ -894,8 +952,8 @@ export class IslandSim {
       p.x = bed.x + 1.2;
       p.z = bed.z;
     } else {
-      p.x = SPAWN.x + (this.random() - 0.5) * 4;
-      p.z = SPAWN.z + (this.random() - 0.5) * 4;
+      p.x = this.island.spawn.x + (this.random() - 0.5) * 4;
+      p.z = this.island.spawn.z + (this.random() - 0.5) * 4;
     }
     p.alive = true;
     p.hp = 60;
@@ -912,7 +970,7 @@ export class IslandSim {
   // Shared helpers used by monsters.
 
   give(p: SimPlayer, item: string, n: number, d?: number): void {
-    const rest = add(p.inv, item, n, d);
+    const rest = add(p.inv, item, n, d, this.rules.infiniteStacks);
     if (rest > 0) {
       this.makeBag(
         p.x,
@@ -938,8 +996,10 @@ export class IslandSim {
     this.broadcast({ type: 'drop', d: dropNet(d) });
   }
 
-  hurtPlayer(p: SimPlayer, dmg: number, x: number, z: number): void {
+  /** `bloom`: the Bloom did it (the difficulty rule scales it). */
+  hurtPlayer(p: SimPlayer, dmg: number, x: number, z: number, bloom = true): void {
     if (!p.alive || p.escaped) return;
+    if (bloom) dmg = (dmg * this.rules.difficulty) / 100;
     p.hp -= dmg;
     this.fx('hit', p.x, p.z, p.id, Math.round(dmg));
     void x;
@@ -957,13 +1017,30 @@ export class IslandSim {
     p.alive = false;
     p.hp = 0;
     p.deaths++;
-    const items = p.inv.filter((s): s is Slot => s !== null);
+    // What's left behind follows the rules: everything, the hotbar, the bag, nothing.
+    const rule = this.rules.deathDrop;
+    const drops = (i: number) =>
+      rule === 'everything' ||
+      (rule === 'toolbelt' ? i < HOTBAR : rule === 'backpack' && i >= HOTBAR);
+    const items: Slot[] = [];
+    p.inv.forEach((s, i) => {
+      if (!s || rule === 'nothing' || !(drops(i) || rule === 'delete')) return;
+      if (rule !== 'delete') items.push(s);
+      p.inv[i] = null;
+    });
     if (items.length) this.makeBag(p.x, p.z, items, `${p.name}'s bag`, this.time + 2 * DAY);
-    p.inv = emptyInv();
     p.heals = [];
     this.fx('death', p.x, p.z, p.id);
     this.send(p.id, { type: 'event', e: 'dead' });
     for (const m of this.mobs.values()) if (m.target === p.id) m.target = null;
+  }
+
+  /** Every storage inventory (the shared one once, when boxes are connected). */
+  private chests(): Inv[] {
+    if (this.rules.sharedChests) return [this.chest];
+    const out: Inv[] = [];
+    for (const b of this.buildings.values()) if (b.kind === 'storage' && b.inv) out.push(b.inv);
+    return out;
   }
 
   /** The nearest blocking building whose footprint a circle at (x, z) overlaps. */
@@ -986,7 +1063,7 @@ export class IslandSim {
       for (const s of b.inv ?? [])
         if (s) this.makeBag(b.x, b.z, [s], 'Box contents', this.time + DAY);
     } else {
-      this.broadcast({ type: 'build', b: buildingNet(b) });
+      this.broadcast({ type: 'build', b: this.net(b) });
     }
   }
 
@@ -1064,13 +1141,14 @@ export class IslandSim {
   }
 
   private dayEvents(): void {
-    const now = dayInfo(this.time);
+    const now = this.info();
     const was = this.lastInfo;
     this.lastInfo = now;
     const crossed = (edge: number) =>
       (was.phase < edge && now.phase >= edge) || (now.day !== was.day && edge <= now.phase);
     if (crossed(DUSK) && now.phase < NIGHT_START) {
-      const bloomTonight = now.day % 7 === 0;
+      const every = this.rules.bloomEvery;
+      const bloomTonight = every > 0 && now.day % every === 0;
       this.broadcast({
         type: 'event',
         e: 'dusk',
@@ -1113,8 +1191,9 @@ export class IslandSim {
       const p = this.players.get(id);
       if (!p || !p.alive || p.escaped) continue;
       const before = `${Math.round(p.hp)}|${Math.round(p.food)}|${Math.round(p.water)}`;
-      p.food = Math.max(0, p.food - FOOD_DECAY * dt);
-      p.water = Math.max(0, p.water - WATER_DECAY * dt);
+      const hunger = hungerScale(this.rules.hunger);
+      p.food = Math.max(0, p.food - FOOD_DECAY * hunger * dt);
+      p.water = Math.max(0, p.water - WATER_DECAY * hunger * dt);
       if (p.food <= 0) p.hp -= STARVE * dt;
       if (p.water <= 0) p.hp -= STARVE * dt;
       const poisoned = this.time < p.poisonUntil;
@@ -1157,13 +1236,13 @@ export class IslandSim {
     for (const b of this.buildings.values()) {
       if (b.kind === 'campfire' && b.v > 0) {
         b.v = Math.max(0, b.v - dt);
-        if (b.v === 0) this.broadcast({ type: 'build', b: buildingNet(b) });
+        if (b.v === 0) this.broadcast({ type: 'build', b: this.net(b) });
       } else if (b.kind === 'rain_collector' && b.v < RAIN_MAX) {
         b.acc += dt;
         if (b.acc >= RAIN_EVERY) {
           b.acc = 0;
           b.v += 1;
-          this.broadcast({ type: 'build', b: buildingNet(b) });
+          this.broadcast({ type: 'build', b: this.net(b) });
         }
       } else if (BUILDINGS[b.kind]?.trap) {
         this.updateTrap(b, dt);
@@ -1177,7 +1256,7 @@ export class IslandSim {
     if (!trap) return;
     if (b.v > 0) {
       b.v = Math.max(0, b.v - dt);
-      if (b.v === 0) this.broadcast({ type: 'build', b: buildingNet(b) });
+      if (b.v === 0) this.broadcast({ type: 'build', b: this.net(b) });
       return;
     }
     for (const m of this.mobs.values()) {
@@ -1189,7 +1268,7 @@ export class IslandSim {
       m.heldUntil = this.time + trap.stun;
       m.st = 'idle';
       damageMob(this, m, trap.damage, b.owner || null, 0);
-      this.broadcast({ type: 'build', b: buildingNet(b) });
+      this.broadcast({ type: 'build', b: this.net(b) });
       return;
     }
   }
@@ -1222,7 +1301,7 @@ export class IslandSim {
     for (const id of this.online) {
       const p = this.players.get(id);
       if (!p?.alive) continue;
-      for (const poi of POIS) {
+      for (const poi of this.island.pois) {
         const key = `seen:${poi.id}`;
         if (!this.flags.has(key) && dist(p.x, p.z, poi.x, poi.z) < 45) {
           this.flags.add(key);

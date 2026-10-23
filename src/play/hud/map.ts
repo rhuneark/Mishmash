@@ -2,6 +2,7 @@
 // haven't explored yet (kept per island in appStorage).
 
 import { BIOME, GRID, HALF, WORLD, type Island } from '../../game/world';
+import { climateLook } from '../render/climate';
 
 const COLORS: Record<number, [number, number, number]> = {
   [BIOME.ocean]: [38, 110, 160],
@@ -21,6 +22,11 @@ export function islandImage(island: Island): HTMLCanvasElement {
   const ctx = canvas.getContext('2d');
   if (!ctx) return canvas;
   const img = ctx.createImageData(GRID, GRID);
+  const colors = { ...COLORS };
+  for (const [b, list] of Object.entries(climateLook(island.spec.climate).ground)) {
+    const hex = list?.[0];
+    if (hex !== undefined) colors[Number(b)] = [hex >> 16, (hex >> 8) & 255, hex & 255];
+  }
   const n1 = GRID + 1;
   for (let j = 0; j < GRID; j++) {
     for (let i = 0; i < GRID; i++) {
@@ -28,7 +34,7 @@ export function islandImage(island: Island): HTMLCanvasElement {
       const hE = island.heights[j * n1 + i + 1] as number;
       const hS = island.heights[(j + 1) * n1 + i] as number;
       const biome = island.biomes[j * GRID + i] as number;
-      let [r, g, b] = COLORS[biome] ?? (COLORS[BIOME.ocean] as [number, number, number]);
+      let [r, g, b] = colors[biome] ?? (COLORS[BIOME.ocean] as [number, number, number]);
       if (h < 0) {
         const deep = Math.min(1, -h / 6);
         r = 60 - deep * 30;

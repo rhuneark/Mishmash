@@ -3,6 +3,8 @@
 // shared with the hub's Play tab.
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { CLIMATE_NAMES, TERRAIN_NAMES, islandName, specCode } from '../../game/islands';
+import { bloomOrdinal } from '../../game/rules';
 import { clockLabel } from '../../game/sim/time';
 import type { Sound } from '../audio';
 import type { GameClient } from '../client';
@@ -19,6 +21,7 @@ import {
 } from '../keys';
 import { isTouch, prefs, usePrefs } from '../prefs';
 import type { Settings } from '../settings';
+import { RulesList } from './RulesPanel';
 
 export function PauseMenu(props: {
   client: GameClient;
@@ -47,7 +50,12 @@ export function PauseMenu(props: {
       )}
       {page === 'howto' && (
         <MenuCard title="❓ How to play" onBack={back} onClose={close} wide>
-          <HowTo pc={props.pc} />
+          <HowTo pc={props.pc} bloomEvery={client.rules.bloomEvery} />
+        </MenuCard>
+      )}
+      {page === 'island' && (
+        <MenuCard title="🏝️ This island" onBack={back} onClose={close} wide>
+          <IslandPage client={client} />
         </MenuCard>
       )}
     </div>
@@ -82,8 +90,9 @@ function MainPage(props: { client: GameClient; onClose: () => void; onLeave: () 
   const info = client.info();
   const mode = client.link.mode;
   const solo = mode === 'solo';
-  const nextBloom = Math.ceil(Math.max(info.day, 1) / 7) * 7;
-  const go = (page: 'settings' | 'friends' | 'howto') => () => client.setMenuPage(page);
+  const every = client.rules.bloomEvery;
+  const nextBloom = every > 0 ? Math.ceil(Math.max(info.day, 1) / every) * every : 0;
+  const go = (page: 'settings' | 'friends' | 'howto' | 'island') => () => client.setMenuPage(page);
   return (
     <div className="menu-card main">
       <div className="menu-title">{solo ? 'Paused' : 'Menu'}</div>
@@ -93,9 +102,11 @@ function MainPage(props: { client: GameClient; onClose: () => void; onLeave: () 
       <div className="menu-sub muted">
         {info.bloom && info.night
           ? "Bloom night: fire won't stop them. Wall up and stay together."
-          : nextBloom === info.day
-            ? 'Tonight is a Bloom night.'
-            : `Next Bloom night: day ${nextBloom}`}
+          : !nextBloom
+            ? 'No Bloom nights on this island.'
+            : nextBloom === info.day
+              ? 'Tonight is a Bloom night.'
+              : `Next Bloom night: day ${nextBloom}`}
       </div>
       <div className="menu-buttons">
         <button className="menu-btn primary" onClick={props.onClose}>
@@ -112,6 +123,9 @@ function MainPage(props: { client: GameClient; onClose: () => void; onLeave: () 
         </button>
         <button className="menu-btn" onClick={go('friends')}>
           👥 {solo ? 'Play with friends' : `Friends · ${client.link.code}`}
+        </button>
+        <button className="menu-btn" onClick={go('island')}>
+          🏝️ This island
         </button>
         <button className="menu-btn" onClick={go('howto')}>
           ❓ How to play
@@ -172,7 +186,33 @@ function Friends({ client, onHost }: { client: GameClient; onHost: () => void })
   );
 }
 
-function HowTo({ pc }: { pc: boolean }) {
+function IslandPage({ client }: { client: GameClient }) {
+  const spec = client.island?.spec;
+  if (!spec) return null;
+  const layout = `${['North up', 'Turned ¼', 'Turned ½', 'Turned ¾'][spec.turn]}${spec.mirror ? ', mirrored' : ''}`;
+  return (
+    <>
+      <div className="island-card">
+        <div className="island-name">{islandName(spec)}</div>
+        <div className="island-tags">
+          <span>{CLIMATE_NAMES[spec.climate]}</span>
+          <span>{TERRAIN_NAMES[spec.terrain]}</span>
+          <span>{layout}</span>
+        </div>
+        <div className="island-code">
+          Island code <b>{specCode(spec)}</b>
+        </div>
+        <p className="muted small-text">
+          Type this code on the New island screen to make the same island again. The rules were
+          picked when the island was made; friends who join play by them.
+        </p>
+      </div>
+      <RulesList rules={client.rules} />
+    </>
+  );
+}
+
+export function HowTo({ pc, bloomEvery }: { pc: boolean; bloomEvery: number }) {
   return (
     <ul className="tips">
       <li>
@@ -197,7 +237,10 @@ function HowTo({ pc }: { pc: boolean }) {
       </li>
       <li>
         Eat and drink before the bars run out. A lit campfire heals you and keeps most of the Bloom
-        away. Every seventh night is a Bloom night: they fear nothing then.
+        away.{' '}
+        {bloomEvery > 0
+          ? `Every ${bloomOrdinal(bloomEvery)} night is a Bloom night: they fear nothing then.`
+          : 'This island has no Bloom nights.'}
       </li>
       <li>
         Watch for things that happen on their own: wreckage washing up on the beaches, Verdance
@@ -428,7 +471,7 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
   );
 }
 
-function Group({ children, onReset }: { children: ReactNode; onReset: () => void }) {
+export function Group({ children, onReset }: { children: ReactNode; onReset: () => void }) {
   return (
     <div className="settings-group">
       {children}
@@ -439,7 +482,12 @@ function Group({ children, onReset }: { children: ReactNode; onReset: () => void
   );
 }
 
-function Toggle(props: { label: string; desc?: string; on: boolean; set: (v: boolean) => void }) {
+export function Toggle(props: {
+  label: string;
+  desc?: string;
+  on: boolean;
+  set: (v: boolean) => void;
+}) {
   return (
     <button
       className={`set-row toggle${props.on ? ' on' : ''}`}
@@ -489,7 +537,7 @@ function Slider(props: {
   );
 }
 
-function Choice<T extends string>(props: {
+export function Choice<T extends string>(props: {
   label: string;
   desc?: string;
   value: T;

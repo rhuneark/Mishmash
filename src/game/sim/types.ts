@@ -2,6 +2,8 @@
 
 import { BUILDINGS } from '../content/buildings';
 import { MONSTERS, type MonsterKind } from '../content/monsters';
+import { isClassic, parseParts, type IslandParts } from '../islands';
+import { parseRules, type WorldRules } from '../rules';
 import { cleanInv, type Inv } from './inventory';
 import type { RescueNet, Slot } from './protocol';
 import { START_TIME } from './time';
@@ -142,9 +144,15 @@ export interface IslandSave {
   rescue: RescueState;
   /** Island time of the next world event (events.ts); missing in older saves. */
   nextEvent?: number;
+  /** Layout, climate and terrain (islands.ts); missing: the classic island. */
+  island?: IslandParts;
+  /** World rules (rules.ts); missing: the defaults. */
+  rules?: WorldRules;
+  /** The storage every box opens when the rules connect them. */
+  chest?: (Slot | null)[];
 }
 
-export function newSave(seed: number): IslandSave {
+export function newSave(seed: number, parts?: IslandParts, rules?: WorldRules): IslandSave {
   return {
     v: 1,
     seed,
@@ -158,8 +166,13 @@ export function newSave(seed: number): IslandSave {
     notes: [],
     motherHp: null,
     rescue: { phase: 'none', endsAt: 0 },
+    ...(parts && !isClassic(parts) ? { island: { ...parts } } : {}),
+    ...(rules ? { rules: { ...rules } } : {}),
   };
 }
+
+/** Shared storage size when the rules connect every box. */
+export const CHEST_SLOTS = 48;
 
 const num = (v: unknown, def: number): number =>
   typeof v === 'number' && Number.isFinite(v) ? v : def;
@@ -171,7 +184,11 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
   const d = raw as Record<string, unknown>;
   const seed = num(d['seed'], 0);
   if (!seed) return null;
-  const save = newSave(seed);
+  const parts = d['island'] ? parseParts(d['island']) : undefined;
+  const rules = d['rules'] ? parseRules(d['rules']) : undefined;
+  const infinite = rules?.infiniteStacks ?? false;
+  const save = newSave(seed, parts, rules);
+  if (Array.isArray(d['chest'])) save.chest = cleanInv(d['chest'], infinite, CHEST_SLOTS);
   save.time = Math.max(0, num(d['time'], START_TIME));
   save.nextId = Math.max(1, Math.floor(num(d['nextId'], 1)));
   if (Array.isArray(d['nodes'])) {
@@ -198,7 +215,7 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
         v: num(b['v'], 0),
         acc: num(b['acc'], 0),
       };
-      if (kind === 'storage') building.inv = cleanInv(b['inv']).slice(0, 12);
+      if (kind === 'storage') building.inv = cleanInv(b['inv'], infinite).slice(0, 12);
       save.buildings.push(building);
       save.nextId = Math.max(save.nextId, id + 1);
     }
@@ -207,7 +224,7 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
     for (const o of d['drops'] as Record<string, unknown>[]) {
       const id = Math.floor(num(o?.['id'], 0));
       if (id <= 0) continue;
-      const items = cleanInv(o['items']).filter((s): s is Slot => s !== null);
+      const items = cleanInv(o['items'], infinite).filter((s): s is Slot => s !== null);
       if (!items.length) continue;
       save.drops.push({
         id,
@@ -233,7 +250,7 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
         hp: Math.min(100, Math.max(0, num(pv['hp'], 100))),
         food: Math.min(100, Math.max(0, num(pv['food'], 80))),
         water: Math.min(100, Math.max(0, num(pv['water'], 80))),
-        inv: cleanInv(pv['inv']),
+        inv: cleanInv(pv['inv'], infinite),
         held: Math.min(5, Math.max(0, Math.floor(num(pv['held'], 0)))),
         alive: pv['alive'] !== false,
         spawn: typeof pv['spawn'] === 'number' ? pv['spawn'] : null,

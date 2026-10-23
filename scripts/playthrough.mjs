@@ -150,11 +150,46 @@ const until = async (page, fn, what, ms = 15000, arg) => {
   return false;
 };
 
+/**
+ * The New island screen: make the island with this code (the playthrough's steps
+ * assume the classic layout), try the rule presets, then pick `preset` and start.
+ */
+async function newIsland(page, tag, code, preset, noSideScroll) {
+  await page.locator('.new-island').waitFor();
+  await page.getByLabel('Island code').fill('NOT A CODE');
+  await page.getByRole('button', { name: 'Use', exact: true }).click();
+  await page.getByText("That isn't an island code.").waitFor();
+  await page.getByLabel('Island code').fill(code);
+  await page.getByRole('button', { name: 'Use', exact: true }).click();
+  await until(
+    page,
+    (c) => document.querySelector('[data-testid="island-code"]')?.textContent === c,
+    `${tag} new island: the code wasn't used`,
+    15000,
+    code,
+  );
+  await page.locator('.map-busy').waitFor({ state: 'detached', timeout: 30000 });
+  if (noSideScroll) await noSideScroll('new island');
+  // Presets fill in every rule; the night speed shows Nightmare's sprint.
+  await page.getByRole('radio', { name: 'Nightmare' }).click();
+  const night = page.getByRole('radiogroup', { name: 'How fast they move at night' });
+  check(
+    (await night.getByRole('radio', { name: 'Sprint' }).getAttribute('aria-checked')) === 'true',
+    `${tag} new island: the Nightmare preset didn't set the night speed`,
+  );
+  await page.getByRole('radio', { name: preset }).click();
+  const name = await page.locator('[data-testid="island-name"]').textContent();
+  await page.getByRole('button', { name: `✈️ Start on ${name}` }).click();
+  return name;
+}
+
 /** Solo survival: move, read, gather, craft, build, fight, die, save and continue. */
 async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.goto(URL);
   await page.getByRole('button', { name: 'Play', exact: true }).first().click();
   await page.getByRole('button', { name: /Start surviving/ }).click();
+  await shot('5-new-island');
+  const islandName = await newIsland(page, tag, 'TR-C0-4242', 'Survivor', noSideScroll);
   await page.locator('.hud').waitFor({ timeout: 60000 });
   // World events come on their own; the playthrough sends one when it wants it.
   await game(page, () => {
@@ -580,6 +615,14 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   );
   await noSideScroll('menu');
   await shot('9c-menu');
+  // This island: its name, code and rules.
+  await page.getByRole('button', { name: /This island/ }).click();
+  await page.locator('.island-name', { hasText: islandName }).waitFor();
+  await page.getByText('TR-C0-4242').waitFor();
+  await page.locator('.rules-preset', { hasText: 'Survivor' }).waitFor();
+  await noSideScroll('island page');
+  await page.getByRole('button', { name: '‹ Back' }).click();
+  await page.getByText('Paused').waitFor();
   // Settings: PC keys can be changed (journal on K instead of J) and volumes set.
   await page.getByRole('button', { name: /Settings/ }).click();
   await page.getByRole('tab', { name: /Controls/ }).click();
@@ -708,7 +751,23 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   check(back[2] >= 1, `${tag} game: continue lost the campfire`);
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.getByRole('button', { name: /Save and quit/ }).click();
+  await page
+    .getByRole('button', { name: `Continue · Day ${await dayNow(page)} on ${islandName}` })
+    .waitFor();
+  // A new island asks before it replaces this one.
+  await page.getByRole('button', { name: /New island/ }).click();
+  await page.locator('[data-testid="island-name"]').waitFor();
+  await page.getByRole('button', { name: /Start on/ }).click();
+  await page.getByText(`This replaces ${islandName}`).waitFor();
+  await page.getByRole('button', { name: 'Keep mine' }).click();
+  await page.getByRole('button', { name: '‹ Back' }).click();
   await page.getByRole('button', { name: /Continue · Day/ }).waitFor();
+}
+
+/** The day shown on the title's Continue button. */
+async function dayNow(page) {
+  const label = await page.locator('.title-continue').getAttribute('aria-label');
+  return Number(label?.match(/Day (\d+)/)?.[1]);
 }
 
 /** Co-op on the local room server: one hosts, a friend joins with the code. */
@@ -724,6 +783,14 @@ async function playCoop() {
     return { context, page, errors };
   };
   const host = await open();
+  // The host's island is a made one (turned, mirrored, wetlands) with Relaxed rules:
+  // the room has to build the same island and play by the same rules.
+  await host.page.getByRole('button', { name: /Start surviving/ }).click();
+  const spec = 'OV-W3M-31337';
+  await newIsland(host.page, 'co-op', spec, 'Relaxed');
+  await host.page.locator('.hud').waitFor({ timeout: 60000 });
+  await host.page.getByRole('button', { name: 'Menu' }).click();
+  await host.page.getByRole('button', { name: /Save and quit/ }).click();
   await host.page.getByRole('button', { name: /Play with friends/ }).click();
   await host.page.locator('.hud').waitFor({ timeout: 60000 });
   const code = await game(host.page, () => window.__game.client.link.code);
@@ -744,6 +811,21 @@ async function playCoop() {
     'co-op: the friend never saw the host',
   );
   await friend.page.screenshot({ path: `${SHOTS}/coop-friend.png` });
+  for (const who of [host, friend]) {
+    const [code, rules] = await game(who.page, () => {
+      const c = window.__game.client;
+      const s = c.island.spec;
+      return [
+        `${s.climate.slice(0, 2)}-${s.terrain[0]}${s.turn}${s.mirror ? 'M' : ''}-${s.seed}`,
+        c.rules,
+      ];
+    });
+    check(code.toUpperCase() === spec, `co-op: wrong island in the room (${code})`);
+    check(
+      rules.deathDrop === 'nothing' && rules.bloomEvery === 14,
+      `co-op: the room didn't keep the island's rules`,
+    );
+  }
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByText(code).first().waitFor();
   await host.page.getByRole('button', { name: /Close the island and quit/ }).click();
@@ -856,6 +938,25 @@ for (const [width, height] of VIEWPORTS) {
   await autoTool.click();
   await noSideScroll('settings');
   await page.getByRole('button', { name: 'Close settings' }).click();
+
+  // The October Jam button copies the jam page's link (RUN's sandbox blocks new
+  // windows) and shows it.
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+    origin: new globalThis.URL(URL).origin,
+  });
+  await page.getByRole('button', { name: /Vote for us in October Jam/ }).click();
+  await page.getByText('Link copied!').waitFor();
+  const jam = 'https://run.world/jams/octoberjam?game=7VPvCLP7URUp69R6K10O';
+  check(
+    (await page.evaluate(() => navigator.clipboard.readText())) === jam,
+    `${tag} jam: the link wasn't copied`,
+  );
+  check(
+    (await page.getByLabel('October Jam link').inputValue()) === jam,
+    `${tag} jam: no link to copy by hand`,
+  );
+  await noSideScroll('title');
+  await shot('3b-title');
 
   // The game's owner (?owner plays the owner in the local preview) can delete
   // anyone's message.

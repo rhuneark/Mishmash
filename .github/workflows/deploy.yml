@@ -21,7 +21,7 @@ env:
   # Store listing, applied after each deploy when set. Keywords (tags) drive RUN
   # search and recommendations. RUN adds set-keywords to the game's existing tags
   # (at most 30), so the step first deletes the listed and the retired ones.
-  GAME_DESCRIPTION: "Your plane goes down on a huge island, and the other passengers are turning into plants. Gather, craft tools, build a camp, keep your fire burning and survive the nights while the Bloom hunts you. Find the three radio parts, solve your way off the island and call for rescue. Play solo or with up to 3 friends. Mishmash is built by its players: vote on what gets added next and chat in the Town Square!"
+  GAME_DESCRIPTION: "Your plane goes down on a huge island, and the other passengers are turning into plants. Gather, craft tools, build a camp, keep your fire burning and survive the nights while the Bloom hunts you. Find the three radio parts, solve your way off the island and call for rescue. Every island is different: pick its climate, coast and layout, and set the rules, from a relaxed build to a nightmare. Play solo or with up to 3 friends. Mishmash is built by its players: vote on what gets added next and chat in the Town Square!"
   GAME_KEYWORDS: 'survival,crafting,base-building,horror,island,co-op,multiplayer,open-world,exploration,monsters,community-build,voting,halloween,spooky,community,player-made,chat,social'
   GAME_KEYWORDS_RETIRED: 'casual'
 

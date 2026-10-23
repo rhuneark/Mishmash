@@ -1,6 +1,9 @@
 // Messages between a player's game and the island authority (the room server
 // in co-op, or the same code running in-process for solo play).
 
+import type { IslandParts } from '../islands';
+import type { WorldRules } from '../rules';
+
 export interface Slot {
   id: string;
   n: number;
@@ -114,6 +117,10 @@ export interface Snapshot {
   notes: string[];
   players: PlayerInfo[];
   rescue: RescueNet;
+  /** Layout, climate and terrain (missing from older rooms: classic). */
+  island?: IslandParts;
+  /** World rules (missing: the defaults). */
+  rules?: WorldRules;
 }
 
 export type FxKind =

@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import { POIS } from '../../game/content/pois';
 import { HALF, WORLD } from '../../game/world';
 import type { GameClient } from '../client';
 import type { Fog } from './map';
@@ -48,13 +47,15 @@ function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts
   ctx.restore();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  // The island's rules say what the map shows: everything, landmarks only, or just you.
+  const markers = c.rules.markers;
   // Landmarks you found (or read about).
   const iconSize = o.full ? 18 : 13;
   ctx.font = `${iconSize}px system-ui, sans-serif`;
-  for (const poi of POIS) {
+  for (const poi of markers === 'none' ? [] : (c.island?.pois ?? [])) {
     if (!c.flags.has(`seen:${poi.id}`)) continue;
     const [x, y] = at(poi.x, poi.z);
-    if (poi.id === o.objectivePoi) {
+    if (poi.id === o.objectivePoi && markers === 'all') {
       ctx.strokeStyle = `rgba(255, 210, 90, ${0.5 + Math.sin(o.t * 4) * 0.4})`;
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -72,16 +73,17 @@ function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts
       ctx.font = `${iconSize}px system-ui, sans-serif`;
     }
   }
-  for (const b of c.buildings.values()) {
+  for (const b of markers === 'none' ? [] : c.buildings.values()) {
     if (b.kind !== 'bedroll' || b.owner !== c.you) continue;
     ctx.fillText('🛏️', ...at(b.x, b.z));
   }
-  for (const d of c.drops.values()) {
+  const drops = markers === 'all' ? [...c.drops.values()] : [];
+  for (const d of drops) {
     if (!d.label.endsWith("'s bag")) continue;
     ctx.fillText('🎒', ...at(d.x, d.z));
   }
   // Washed-up crates and supply pods: on the minimap's rim when they're further away.
-  for (const d of c.drops.values()) {
+  for (const d of drops) {
     if (d.kind !== 'crate' && d.kind !== 'pod') continue;
     let [x, y] = at(d.x, d.z);
     if (!o.full) {
@@ -101,7 +103,7 @@ function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts
     ctx.stroke();
     ctx.fillText(d.kind === 'pod' ? '🛰️' : '📦', x, y);
   }
-  for (const other of c.others.values()) {
+  for (const other of markers === 'all' ? c.others.values() : []) {
     if (!other.alive) continue;
     const info = c.players.find((p) => p.id === other.id);
     ctx.fillStyle = `#${(info?.color ?? 0xffffff).toString(16).padStart(6, '0')}`;

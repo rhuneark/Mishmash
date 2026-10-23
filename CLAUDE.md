@@ -21,9 +21,21 @@ update to the user with this link)
   About tab. "A game the players build" → it starts as a survival game → suggest / vote / we
   build it → "Now voting: what to add next". Buttons (pinned under the text): Play, Vote on
   what's next, Say hi in chat.
-- **Play** (`screens/Play.tsx`): Continue · Day N (or Start surviving), New island (confirm:
-  replaces the save), Play with friends (host my island), Join a friend (room code), ⚙️
-  Settings (the game's settings panel without the key list).
+- **Play** (`screens/Play.tsx`): a game title screen. Behind the menu your saved island turns
+  slowly around the crash site (`play/TitleScene.ts`: the game's own terrain, nodes, grass and
+  landmarks, 30 fps, gives the WebGL context back on unmount; no save: an autumn showcase
+  island). Buttons: Continue (island name · Day N) or Start surviving, New island, Play with
+  friends (host my island), Join a friend (room code), ⚙️ Settings (the game's settings panel
+  without the key list), ❓ How to play, 🎃 Vote for us in October Jam, and Vote on what gets
+  added next. **New island** (`screens/NewIsland.tsx`): map preview, name and code, 🎲
+  Surprise me / Same kind, new island, climate, terrain, layout (quarter turns + mirror), an
+  island code box, then the world rules (`hud/RulesPanel.tsx`); starting asks before it
+  replaces a save. The win screen's New island lands here too (`App` `wantNew`).
+- **October Jam button** (`app/links.ts`): RUN runs the game in a sandbox without
+  `allow-popups` and the SDK has no call to open an outside page (preflight fails on
+  `window.open` as critical), so the button copies `JAM_URL`
+  (`https://run.world/jams/octoberjam?game=7VPvCLP7URUp69R6K10O`) and shows it to copy by
+  hand.
 - **Vote** (`screens/Vote.tsx`, `game/poll.ts`): shows `CURRENT_POLL` = `NEXT_POLL` (id
   `next1`, Round 2: what gets added next: boats, farming, pets, weather, ranged weapons, new
   monsters, bigger bases, puzzles & secrets) under a "Round 1 is closed" card. `BASE_POLL`
@@ -92,7 +104,36 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   see-through (`nodes.update` `toCam`); fog is measured from the camera's distance; the
   minimap turns to match (`rot`, an N on its rim; the full map stays north up). Directions in
   toasts and objectives are compass directions.
-- **World** (`game/world.ts`): `generateIsland(seed)` builds the same island on every device
+- **Islands from parts** (`game/islands.ts`): an island is a seed plus `IslandParts`: layout
+  `turn` (0–3 quarter turns) and `mirror`, `climate` (tropic, autumn, misty pines, volcanic,
+  overgrown) and `terrain` (classic/Rolling, rugged coast, islets, highlands, wetlands): 200
+  kinds × every seed. `CLASSIC` parts give exactly the island the seed always gave (the
+  fingerprint test in `world.test.ts` guards it), so old saves keep theirs. A turned island is
+  generated in layout space (`unplace` each grid point: quarter turns and mirrors map the 2 m
+  grid onto itself), landmarks are laid out with `layoutPois` (box angles turn too), the spawn,
+  tower vines and the Mother's spot go through `place`. Climates change biome thresholds, plant
+  odds and Snapjaws (`climateGen`) and repaint the island (`play/render/climate.ts`
+  `climateLook`: ground, plant colours via `nodeGeometries(plants)`, grass, sky, sea, fog, map);
+  terrain styles change the coast and add islets, hills or bogs (`terrainGen`). Direction words
+  in notes and objectives turn with the layout (`turnDirections`), and the lore's "every seventh
+  night" follows the rules (`noteText(…, world)`, `bloomOrdinal`). `specCode` ("AU-I1M-4242":
+  climate, terrain, turn, M, seed) shares an island; `islandName` names it. Landmark models
+  are built in the classic layout and turned/mirrored by their group (`buildPois`). Islands are
+  generated on the client from the snapshot's `island` parts (`session.islandFor`, the last one
+  cached) and on the room server from the save.
+- **World rules** (`game/rules.ts`, 7 Days to Die style), picked on the New island screen and
+  kept in the save (`IslandSave.rules`; the snapshot sends them, so guests play by the host's
+  rules): difficulty (Bloom damage to you), hunger, what you drop when you fall (everything /
+  toolbelt = hotbar / backpack = the rest / nothing / delete), infinite stacks (`stackLimit`,
+  passed as a parameter, never global: one room server runs many rooms), monster speed by day
+  and by night, Bloom night every N (0 = never; `dayInfo(t, every)`), how many roam
+  (`monsterScale`), their damage to buildings, your damage to nodes, yield, world events, map
+  markers (all / landmarks / only you, `MapView`), connected storage (`sharedChests`: every box
+  shows `sim.chest`, `CHEST_SLOTS` 48, saved as `IslandSave.chest`) and craft from storage
+  (`craftFromChests`: `removeFrom` takes from the bag first, client `craftCount`). Presets:
+  Relaxed, Survivor (the defaults), Nightmare. The pause menu's 🏝️ This island page shows the
+  name, code and rules.
+- **World** (`game/world.ts`): `generateIsland(seed, parts)` builds the same island on every device
   and on the room server: a 1024 m square, heightmap every 2 m (`CELL`), island radius ~400 m
   with noisy coasts, a mountain in the north-east (`PEAK`, radio tower), a marsh in the east
   (`BOG`, Kessler Station), biomes (beach, meadow, jungle, pine forest, highlands, marsh),
@@ -210,8 +251,8 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   win screens. Floating joystick on the left half (touch only: a mouse clicks the island
   through it).
 - **Pause menu** (`hud/Menu.tsx`, ☰ or Esc; `client.menuPage`: main / settings / friends /
-  howto): Resume, Settings, Journal, Map, Play with friends (room code), How to play, Save and
-  quit. Solo play pauses while it's open (`link.pause`, also when the app is in the background).
+  howto / island): Resume, Settings, Journal, Map, Play with friends (room code), This island,
+  How to play, Save and quit. Solo play pauses while it's open (`link.pause`, also when the app is in the background).
   **Settings** (`SettingsPanel`, tabs): Gameplay (auto tool, auto weapon, switch back), Audio
   (master, effects, ambience, music), Screen (phones: portrait/landscape + turn the other way,
   left-handed; button size, camera distance, shake, damage numbers, vibration), Graphics
@@ -255,7 +296,8 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   the menu, steps back a menu page). Key hints show on devices with a mouse
   (`isPc`: `(pointer: fine)`).
 - **Saves**: your island is one JSON in appStorage (`mishmash_island`, `IslandSave` v1,
-  `parseIslandSave` repairs untrusted data; keep it accepting old saves). The player key is the
+  `parseIslandSave` repairs untrusted data; keep it accepting old saves; `island`, `rules` and
+  `chest` are optional: missing = the classic island, default rules). The player key is the
   RUN profile id (the same id the room uses), so your survivor is the same solo and hosting.
 - **Co-op** (`play/roomLink.ts`, `server/IslandRoom.ts`, `rundot/realtime.config.json`, room
   type `island`, 4 players, reconnect 60 s). The host creates a room and uploads their island
@@ -291,6 +333,13 @@ Most features are data first, then a little code:
 - **New landmark or puzzle**: a `PoiDef` in `content/pois.ts` (boxes = colliders, spots =
   interactions), its model in `render/structures.ts` `poiStructure`, spot behaviour in
   `sim.ts` `useSpot` and labels in `client.ts` `spotTarget`, objectives in `objectives.ts`.
+  Read landmarks from `island.pois` / `island.poiById` (laid out for the island), never `POIS`
+  directly; write texts with compass words so `turnDirections` can turn them.
+- **New climate or terrain style**: add it to `CLIMATES`/`TERRAINS` (append; codes use the
+  first two letters / the first letter, keep them unique), `climateGen` / `terrainGen` for
+  generation and `climateLook` for colours. **New world rule**: a field in `WorldRules` +
+  `DEFAULT_RULES` (the default = the game as it was), `parseRules`, a row in
+  `RulesPanel.tsx` `RULE_GROUPS`, and the authority applies it.
   Moving a POI or changing generation changes every island: existing saves keep their seed
   but nodes/colliders move, so treat generation changes as a new world (bump `IslandSave.v`
   with a migration or start players on a new island).
@@ -319,6 +368,8 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
   moderation.ts      reports grouped per message (Dev area)
   rng.ts, noise.ts   seeded hashes and value noise (engine-independent)
   world.ts           island generation and queries (heights, biomes, nodes, colliders, pools)
+  islands.ts         island parts: layout turns/mirror, climates, terrain styles, codes, names
+  rules.ts           world rules (7 Days style), presets, what they mean in numbers
   objectives.ts      the escape checklist from flags/notes/inventory
   content/           items, recipes, nodes, buildings, monsters, landmarks (pois), notes
   sim/               the island authority: sim.ts (IslandSim), mobs.ts (monsters, director),
@@ -332,13 +383,14 @@ src/server/IslandRoom.ts  co-op GameRoom (imports the SDK's mp-server; runs Isla
 src/play/          the game client: session.ts (solo/host/join, saves), link.ts (LocalLink),
                    roomLink.ts, client.ts (GameClient), input.ts, keys.ts (PC bindings),
                    settings.ts + prefs.ts (settings), screen.ts (landscape), audio.ts +
-                   music.ts, view.ts (scene), Game.tsx (canvas, frame loop, settings), render/
-                   (terrain, nodes, actors, structures, items, props, fx, geo, wind, ambient),
-                   hud/ (Hud, Menu, Panels, QuickPanel, Craft, Slots, drag, itemIcons,
-                   MapView, map)
+                   music.ts, view.ts (scene), Game.tsx (canvas, frame loop, settings),
+                   TitleScene.ts (the title backdrop), render/ (terrain, nodes, actors,
+                   structures, items, props, fx, geo, wind, ambient, climate), hud/ (Hud, Menu,
+                   Panels, QuickPanel, Craft, Slots, drag, itemIcons, MapView, map, RulesPanel)
 src/app/           community.ts (chat, votes, Dev area over UgcApi), localUgc.ts (dev stand-in),
-                   usePolling.ts, appEvents.ts (host lifecycle → game pause/resume)
-src/screens/       Play, Intro (also the About tab), Vote, Chat, Dev (owner only)
+                   usePolling.ts, appEvents.ts (host lifecycle → game pause/resume), links.ts
+                   (the October Jam link, copied)
+src/screens/       Play (title), NewIsland, Intro (also the About tab), Vote, Chat, Dev (owner)
 src/ui/            Logo (letter tiles), Notice (failure messages)
 src/components/    ErrorBoundary
 src/App.tsx        hub save, first-launch intro, tab bar, starts/leaves games
@@ -391,11 +443,13 @@ npm run build
 rundot preflight --strict   # must be 0 warnings
 npm run dev                 # then, in another shell:
 npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, vote, chat, owner
-                            # delete, Dev area), the game (walk, read, gather, craft, build, night
-                            # fight, death, item pictures, quick panel, drag and drop, Mashbench,
-                            # research page, auto tool, a supply pod, the bag window's place,
-                            # isometric and top-down walking, pause menu, settings, rebinding
-                            # a key, landscape, save/continue), hub settings and local co-op;
+                            # delete, Dev area, jam link), New island (code, presets), the game
+                            # (walk, read, gather, craft, build, night fight, death, item
+                            # pictures, quick panel, drag and drop, Mashbench, research page,
+                            # auto tool, a supply pod, the bag window's place, isometric and
+                            # top-down walking, pause menu, This island, settings, rebinding a
+                            # key, landscape, save/continue, replace confirm), hub settings and
+                            # local co-op on a made island with Relaxed rules;
                             # must print "clean"
 ```
 
@@ -435,7 +489,8 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   2026-10-22) and its next update (v1.10.0: item pictures, drag and drop, quick panel, PC
   keys, lore, Mashbench) and v1.11.0 (pause menu and settings, volume sliders and music, auto
   tool, landscape, world events and a livelier island) and v1.12.0 (isometric camera, bag
-  window by the survivor) are private until the user asks to publish them.
+  window by the survivor) and v1.13.0 (islands from parts, world rules, title screen, October
+  Jam link) are private until the user asks to publish them.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

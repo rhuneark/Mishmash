@@ -73,7 +73,7 @@ export default class IslandRoom extends GameRoom<Msg> {
   }
 
   private boot(save: IslandSave): void {
-    const island = generateIsland(save.seed);
+    const island = generateIsland(save.seed, save.island);
     this.sim = new IslandSim(
       island,
       save,

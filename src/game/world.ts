@@ -5,8 +5,18 @@
 import { fbm, bump, smoothstep } from './noise';
 import { hash01, rng } from './rng';
 import { NODE, NODES } from './content/nodes';
-import { POIS, TOWER_VINES, POI_BY_ID, SPAWN } from './content/pois';
+import { MOTHER_SPOT, POIS, TOWER_VINES, SPAWN, type PoiDef } from './content/pois';
 import { cargoCode } from './content/notes';
+import {
+  CLASSIC,
+  climateGen,
+  layoutPois,
+  place,
+  unplace,
+  type IslandParts,
+  type IslandSpec,
+  type Terrain,
+} from './islands';
 
 export const WORLD = 1024;
 export const HALF = WORLD / 2;
@@ -83,22 +93,100 @@ export interface Island {
   towerVines: number[];
   /** The cargo lock code. */
   code: string;
+  /** What it was made from: seed, layout, climate, terrain. */
+  spec: IslandSpec;
+  /** Landmarks where they stand on this island (islands.ts layoutPois). */
+  pois: PoiDef[];
+  poiById: Record<string, PoiDef>;
+  /** Where survivors wake up (the crash site). */
+  spawn: { x: number; z: number };
+  /** Where the Mother Bloom grows. */
+  mother: { x: number; z: number };
+}
+
+/** Extra terrain for the non-classic styles, in the classic layout's coordinates. */
+interface TerrainGen {
+  style: Terrain;
+  islets: { x: number; z: number; r: number }[];
+  hills: { x: number; z: number; r: number; h: number }[];
+  bogs: { x: number; z: number; r: number }[];
+}
+
+/** Coast wobble along a direction (the classic one; rugged coasts wobble more). */
+function coastVar(nx: number, nz: number, seed: number, rugged: boolean): number {
+  const base = fbm(nx * 2.2 + 5, nz * 2.2 + 5, seed + 11, 3) - 0.5;
+  if (!rugged) return base * 0.55;
+  return base * 0.95 + (fbm(nx * 7 + 9, nz * 7 + 9, seed + 13, 2) - 0.5) * 0.4;
+}
+
+function terrainGen(style: Terrain, seed: number): TerrainGen | null {
+  if (style === 'classic') return null;
+  const g: TerrainGen = { style, islets: [], hills: [], bogs: [] };
+  const clear = (x: number, z: number, room: number) =>
+    POIS.every((p) => dist(p.x, p.z, x, z) > p.flat + room);
+  // Integer hashes only (the island must come out the same on every device).
+  for (let k = 0; k < 400; k++) {
+    const rx = hash01(k, 1, seed + 301) * 2 - 1;
+    const rz = hash01(k, 2, seed + 301) * 2 - 1;
+    const len = Math.sqrt(rx * rx + rz * rz);
+    if (len < 0.3 || len > 1) continue;
+    const nx = rx / len;
+    const nz = rz / len;
+    if (style === 'islets' && g.islets.length < 11) {
+      const coast = 400 * (1 + coastVar(nx, nz, seed, false));
+      const out = coast + 18 + hash01(k, 3, seed + 301) * 40;
+      const x = nx * out;
+      const z = nz * out;
+      if (
+        Math.abs(x) < 480 &&
+        Math.abs(z) < 480 &&
+        g.islets.every((i) => dist(i.x, i.z, x, z) > 90)
+      )
+        g.islets.push({ x, z, r: 16 + hash01(k, 4, seed + 301) * 18 });
+    }
+    if (style === 'highlands' && g.hills.length < 4) {
+      const r = 110 + hash01(k, 5, seed + 301) * 170;
+      const x = nx * r;
+      const z = nz * r;
+      if (clear(x, z, 55) && g.hills.every((i) => dist(i.x, i.z, x, z) > 140))
+        g.hills.push({
+          x,
+          z,
+          r: 70 + hash01(k, 6, seed + 301) * 40,
+          h: 10 + hash01(k, 7, seed + 301) * 8,
+        });
+    }
+    if (style === 'wetlands' && g.bogs.length < 2) {
+      const r = 90 + hash01(k, 8, seed + 301) * 180;
+      const x = nx * r;
+      const z = nz * r;
+      if (
+        clear(x, z, 70) &&
+        dist(x, z, BOG.x, BOG.z) > 200 &&
+        g.bogs.every((i) => dist(i.x, i.z, x, z) > 180)
+      )
+        g.bogs.push({ x, z, r: 70 + hash01(k, 9, seed + 301) * 30 });
+    }
+  }
+  return g;
 }
 
 function islandHeight(
   x: number,
   z: number,
   seed: number,
+  tg: TerrainGen | null,
 ): { h: number; land: number; bogW: number } {
   const d = Math.sqrt(x * x + z * z);
   const nx = d > 1 ? x / d : 0;
   const nz = d > 1 ? z / d : 0;
-  const coastVar = (fbm(nx * 2.2 + 5, nz * 2.2 + 5, seed + 11, 3) - 0.5) * 0.55;
-  const radius = 400 * (1 + coastVar);
+  let radius = 400 * (1 + coastVar(nx, nz, seed, tg?.style === 'rugged'));
+  // Every landmark stays inland, and the coast inside the world.
+  if (tg) radius = Math.min(495, Math.max(318, radius));
   const t = d / radius;
   const land = 1 - t * t;
   const detail = fbm(x * 0.008, z * 0.008, seed + 21, 4) - 0.5;
-  let h = land * 10 + detail * 7 * smoothstep(-0.1, 0.25, land);
+  let h = land * 10 + detail * (tg?.style === 'rugged' ? 10 : 7) * smoothstep(-0.1, 0.25, land);
   if (land < 0.02) h = Math.min(h, land * 14);
   if (land > 0.12) h = Math.max(h, 0.8 + land * 2);
   // Lumpy, not round: the radius of each feature wobbles with noise.
@@ -107,12 +195,38 @@ function islandHeight(
   h += 7 * bump(x - PEAK.x + 70, z - PEAK.z - 40, 70 * (0.7 + wob * 0.6));
   h += 9 * bump(x + 165, z + 175, 95 * (0.75 + wob * 0.5));
   h += 5 * bump(x + 40, z + 40, 120);
-  const bogW = bump(x - BOG.x, z - BOG.z, 115 * (0.65 + wob * 0.7));
+  let bogW = bump(x - BOG.x, z - BOG.z, 115 * (0.65 + wob * 0.7));
+  if (tg) {
+    if (tg.style === 'highlands') h += 8 * bump(x - PEAK.x, z - PEAK.z, 150 * (0.7 + wob * 0.6));
+    for (const k of tg.hills) h += k.h * bump(x - k.x, z - k.z, k.r * (0.7 + wob * 0.6));
+    for (const b of tg.bogs)
+      bogW = Math.max(bogW, bump(x - b.x, z - b.z, b.r * (0.65 + wob * 0.7)));
+  }
   if (bogW > 0) h = h * (1 - bogW * 0.8) + bogW * 0.8 * 1.4;
+  if (tg) {
+    for (const i of tg.islets) {
+      // A sandbar of shallow water out to it, then the islet itself.
+      const apron = bump(x - i.x, z - i.z, i.r * 3.4);
+      if (apron > 0) h = Math.max(h, -0.75 + apron * 0.3);
+      const b = bump(x - i.x, z - i.z, i.r * (0.75 + wob * 0.5));
+      if (b > 0) h = Math.max(h, h * (1 - b) + 3.4 * b);
+    }
+  }
   return { h, land, bogW };
 }
 
-export function generateIsland(seed: number): Island {
+/**
+ * The island for a seed and its parts (islands.ts). The classic parts give the island
+ * the seed always gave; other layouts are the classic shape turned or mirrored on the
+ * height grid, with the climate and terrain style on top.
+ */
+export function generateIsland(seed: number, parts: IslandParts = CLASSIC): Island {
+  const spec: IslandSpec = { seed, ...parts };
+  const turned = parts.turn !== 0 || parts.mirror;
+  const pois = layoutPois(parts, POIS);
+  const poiById: Record<string, PoiDef> = Object.fromEntries(pois.map((p) => [p.id, p]));
+  const cg = climateGen(parts.climate);
+  const tg = terrainGen(parts.terrain, seed);
   const n1 = GRID + 1;
   const heights = new Float32Array(n1 * n1);
   const lands = new Float32Array(n1 * n1);
@@ -121,7 +235,8 @@ export function generateIsland(seed: number): Island {
     const z = j * CELL - HALF;
     for (let i = 0; i <= GRID; i++) {
       const x = i * CELL - HALF;
-      const s = islandHeight(x, z, seed);
+      const q = turned ? unplace(parts, x, z) : { x, z };
+      const s = islandHeight(q.x, q.z, seed, tg);
       heights[j * n1 + i] = s.h;
       lands[j * n1 + i] = s.land;
       bogs[j * n1 + i] = s.bogW;
@@ -129,7 +244,7 @@ export function generateIsland(seed: number): Island {
   }
 
   // Flatten the ground under landmarks.
-  for (const poi of POIS) {
+  for (const poi of pois) {
     const ci = Math.round((poi.x + HALF) / CELL);
     const cj = Math.round((poi.z + HALF) / CELL);
     const target = Math.max(1.6, heights[cj * n1 + ci] ?? 1.6);
@@ -151,15 +266,16 @@ export function generateIsland(seed: number): Island {
 
   // Freshwater pools in meadows and jungle.
   const pools: Pool[] = [];
-  for (let tries = 0; tries < 4000 && pools.length < 14; tries++) {
+  const poolCount = parts.terrain === 'wetlands' ? 26 : 14;
+  for (let tries = 0; tries < 4000 && pools.length < poolCount; tries++) {
     const x = (random() - 0.5) * 760;
     const z = (random() - 0.5) * 760;
     const hc = sampleHeights(heights, x, z);
     const land = sampleHeights(lands, x, z);
     const bogW = sampleHeights(bogs, x, z);
     if (land < 0.3 || bogW > 0.05 || hc < 1.2 || hc > 9) continue;
-    if (POIS.some((p) => dist(p.x, p.z, x, z) < p.flat + 25)) continue;
-    if (pools.some((p) => dist(p.x, p.z, x, z) < 90)) continue;
+    if (pois.some((p) => dist(p.x, p.z, x, z) < p.flat + 25)) continue;
+    if (pools.some((p) => dist(p.x, p.z, x, z) < (poolCount > 14 ? 60 : 90))) continue;
     const r = 2.5 + random() * 2;
     pools.push({ x, z, r, y: hc - 0.25 });
     carvePool(heights, x, z, r, hc);
@@ -178,12 +294,13 @@ export function generateIsland(seed: number): Island {
       if (h < -0.05) b = BIOME.ocean;
       else if (h < 1.7 && land < 0.4) b = BIOME.beach;
       else if (bogW > 0.22) b = BIOME.bog;
-      else if (h + (fbm(x * 0.03, z * 0.03, seed + 61, 2) - 0.5) * 8 > 17) b = BIOME.highland;
+      else if (h + (fbm(x * 0.03, z * 0.03, seed + 61, 2) - 0.5) * 8 > (cg?.highland ?? 17))
+        b = BIOME.highland;
       else {
         const moist = fbm(x * 0.006 + 300, z * 0.006 - 200, seed + 31, 2);
         const pine = fbm(x * 0.005 - 700, z * 0.005 + 50, seed + 41, 2);
-        if (h > 10 || pine > 0.63) b = BIOME.forest;
-        else if (moist > 0.5) b = BIOME.jungle;
+        if (h > 10 || pine > (cg?.pine ?? 0.63)) b = BIOME.forest;
+        else if (moist > (cg?.moist ?? 0.5)) b = BIOME.jungle;
         else b = BIOME.meadow;
       }
       biomes[j * GRID + i] = b;
@@ -192,7 +309,7 @@ export function generateIsland(seed: number): Island {
 
   // Landmark colliders.
   const colliders: Collider[] = [];
-  for (const poi of POIS) {
+  for (const poi of pois) {
     for (const b of poi.boxes) {
       colliders.push({
         x: poi.x + b.dx,
@@ -216,6 +333,7 @@ export function generateIsland(seed: number): Island {
     if (cx < 0 || cz < 0 || cx >= CHUNKS || cz >= CHUNKS) return;
     cands.push({ x, z, t, v, chunk: cz * CHUNKS + cx, order: cands.length });
   };
+  const table = cg ? climateTable(cg.plants) : NODE_TABLE;
   const SP = 3;
   const cells = WORLD / SP;
   for (let j = 0; j < cells; j++) {
@@ -225,18 +343,18 @@ export function generateIsland(seed: number): Island {
       const z = j * SP - HALF + hash01(i, j, seed + 103) * SP;
       const b = biomeAtArr(biomes, x, z);
       if (b === BIOME.ocean) continue;
-      if (POIS.some((p) => dist2(p.x, p.z, x, z) < (p.flat + 2) * (p.flat + 2))) continue;
+      if (pois.some((p) => dist2(p.x, p.z, x, z) < (p.flat + 2) * (p.flat + 2))) continue;
       if (pools.some((p) => dist2(p.x, p.z, x, z) < (p.r + 2.5) * (p.r + 2.5))) continue;
-      const t = pickNode(b, r0);
+      const t = pickNode(b, r0, table);
       if (t < 0) continue;
       push(x, z, t, Math.floor(hash01(i, j, seed + 104) * 256));
     }
   }
 
   // Crash debris: suitcases and wreckage around the fuselage, cockpit and tail.
-  const crash = POI_BY_ID['crash'];
-  const cockpit = POI_BY_ID['cockpit'];
-  const tail = POI_BY_ID['tail'];
+  const crash = poiById['crash'];
+  const cockpit = poiById['cockpit'];
+  const tail = poiById['tail'];
   // Rejection sampling (no trig) keeps positions identical across JS engines.
   const ring = (cx: number, cz: number, rMin: number, rMax: number, n: number, type: number) => {
     for (let k = 0; k < n;) {
@@ -263,12 +381,13 @@ export function generateIsland(seed: number): Island {
   }
 
   // Tower vines (tracked so the antenna knows when the way is clear).
-  const tower = POI_BY_ID['tower'];
+  const tower = poiById['tower'];
   const vineOrders: number[] = [];
   if (tower) {
     for (const v of TOWER_VINES) {
       vineOrders.push(cands.length);
-      push(tower.x + v.dx, tower.z + v.dz, NODE.vines, 128);
+      const o = place(parts, v.dx, v.dz);
+      push(tower.x + o.x, tower.z + o.z, NODE.vines, 128);
     }
   }
 
@@ -296,16 +415,17 @@ export function generateIsland(seed: number): Island {
 
   // Rooted Snapjaws in the jungle and marsh, away from the crash site.
   const snapjaws: { x: number; z: number }[] = [];
+  const spawn = place(parts, SPAWN.x, SPAWN.z);
   const SJ = 9;
   for (let j = 0; j < WORLD / SJ; j++) {
     for (let i = 0; i < WORLD / SJ; i++) {
       const x = i * SJ - HALF + hash01(i, j, seed + 201) * SJ;
       const z = j * SJ - HALF + hash01(i, j, seed + 202) * SJ;
       const b = biomeAtArr(biomes, x, z);
-      const chance = b === BIOME.jungle ? 0.02 : b === BIOME.bog ? 0.06 : 0;
+      const chance = (b === BIOME.jungle ? 0.02 : b === BIOME.bog ? 0.06 : 0) * (cg?.snapjaws ?? 1);
       if (hash01(i, j, seed + 203) >= chance) continue;
-      if (dist(x, z, SPAWN.x, SPAWN.z) < 70) continue;
-      if (POIS.some((p) => p.id !== 'station' && dist(p.x, p.z, x, z) < p.flat + 6)) continue;
+      if (dist(x, z, spawn.x, spawn.z) < 70) continue;
+      if (pois.some((p) => p.id !== 'station' && dist(p.x, p.z, x, z) < p.flat + 6)) continue;
       snapjaws.push({ x, z });
     }
   }
@@ -325,12 +445,17 @@ export function generateIsland(seed: number): Island {
     snapjaws,
     towerVines: vineOrders.map((o) => idOfOrder.get(o) ?? -1).filter((id) => id >= 0),
     code: cargoCode(seed),
+    spec,
+    pois,
+    poiById,
+    spawn,
+    mother: place(parts, MOTHER_SPOT.x, MOTHER_SPOT.z),
   };
 }
 
 /** Node type for a scatter cell in this biome (-1 for none). */
-function pickNode(b: number, r: number): number {
-  const table = NODE_TABLE[b];
+function pickNode(b: number, r: number, tables: Record<number, [number, number][]>): number {
+  const table = tables[b];
   if (!table) return -1;
   let acc = 0;
   for (const [t, p] of table) {
@@ -388,6 +513,15 @@ const NODE_TABLE: Record<number, [number, number][]> = {
     [NODE.branch, 0.02],
   ],
 };
+
+/** The scatter odds with a climate's plants more or less common. */
+function climateTable(plants: Partial<Record<number, number>>): Record<number, [number, number][]> {
+  const out: Record<number, [number, number][]> = {};
+  for (const [b, rows] of Object.entries(NODE_TABLE)) {
+    out[Number(b)] = rows.map(([t, p]) => [t, p * (plants[t] ?? 1)]);
+  }
+  return out;
+}
 
 function carvePool(heights: Float32Array, x: number, z: number, r: number, h0: number): void {
   const n1 = GRID + 1;

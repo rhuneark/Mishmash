@@ -4,6 +4,7 @@
 import { useState, type ReactNode } from 'react';
 import { ITEMS } from '../../game/content/items';
 import { NOTES, PAGES, noteText } from '../../game/content/notes';
+import { bloomOrdinal } from '../../game/rules';
 import { POIS } from '../../game/content/pois';
 import { STATION_NAMES, STATIONS, RECIPE_LIST } from '../../game/content/recipes';
 import { knownCode, objectives, tagsFound } from '../../game/objectives';
@@ -218,13 +219,17 @@ export function StorageSheet({ client, onClose }: { client: GameClient; onClose:
       </Sheet>
     );
   }
+  const shared = client.rules.sharedChests;
   return (
-    <Sheet title="📦 Storage box" onClose={onClose} wide>
+    <Sheet title={shared ? '📦 Connected storage' : '📦 Storage box'} onClose={onClose} wide>
       <p className="muted small-text">
-        Tap to move things in or out, or drag them where you want them. Everyone on the island can
-        use this box.
+        Tap to move things in or out, or drag them where you want them.{' '}
+        {shared
+          ? 'Every storage box on the island opens this same storage.'
+          : 'Everyone on the island can use this box.'}
+        {client.rules.craftFromChests && ' Crafting can use what is in here, wherever you are.'}
       </p>
-      <div className="label">Box</div>
+      <div className="label">{shared ? 'Storage' : 'Box'}</div>
       <div className="slot-grid">
         {box.inv.map((s, i) => (
           <SlotButton
@@ -324,7 +329,7 @@ const TIPS = [
   'Pick up branches and loose stones, pull fiber from bushes. Twist fiber into rope.',
   'A stone axe and pickaxe come first (🎒 › Craft). Hold a tool in your hotbar to use it.',
   'Build a campfire before dark. The taken fear fire, it heals you, and it cooks food. Feed it wood.',
-  "Every 7th night is a Bloom night: fire won't keep them away. Build walls, spikes and a door.",
+  "Every {nth} night is a Bloom night: fire won't keep them away. Build walls, spikes and a door.",
   'Drink from freshwater pools, coconuts and rain collectors. Food and water keep you healing.',
   'Puffers burst into poison: hit them from range or back off. Bandages cure poison.',
   'Fire bombs and torches set the Bloom on fire. The Mother Bloom hates fire.',
@@ -339,8 +344,10 @@ export function JournalSheet({ client, onClose }: { client: GameClient; onClose:
     notes: client.notes,
     carrying: client.carrying(),
     rescue: client.rescue,
+    parts: client.island?.spec,
   });
   const notes = [...client.notes].filter((id) => SPOTS.has(id));
+  const every = client.rules.bloomEvery;
   const pages = PAGES.filter((id) => client.notes.has(id));
   const tags = tagsFound(client.notes);
   const open = (id: string) => {
@@ -393,8 +400,8 @@ export function JournalSheet({ client, onClose }: { client: GameClient; onClose:
       </div>
       <div className="label">Survival tips</div>
       <ul className="tips">
-        {TIPS.map((t) => (
-          <li key={t}>{t}</li>
+        {TIPS.filter((t) => every > 0 || !t.includes('{nth}')).map((t) => (
+          <li key={t}>{t.replace('{nth}', bloomOrdinal(every))}</li>
         ))}
       </ul>
     </Sheet>
@@ -406,7 +413,12 @@ export function NoteSheet({ client, onClose }: { client: GameClient; onClose: ()
     ? noteFor(client.noteId)
     : { note: undefined, spot: undefined };
   if (!note) return null;
-  const text = noteText(note.id, client.seed, spot?.kind === 'tag' ? spot.digit : undefined);
+  const text = noteText(
+    note.id,
+    client.seed,
+    spot?.kind === 'tag' ? spot.digit : undefined,
+    client.island ? { parts: client.island.spec, bloomEvery: client.rules.bloomEvery } : undefined,
+  );
   return (
     <Sheet title={`📄 ${note.title}`} onClose={onClose}>
       <div className="note-paper">

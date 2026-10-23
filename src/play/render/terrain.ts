@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { noise2 } from '../../game/noise';
 import { hash01 } from '../../game/rng';
 import { BIOME, CELL, CHUNK, CHUNKS, GRID, HALF, type Island } from '../../game/world';
+import { climateLook } from './climate';
 
 const PER = CHUNK / CELL;
 
@@ -19,8 +20,13 @@ const BIOME_COLORS: Record<number, number[]> = {
 
 const tmp = new THREE.Color();
 const rockColor = new THREE.Color(0x77756e);
-const wetSand = new THREE.Color(0xc9b98a);
 const deep = new THREE.Color(0x4f7f8f);
+
+/** The ground colours of an island's climate. */
+interface Ground {
+  biomes: Partial<Record<number, number[]>>;
+  wetSand: THREE.Color;
+}
 
 export class Terrain {
   private readonly island: Island;
@@ -34,12 +40,20 @@ export class Terrain {
   private readonly waterMat: THREE.MeshPhongMaterial;
   private readonly poolMat: THREE.MeshPhongMaterial;
   private queue: number[] = [];
+  private readonly ground: Ground;
+  private readonly sea: number;
 
   constructor(island: Island, scene: THREE.Scene) {
     this.island = island;
+    const look = climateLook(island.spec.climate);
+    this.ground = {
+      biomes: { ...BIOME_COLORS, ...look.ground },
+      wetSand: new THREE.Color(look.wetSand ?? 0xc9b98a),
+    };
+    this.sea = look.sea ?? 0x2f8fc0;
     scene.add(this.group);
     this.waterMat = new THREE.MeshPhongMaterial({
-      color: 0x2f8fc0,
+      color: this.sea,
       transparent: true,
       opacity: 0.8,
       shininess: 70,
@@ -71,7 +85,7 @@ export class Terrain {
 
   setWaterTint(day: number, bloom: boolean): void {
     const c = this.waterMat.color;
-    c.setHex(0x2f8fc0).lerp(tmp.setHex(bloom ? 0x2a1830 : 0x0d2236), 1 - day);
+    c.setHex(this.sea).lerp(tmp.setHex(bloom ? 0x2a1830 : 0x0d2236), 1 - day);
     this.poolMat.color.setHex(0x5ab0d8).lerp(tmp.setHex(0x16304a), 1 - day);
   }
 
@@ -155,7 +169,8 @@ export class Terrain {
           const hAvg = ((tri[0]?.[1] ?? 0) + (tri[1]?.[1] ?? 0) + (tri[2]?.[1] ?? 0)) / 3;
           const slope = Math.max(Math.abs(h00 - h11), Math.abs(h10 - h01)) / CELL;
           const patch = noise2(gi * 0.09, gj * 0.09, island.seed + 33);
-          colorFor(biome, hAvg, slope, hash01(gi * 2 + t, gj, island.seed + 9), patch, tmp);
+          const r = hash01(gi * 2 + t, gj, island.seed + 9);
+          colorFor(this.ground, biome, hAvg, slope, r, patch, tmp);
           for (const v of tri) {
             pos[o] = v[0];
             pos[o + 1] = v[1];
@@ -181,6 +196,7 @@ const blend = new THREE.Color();
 
 /** Ground colour: soft patches of the biome's shades (noise), a touch of per-face jitter. */
 function colorFor(
+  ground: Ground,
   biome: number,
   h: number,
   slope: number,
@@ -189,14 +205,14 @@ function colorFor(
   out: THREE.Color,
 ): void {
   if (h < 0) {
-    out.copy(wetSand).lerp(deep, Math.min(1, -h / 4));
+    out.copy(ground.wetSand).lerp(deep, Math.min(1, -h / 4));
     return;
   }
-  const list = BIOME_COLORS[biome] ?? [0x888888];
+  const list = ground.biomes[biome] ?? [0x888888];
   const f = Math.max(0, Math.min(0.999, patch)) * (list.length - 1);
   const i = Math.floor(f);
   out.setHex(list[i] as number).lerp(blend.setHex((list[i + 1] ?? list[i]) as number), f - i);
-  if (h < 0.6 && biome !== BIOME.bog) out.lerp(wetSand, 0.6);
+  if (h < 0.6 && biome !== BIOME.bog) out.lerp(ground.wetSand, 0.6);
   if (slope > 0.7) out.lerp(rockColor, Math.min(1, (slope - 0.7) * 1.5));
   out.multiplyScalar(0.97 + r * 0.06);
 }

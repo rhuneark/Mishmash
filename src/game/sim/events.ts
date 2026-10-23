@@ -9,7 +9,8 @@ import type { Slot } from './protocol';
 import { spawnMob } from './mobs';
 import type { IslandSim } from './sim';
 import type { SimPlayer } from './types';
-import { DAY, dayInfo } from './time';
+import { eventScale, monsterScale } from '../rules';
+import { DAY } from './time';
 
 /** Seconds from the start of a new island to its first event. */
 export const FIRST_EVENT = 150;
@@ -145,15 +146,17 @@ export function runEvents(sim: IslandSim): void {
     sim.falling.splice(i, 1);
     landPod(sim, f.x, f.z);
   }
-  if (sim.time < sim.nextEvent) return;
+  const scale = eventScale(sim.rules.events);
+  if (sim.time < sim.nextEvent || scale === 0) return;
   const who = players(sim);
   if (!who.length || sim.rescue.phase === 'calling' || sim.rescue.phase === 'landed') return;
-  sim.nextEvent = sim.time + EVENT_GAP.min + sim.random() * (EVENT_GAP.max - EVENT_GAP.min);
+  sim.nextEvent =
+    sim.time + (EVENT_GAP.min + sim.random() * (EVENT_GAP.max - EVENT_GAP.min)) * scale;
   const p = who[Math.floor(sim.random() * who.length)] as SimPlayer;
-  const info = dayInfo(sim.time);
+  const info = sim.info();
   const kind = pickEvent(sim.random(), info.night, info.day);
   if (kind === 'wreck' && wreck(sim, p)) return;
-  if (kind === 'pack' && pack(sim, p)) return;
+  if (kind === 'pack' && sim.rules.monsters !== 'none' && pack(sim, p)) return;
   pod(sim, p);
 }
 
@@ -196,7 +199,7 @@ function pod(sim: IslandSim, p: SimPlayer): boolean {
 function landPod(sim: IslandSim, x: number, z: number): void {
   sim.fx('land', x, z, undefined, undefined, 4);
   for (const p of players(sim)) {
-    if (dist(p.x, p.z, x, z) < 2.2) sim.hurtPlayer(p, 30, x, z);
+    if (dist(p.x, p.z, x, z) < 2.2) sim.hurtPlayer(p, 30, x, z, false);
   }
   sim.makeBag(
     x,
@@ -207,8 +210,10 @@ function landPod(sim: IslandSim, x: number, z: number): void {
     'pod',
   );
   // The crash wakes whatever sleeps nearby: they guard the pod until someone comes.
-  const info = dayInfo(sim.time);
-  const n = 2 + Math.min(3, Math.floor(info.day / 3));
+  const info = sim.info();
+  const n = Math.round(
+    (2 + Math.min(3, Math.floor(info.day / 3))) * monsterScale(sim.rules.monsters),
+  );
   const kinds: MonsterKind[] = info.day >= 4 ? ['husk', 'husk', 'puffer', 'thornback'] : ['husk'];
   for (let k = 0; k < n; k++) {
     const s = findSpot(
@@ -235,7 +240,7 @@ function landPod(sim: IslandSim, x: number, z: number): void {
 }
 
 function pack(sim: IslandSim, p: SimPlayer): boolean {
-  const info = dayInfo(sim.time);
+  const info = sim.info();
   const centre = findSpot(sim, p.x, p.z, 45, 60, (x, z) => {
     return (
       heightAt(sim.island, x, z) > 0.4 &&
@@ -245,7 +250,10 @@ function pack(sim: IslandSim, p: SimPlayer): boolean {
     );
   });
   if (!centre) return false;
-  const n = Math.min(6, 3 + Math.floor(info.day / 3));
+  const n = Math.max(
+    1,
+    Math.round(Math.min(6, 3 + Math.floor(info.day / 3)) * monsterScale(sim.rules.monsters)),
+  );
   let made = 0;
   for (let k = 0; k < n; k++) {
     const s = findSpot(

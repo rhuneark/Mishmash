@@ -6,6 +6,7 @@ import { NODE, NODES } from '../../game/content/nodes';
 import { CHUNK, CHUNKS, HALF, forNodesNear, heightAt, type Island } from '../../game/world';
 import { MAT } from './geo';
 import { nodeGeometries, nodeScale, nodeTint } from './props';
+import { climateLook } from './climate';
 import { windy } from './wind';
 
 const CAP = 2600;
@@ -57,7 +58,7 @@ export class NodeView {
   ) {
     this.island = island;
     this.y = new Float32Array(island.nodeCount).fill(Number.NaN);
-    nodeGeometries().forEach((geo, type) => {
+    nodeGeometries(climateLook(island.spec.climate).plants).forEach((geo, type) => {
       const sway = SWAY[type];
       const m = new THREE.InstancedMesh(geo, sway ? windy(MAT.lit, sway) : MAT.lit, CAP);
       m.count = 0;

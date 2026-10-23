@@ -8,6 +8,9 @@
 // relay on the peak jams every signal for miles: that is what brought Flight
 // MX207 down. Every seventh night the colony blooms and nothing scares it.
 
+import { turnDirections, type IslandParts } from '../islands';
+import { bloomOrdinal } from '../rules';
+
 export interface NoteDef {
   id: string;
   title: string;
@@ -228,11 +231,27 @@ export function cargoCode(seed: number): string {
   return code;
 }
 
-/** The text of a note, with tag digits filled in. */
-export function noteText(noteId: string, seed: number, digit?: number): string {
+/** How the island differs from the classic one (layout and how often the Bloom comes). */
+export interface NoteWorld {
+  parts: IslandParts;
+  bloomEvery: number;
+}
+
+/**
+ * The text of a note, with tag digits filled in, directions turned with the island's
+ * layout and the Bloom night ("every seventh night") as the island's rules have it.
+ */
+export function noteText(noteId: string, seed: number, digit?: number, world?: NoteWorld): string {
   const note = NOTES[noteId];
   if (!note) return '';
-  if (digit === undefined) return note.text;
-  const code = cargoCode(seed);
-  return note.text.replace('{pos}', String(digit + 1)).replace('{digit}', code[digit] ?? '?');
+  let text = note.text;
+  if (digit !== undefined) {
+    const code = cargoCode(seed);
+    text = text.replace('{pos}', String(digit + 1)).replace('{digit}', code[digit] ?? '?');
+  }
+  if (!world) return text;
+  const nth = bloomOrdinal(world.bloomEvery);
+  return turnDirections(text, world.parts)
+    .replace(/\bseventh\b/g, nth)
+    .replace(/\bSeventh\b/g, nth[0]?.toUpperCase() + nth.slice(1));
 }

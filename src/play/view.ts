@@ -6,7 +6,6 @@ import { BUILDINGS, RAIN_MAX } from '../game/content/buildings';
 import { ITEMS } from '../game/content/items';
 import { MONSTERS } from '../game/content/monsters';
 import { NODE } from '../game/content/nodes';
-import { POI_BY_ID } from '../game/content/pois';
 import { POD_FALL } from '../game/sim/events';
 import { MOB_STATE } from '../game/sim/protocol';
 import { daylight } from '../game/sim/time';
@@ -18,6 +17,7 @@ import { itemIconUrl } from './hud/itemIcons';
 import { buzz } from './prefs';
 import { Actor } from './render/actors';
 import { Ambient } from './render/ambient';
+import { climateLook } from './render/climate';
 import { Fx, FX_COLORS } from './render/fx';
 import { bagModel, crateModel, podModel } from './render/items';
 import { NodeView } from './render/nodes';
@@ -44,14 +44,10 @@ const TREES: number[] = [NODE.palm, NODE.jungle, NODE.pine];
 /** Seconds a felled tree takes to hit the ground. */
 const FALL = 1.4;
 
-const SKY_DAY = new THREE.Color(0x9fd3ea);
-const SKY_DUSK = new THREE.Color(0xe39a6a);
 const SKY_NIGHT = new THREE.Color(0x0a0f1e);
 const SKY_BLOOM = new THREE.Color(0x1c0b22);
-const HEMI_DAY = new THREE.Color(0xd8eeff);
 const HEMI_NIGHT = new THREE.Color(0x3a4c80);
 const HEMI_BLOOM = new THREE.Color(0x5a3a6a);
-const GROUND_DAY = new THREE.Color(0x6a7a4a);
 const GROUND_NIGHT = new THREE.Color(0x1a1a2a);
 const tmpColor = new THREE.Color();
 const tmpVec = new THREE.Vector3();
@@ -182,6 +178,12 @@ export class View {
   private terrainRadius = 3;
   private nodeRadius = 2;
   private fogMul = 1;
+  // The island's climate: daylight colours and how misty it is.
+  private readonly skyDay: THREE.Color;
+  private readonly skyDusk: THREE.Color;
+  private readonly hemiDay: THREE.Color;
+  private readonly groundDay: THREE.Color;
+  private readonly climateFog: number;
   /** The camera's distance from what it looks at (fog starts from there). */
   private fogFrom = 32;
   private shakeOn = true;
@@ -230,7 +232,15 @@ export class View {
     this.ambient = new Ambient(this.island, this.scene);
     this.nodes = new NodeView(this.island, this.scene, (id) => client.nodeGone(id));
     this.fx = new Fx(this.scene);
-    this.pois = buildPois((x, z) => heightAt(this.island, x, z));
+    const look = climateLook(this.island.spec.climate);
+    this.skyDay = new THREE.Color(look.skyDay ?? 0x9fd3ea);
+    this.skyDusk = new THREE.Color(look.skyDusk ?? 0xe39a6a);
+    this.hemiDay = new THREE.Color(look.hemiDay ?? 0xd8eeff);
+    this.groundDay = new THREE.Color(look.groundDay ?? 0x6a7a4a);
+    this.climateFog = look.fog ?? 1;
+    this.pois = buildPois(this.island.pois, this.island.spec, (x, z) =>
+      heightAt(this.island, x, z),
+    );
     for (const p of this.pois) this.scene.add(p.group);
     this.heli = helicopter();
     this.heli.group.visible = false;
@@ -1067,7 +1077,7 @@ export class View {
     }
     // The helicopter comes in during the last seconds of the call and waits.
     const r = c.rescue;
-    const tower = POI_BY_ID['tower'];
+    const tower = this.island.poiById['tower'];
     const pad = tower?.spots.find((s) => s.kind === 'heli');
     if (!tower || !pad) return;
     const hx = tower.x + pad.dx;
@@ -1146,14 +1156,15 @@ export class View {
     const bloom = info.bloom;
     // Dusk/dawn warmth peaks while daylight is half up.
     const warm = Math.max(0, 1 - Math.abs(day - 0.5) * 2.2);
-    const sky = tmpColor.copy(bloom ? SKY_BLOOM : SKY_NIGHT).lerp(SKY_DAY, day);
-    sky.lerp(SKY_DUSK, warm * 0.6);
+    const sky = tmpColor.copy(bloom ? SKY_BLOOM : SKY_NIGHT).lerp(this.skyDay, day);
+    sky.lerp(this.skyDusk, warm * 0.6);
     (this.scene.background as THREE.Color).copy(sky);
     this.fog.color.copy(sky);
-    this.fog.near = this.fogFrom + (-14 + day * 40) * this.fogMul;
-    this.fog.far = this.fogFrom + (30 + day * 70) * this.fogMul;
-    this.hemi.color.copy(bloom ? HEMI_BLOOM : HEMI_NIGHT).lerp(HEMI_DAY, day);
-    this.hemi.groundColor.copy(GROUND_NIGHT).lerp(GROUND_DAY, day);
+    const fog = this.fogMul * this.climateFog;
+    this.fog.near = this.fogFrom + (-14 + day * 40) * fog;
+    this.fog.far = this.fogFrom + (30 + day * 70) * fog;
+    this.hemi.color.copy(bloom ? HEMI_BLOOM : HEMI_NIGHT).lerp(this.hemiDay, day);
+    this.hemi.groundColor.copy(GROUND_NIGHT).lerp(this.groundDay, day);
     this.hemi.intensity = 0.8 + day * 0.9;
     this.sun.intensity = 0.3 + day * 1.9;
     this.sun.color.setHex(0xffffff).lerp(tmpColor.setHex(0xffa060), warm * 0.8);

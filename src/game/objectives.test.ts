@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cargoCode } from './content/notes';
+import { cargoCode, noteText } from './content/notes';
 import { currentObjective, knownCode, objectives, tagsFound, type Progress } from './objectives';
 
 const progress = (
@@ -69,5 +69,23 @@ describe('escape objectives', () => {
     expect(knownCode(seed, new Set())).toBe('____');
     expect(knownCode(seed, new Set(['tag_1', 'tag_3']))).toBe(`_${code[1]}_${code[3]}`);
     expect(tagsFound(new Set(['tag_0', 'tag_2', 'crash_note']))).toBe(2);
+  });
+});
+
+describe('texts on a turned island', () => {
+  it('points the checklist and the notes the right way, with the Bloom as the rules have it', () => {
+    const turned = {
+      turn: 1 as const,
+      mirror: false,
+      climate: 'tropic' as const,
+      terrain: 'classic' as const,
+    };
+    const cockpit = objectives({ ...progress([], ['crash_note']), parts: turned })[1];
+    expect(cockpit?.text).toBe('Find the cockpit in the jungle to the north-east');
+    const plain = objectives(progress([], ['crash_note']))[1];
+    expect(plain?.text).toBe('Find the cockpit in the jungle to the north-west');
+    const text = noteText('kessler', 1, undefined, { parts: turned, bloomEvery: 3 });
+    expect(text).toMatch(/Every third night/);
+    expect(noteText('kessler', 1)).toMatch(/seventh/);
   });
 });

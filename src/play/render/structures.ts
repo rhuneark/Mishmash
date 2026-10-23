@@ -1,7 +1,8 @@
 // Buildings players place, landmark structures and their interactive spots.
 
 import * as THREE from 'three';
-import { POIS, type PoiDef, type Spot } from '../../game/content/pois';
+import { POI_BY_ID, type PoiDef, type Spot } from '../../game/content/pois';
+import type { IslandParts } from '../../game/islands';
 import { MAT, box, cone, cyl, disc, dodeca, mesh, sphere, torus } from './geo';
 
 export interface BuildingView {
@@ -642,15 +643,27 @@ export interface PoiView {
   spots: SpotView[];
 }
 
-export function buildPois(heightAt: (x: number, z: number) => number): PoiView[] {
-  return POIS.map((poi) => {
-    const group = poiStructure(poi);
+/**
+ * The landmarks of an island. Models are built in the classic layout and the group turns
+ * (and mirrors) them into place, so `poi` holds where they stand on this island.
+ */
+export function buildPois(
+  pois: PoiDef[],
+  parts: IslandParts,
+  heightAt: (x: number, z: number) => number,
+): PoiView[] {
+  return pois.map((poi) => {
+    const classic = POI_BY_ID[poi.id] ?? poi;
+    const group = poiStructure(classic);
     group.position.set(poi.x, heightAt(poi.x, poi.z), poi.z);
-    const spots = poi.spots.map((spot) => {
+    group.rotation.y = (-parts.turn * Math.PI) / 2;
+    if (parts.mirror) group.scale.x = -1;
+    const spots = classic.spots.map((spot, i) => {
       const v = spotModel(spot);
+      const at = poi.spots[i] ?? spot;
       v.group.position.set(
         spot.dx,
-        heightAt(poi.x + spot.dx, poi.z + spot.dz) - group.position.y,
+        heightAt(poi.x + at.dx, poi.z + at.dz) - group.position.y,
         spot.dz,
       );
       group.add(v.group);

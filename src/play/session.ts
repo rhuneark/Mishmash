@@ -2,7 +2,9 @@
 // hosting it for friends, or joining a friend's island by code.
 
 import * as run from '../sdk/run';
+import { CLASSIC, islandName, specCode, type IslandParts, type IslandSpec } from '../game/islands';
 import { randomSeed } from '../game/rng';
+import type { WorldRules } from '../game/rules';
 import { newSave, parseIslandSave, type IslandSave } from '../game/sim/types';
 import { generateIsland, type Island } from '../game/world';
 import { GameClient } from './client';
@@ -13,10 +15,22 @@ export const ISLAND_KEY = 'mishmash_island';
 
 let cached: Island | null = null;
 
-/** The island for a seed (generating one takes a moment; the last is kept). */
-export function islandFor(seed: number): Island {
-  if (cached?.seed !== seed) cached = generateIsland(seed);
+/** The island for a spec (generating one takes a moment; the last is kept). */
+export function islandFor(spec: IslandSpec): Island {
+  if (!cached || specCode(cached.spec) !== specCode(spec)) cached = generateIsland(spec.seed, spec);
   return cached;
+}
+
+/** The spec of a saved island (older saves: the classic parts). */
+export function specOf(save: IslandSave): IslandSpec {
+  return { seed: save.seed, ...(save.island ?? CLASSIC) };
+}
+
+/** What the New island screen asks for. */
+export interface NewIsland {
+  seed: number;
+  parts: IslandParts;
+  rules: WorldRules;
 }
 
 let lastSave: IslandSave | null = null;
@@ -40,12 +54,15 @@ export async function loadIsland(): Promise<IslandSave | null> {
 export function describeSave(
   save: IslandSave,
   me: string,
-): { day: number; escaped: boolean; friends: number } {
+): { day: number; escaped: boolean; friends: number; spec: IslandSpec; name: string } {
   const p = save.players[me] ?? Object.values(save.players)[0];
+  const spec = specOf(save);
   return {
     day: Math.floor(save.time / 600) + 1,
     escaped: !!p?.escaped,
     friends: Math.max(0, Object.keys(save.players).length - 1),
+    spec,
+    name: islandName(spec),
   };
 }
 
@@ -58,15 +75,15 @@ const nextFrame = () => new Promise<void>((r) => setTimeout(r, 30));
 export type StartFail = 'login' | 'notfound' | 'full' | 'error';
 export type Started = { ok: true; client: GameClient } | { ok: false; reason: StartFail };
 
-/** Your own island, run on this device. */
-export async function startSolo(fresh: boolean): Promise<Started> {
+/** Your own island, run on this device (`fresh`: a new one, made as asked). */
+export async function startSolo(fresh: NewIsland | null): Promise<Started> {
   let save = fresh ? null : (lastSave ?? (await loadIsland()));
   if (!save) {
-    save = newSave(randomSeed(Math.random));
+    save = fresh ? newSave(fresh.seed, fresh.parts, fresh.rules) : newSave(randomSeed(Math.random));
     await keep(save);
   }
   await nextFrame();
-  const island = islandFor(save.seed);
+  const island = islandFor(specOf(save));
   const link = new LocalLink(island, save, playerId(), keep);
   const client = new GameClient(link, run.myName(), islandFor);
   client.start();

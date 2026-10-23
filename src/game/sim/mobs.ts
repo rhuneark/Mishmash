@@ -5,10 +5,10 @@
 import { BUILDINGS } from '../content/buildings';
 import { ITEMS } from '../content/items';
 import { MONSTERS, MOTHER_SLAM_RADIUS, PUFFER_BURST, type MonsterKind } from '../content/monsters';
-import { MOTHER_SPOT, POI_BY_ID } from '../content/pois';
+import { monsterScale, speedFor } from '../rules';
 import { BIOME, biomeAt, heightAt, hitCollider } from '../world';
 import type { IslandSim } from './sim';
-import { dayInfo, DAY } from './time';
+import { DAY } from './time';
 import { circleHitsBox, footprint, type Mob, type SimPlayer } from './types';
 
 const DESPAWN = 80;
@@ -209,7 +209,7 @@ function stepToward(
 }
 
 export function updateMobs(sim: IslandSim, dt: number): void {
-  const info = dayInfo(sim.time);
+  const info = sim.info();
   for (const m of [...sim.mobs.values()]) {
     if (!sim.mobs.has(m.id)) continue;
     const def = MONSTERS[m.kind];
@@ -409,7 +409,11 @@ function walker(sim: IslandSim, m: Mob, dt: number, night: boolean): void {
     if (m.t > 0) return;
     if (m.siege !== null) {
       const b = sim.buildings.get(m.siege);
-      if (b) sim.damageBuilding(b, def.damage * (m.kind === 'thornback' ? 1.5 : 1.2));
+      if (b)
+        sim.damageBuilding(
+          b,
+          (def.damage * (m.kind === 'thornback' ? 1.5 : 1.2) * sim.rules.bloomBlockDamage) / 100,
+        );
       m.siege = null;
     } else if (m.kind === 'puffer') {
       burst(sim, m);
@@ -475,7 +479,11 @@ function walker(sim: IslandSim, m: Mob, dt: number, night: boolean): void {
     m.siege = null;
     return;
   }
-  const speed = night || m.enraged ? def.run : (def.run + def.walk) / 2;
+  const speed = speedFor(
+    night || m.enraged ? sim.rules.nightSpeed : sim.rules.daySpeed,
+    def.walk,
+    def.run,
+  );
   const before = { x: m.x, z: m.z };
   m.st = 'chase';
   const s = stepToward(sim, m, target.x, target.z, speed, dt, def.reach * 0.8);
@@ -549,7 +557,7 @@ function pickKind(r: number, table: [MonsterKind, number][]): MonsterKind {
 }
 
 export function runDirector(sim: IslandSim): void {
-  const info = dayInfo(sim.time);
+  const info = sim.info();
   const players = [...sim.online]
     .map((id) => alivePlayer(sim, id))
     .filter((p): p is SimPlayer => !!p);
@@ -576,19 +584,14 @@ export function runDirector(sim: IslandSim): void {
 
   // The Mother Bloom.
   if (!sim.flags.has('mother_dead') && ![...sim.mobs.values()].some((m) => m.kind === 'mother')) {
-    if (players.some((p) => dist(p.x, p.z, MOTHER_SPOT.x, MOTHER_SPOT.z) < 75)) {
-      spawnMob(
-        sim,
-        'mother',
-        MOTHER_SPOT.x,
-        MOTHER_SPOT.z,
-        sim.motherHp ? { hp: sim.motherHp } : {},
-      );
+    const spot = sim.island.mother;
+    if (players.some((p) => dist(p.x, p.z, spot.x, spot.z) < 75)) {
+      spawnMob(sim, 'mother', spot.x, spot.z, sim.motherHp ? { hp: sim.motherHp } : {});
     }
   }
 
   // Roamers around each player.
-  const tower = POI_BY_ID['tower'];
+  const tower = sim.island.poiById['tower'];
   for (const p of players) {
     let hostileNear = 0;
     let crabsNear = 0;
@@ -643,6 +646,9 @@ export function runDirector(sim: IslandSim): void {
             ]
           : [['husk', 1]];
     }
+    // Bloom nights and the rescue always come, at least half size.
+    const scale = monsterScale(sim.rules.monsters);
+    want = Math.round(want * (enraged ? Math.max(0.5, scale) : scale));
     if (hostileNear < want) {
       const n = info.bloom && !rescueHere ? 2 : 1;
       for (let k = 0; k < n; k++) {

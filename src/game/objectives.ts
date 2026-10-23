@@ -2,6 +2,7 @@
 // (flags, notes read) and what the player carries.
 
 import { cargoCode } from './content/notes';
+import { turnDirections, type IslandParts } from './islands';
 import type { RescueNet } from './sim/protocol';
 
 export interface Objective {
@@ -18,6 +19,8 @@ export interface Progress {
   /** Item ids the player carries. */
   carrying: ReadonlySet<string>;
   rescue: RescueNet;
+  /** The island's layout (directions in the texts turn with it). */
+  parts?: IslandParts;
 }
 
 /** Digits of the cargo code found so far ('_' for unknown). */
@@ -35,6 +38,12 @@ export function tagsFound(notes: ReadonlySet<string>): number {
 }
 
 export function objectives(p: Progress): Objective[] {
+  const list = checklist(p);
+  const parts = p.parts;
+  return parts ? list.map((o) => ({ ...o, text: turnDirections(o.text, parts) })) : list;
+}
+
+function checklist(p: Progress): Objective[] {
   const f = p.flags;
   const has = (id: string) => p.carrying.has(id);
   const list: Objective[] = [];

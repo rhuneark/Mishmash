@@ -6,7 +6,9 @@ import { BUILDINGS, CAMPFIRE_FUEL_MAX, STATION_RANGE } from '../game/content/bui
 import { ITEMS, type ItemDef, type ToolKind } from '../game/content/items';
 import { MONSTERS, type MonsterKind } from '../game/content/monsters';
 import { NODES } from '../game/content/nodes';
-import { POIS, type PoiDef, type Spot } from '../game/content/pois';
+import { type PoiDef, type Spot } from '../game/content/pois';
+import { CLASSIC, specCode, type IslandSpec } from '../game/islands';
+import { DEFAULT_RULES, parseRules, type WorldRules } from '../game/rules';
 import { RECIPES, type Station } from '../game/content/recipes';
 import { currentObjective, type Objective } from '../game/objectives';
 import { HOTBAR, bestSlot, hasAll, jobScore } from '../game/sim/inventory';
@@ -99,7 +101,7 @@ export interface Target {
 export type Panel = 'bag' | 'craft' | 'storage' | 'keypad' | 'journal' | 'map' | 'menu' | 'note';
 
 /** Pages of the pause menu. */
-export type MenuPage = 'main' | 'settings' | 'friends' | 'howto';
+export type MenuPage = 'main' | 'settings' | 'friends' | 'howto' | 'island';
 
 export interface Toast {
   id: number;
@@ -189,6 +191,8 @@ export class GameClient {
   quickOpen = false;
   quickTab: 'bag' | 'craft' = 'bag';
   menuPage: MenuPage = 'main';
+  /** The island's world rules (from the snapshot). */
+  rules: WorldRules = DEFAULT_RULES;
   /** Where the survivor stands on screen (px; the view keeps it up to date). */
   anchor = { x: 0, y: 0, w: 0, h: 0 };
   /** Auto tool / weapon (Menu › Settings › Gameplay). */
@@ -223,7 +227,7 @@ export class GameClient {
   constructor(
     link: Link,
     name: string,
-    private readonly islandFor: (seed: number) => Island,
+    private readonly islandFor: (spec: IslandSpec) => Island,
   ) {
     this.link = link;
     this.name = name;
@@ -286,7 +290,8 @@ export class GameClient {
         return;
       }
       this.you = msg.you;
-      if (this.island && this.island.seed === snap.seed) {
+      const spec: IslandSpec = { seed: snap.seed, ...(snap.island ?? CLASSIC) };
+      if (this.island && specCode(this.island.spec) === specCode(spec)) {
         this.applySnapshot(snap);
         return;
       }
@@ -296,7 +301,7 @@ export class GameClient {
       this.touch();
       this.flushChanges();
       setTimeout(() => {
-        this.island = this.islandFor(snap.seed);
+        this.island = this.islandFor(spec);
         this.applySnapshot(snap);
         const queued = this.pending;
         this.pending = [];
@@ -392,6 +397,7 @@ export class GameClient {
 
   private applySnapshot(s: Snapshot): void {
     this.seed = s.seed;
+    this.rules = parseRules(s.rules);
     this.setTime(s.time);
     this.nodes.clear();
     for (const [id, hp, until] of s.nodes) this.nodes.set(id, { hp, until });
@@ -824,6 +830,19 @@ export class GameClient {
     return n;
   }
 
+  /** What crafting can use: your bag, plus your storage boxes when the rules allow. */
+  craftCount(id: string): number {
+    let n = this.count(id);
+    if (!this.rules.craftFromChests) return n;
+    for (const b of this.buildings.values()) {
+      if (b.kind !== 'storage') continue;
+      for (const s of b.inv ?? []) if (s?.id === id) n += s.n;
+      // Connected boxes all show the same chest: count it once.
+      if (this.rules.sharedChests) break;
+    }
+    return n;
+  }
+
   private updateGhost(): void {
     const held = this.heldItem();
     const kind = held?.place;
@@ -946,7 +965,7 @@ export class GameClient {
       const t = this.buildingTarget(b);
       if (t) offer(t, score(b.x, b.z) + (t.verb ? -0.3 : 2.5));
     }
-    for (const poi of POIS) {
+    for (const poi of island.pois) {
       if (Math.abs(poi.x - x) > 40 || Math.abs(poi.z - z) > 40) continue;
       for (const spot of poi.spots) {
         const sx = poi.x + spot.dx;
@@ -1413,11 +1432,13 @@ export class GameClient {
   canCraft(recipe: string): boolean {
     const r = RECIPES[recipe];
     if (!r || !this.me) return false;
-    return this.stations()[r.station] && hasAll(this.me.inv, r.needs);
+    if (!this.stations()[r.station]) return false;
+    if (!this.rules.craftFromChests) return hasAll(this.me.inv, r.needs);
+    return Object.entries(r.needs).every(([id, n]) => this.craftCount(id) >= n);
   }
 
   info(): DayInfo {
-    return dayInfo(this.now());
+    return dayInfo(this.now(), this.rules.bloomEvery);
   }
 
   objective(): Objective | null {
@@ -1426,6 +1447,7 @@ export class GameClient {
       notes: this.notes,
       carrying: this.carrying(),
       rescue: this.rescue,
+      parts: this.island?.spec,
     });
   }
 

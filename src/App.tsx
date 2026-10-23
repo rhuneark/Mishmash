@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import * as run from './sdk/run';
 import { SAVE_KEY, parseSave, recordVisit, type SaveData } from './game/save';
 import { isOwner, openReportCount } from './app/community';
@@ -34,6 +34,8 @@ export default function App() {
   // The Dev tab only exists for the game's owner (RUN checks the account).
   const [owner, setOwner] = useState(false);
   const [openReports, setOpenReports] = useState(0);
+  // The win screen's "New island" lands on the New island screen.
+  const [wantNew, setWantNew] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +52,8 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  const clearWantNew = useCallback(() => setWantNew(false), []);
 
   const commit = (next: SaveData) => {
     setSave(next);
@@ -98,7 +102,12 @@ export default function App() {
           client={game}
           onLeave={() => void leave()}
           onHost={() => void leave().then(() => start({ kind: 'host' }))}
-          onNewIsland={() => void leave().then(() => start({ kind: 'solo', fresh: true }))}
+          onNewIsland={() =>
+            void leave().then(() => {
+              setWantNew(true);
+              setTab('play');
+            })
+          }
         />
       </div>
     );
@@ -143,7 +152,13 @@ export default function App() {
       {owner && <ReportWatch onCount={setOpenReports} />}
       <main className="tab-body">
         {tab === 'play' && (
-          <Play onStart={(c) => void start(c)} onVote={() => setTab('vote')} error={playError} />
+          <Play
+            onStart={(c) => void start(c)}
+            onVote={() => setTab('vote')}
+            error={playError}
+            newIsland={wantNew}
+            onNewIslandShown={clearWantNew}
+          />
         )}
         {tab === 'vote' && <Vote onChat={() => setTab('chat')} />}
         {tab === 'chat' && <Chat />}

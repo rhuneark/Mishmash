@@ -50,7 +50,7 @@ export function RecipeRow({
         </div>
         <div className="recipe-needs">
           {Object.entries(r.needs).map(([id, n]) => {
-            const have = client.count(id);
+            const have = client.craftCount(id);
             return (
               <span key={id} className={have >= n ? 'have' : 'need'} title={ITEMS[id]?.name}>
                 <ItemIcon id={id} className="need-icon" /> {Math.min(have, n)}/{n}

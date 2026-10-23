@@ -1,25 +1,42 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { CLASSIC, specCode, type IslandSpec } from '../game/islands';
 import type { IslandSave } from '../game/sim/types';
-import { SettingsPanel } from '../play/hud/Menu';
-import { describeSave, loadIsland, playerId } from '../play/session';
+import { JAM_URL, copyText } from '../app/links';
+import * as run from '../sdk/run';
+import { HowTo, SettingsPanel } from '../play/hud/Menu';
+import { describeSave, islandFor, loadIsland, playerId, type NewIsland } from '../play/session';
+import { TitleScene } from '../play/TitleScene';
+import { NewIslandScreen } from './NewIsland';
 
 export type PlayChoice =
-  { kind: 'solo'; fresh: boolean } | { kind: 'host' } | { kind: 'join'; code: string };
+  { kind: 'solo'; fresh: NewIsland | null } | { kind: 'host' } | { kind: 'join'; code: string };
+
+/** The island behind the title when there's no save yet (autumn, for October). */
+const SHOWCASE: IslandSpec = { seed: 7207, ...CLASSIC, climate: 'autumn' };
+
+const isPc = () =>
+  typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: fine)').matches;
 
 export function Play({
   onStart,
   onVote,
   error,
+  newIsland,
+  onNewIslandShown,
 }: {
   onStart: (c: PlayChoice) => void;
   onVote: () => void;
   error: string | null;
+  /** Open straight on the New island screen (from the win screen). */
+  newIsland: boolean;
+  onNewIslandShown: () => void;
 }) {
   const [save, setSave] = useState<IslandSave | null | undefined>(undefined);
-  const [confirmNew, setConfirmNew] = useState(false);
+  const [view, setView] = useState<'title' | 'new'>(newIsland ? 'new' : 'title');
   const [joining, setJoining] = useState(false);
   const [code, setCode] = useState('');
-  const [settings, setSettings] = useState(false);
+  const [dialog, setDialog] = useState<'settings' | 'howto' | null>(null);
+  const [jam, setJam] = useState<'idle' | 'copied' | 'shown'>('idle');
 
   useEffect(() => {
     let cancelled = false;
@@ -29,163 +46,244 @@ export function Play({
     };
   }, []);
 
+  useEffect(() => {
+    if (newIsland) {
+      setView('new');
+      onNewIslandShown();
+    }
+  }, [newIsland, onNewIslandShown]);
+
   const info = save ? describeSave(save, playerId()) : null;
 
+  if (view === 'new') {
+    return (
+      <NewIslandScreen
+        replacing={info && { day: info.day, name: info.name }}
+        onBack={() => setView('title')}
+        onStart={(fresh) => onStart({ kind: 'solo', fresh })}
+      />
+    );
+  }
+
+  const voteJam = () => {
+    run.track('jam_vote_tap', {});
+    void copyText(JAM_URL).then((ok) => setJam(ok ? 'copied' : 'shown'));
+  };
+
   return (
-    <div className="scroll">
-      <div className="page play-page">
-        <header className="play-hero">
-          <div className="play-art" aria-hidden="true">
-            <span>🌴</span>
-            <span>✈️</span>
-            <span>🥀</span>
-          </div>
-          <h2 className="page-title">Bloom Island</h2>
-          <p className="muted">
-            Flight MX207 went down. The island is beautiful, and something in it is growing out of
-            the passengers. Gather, craft, build a camp, survive the nights and find a way off.
-          </p>
+    <div className="title-screen">
+      {save !== undefined && <Backdrop spec={info?.spec ?? SHOWCASE} />}
+      <div className="title-shade" aria-hidden="true" />
+      <div className="title-scroll">
+        <header className="title-logo">
+          <div className="title-kicker">Mishmash · a game the players build</div>
+          <h1 className="title-name">
+            Bloom <span>Island</span>
+          </h1>
+          <div className="title-tag">Flight MX207 went down. Something here is growing.</div>
         </header>
 
-        {error && <div className="notice">{error}</div>}
-
-        {save === undefined ? (
-          <p className="muted center">Loading your island…</p>
-        ) : (
-          <div className="play-buttons">
-            {info && (
-              <button
-                className="btn primary big"
-                onClick={() => onStart({ kind: 'solo', fresh: false })}
-              >
-                ▶ Continue · Day {info.day}
-                {info.escaped ? ' · escaped' : ''}
+        <div className="title-menu">
+          {error && <div className="notice title-notice">{error}</div>}
+          {save === undefined ? (
+            <p className="muted center">Loading your island…</p>
+          ) : (
+            <>
+              {info ? (
+                <button
+                  className="menu-btn primary title-continue"
+                  aria-label={`Continue · Day ${info.day} on ${info.name}`}
+                  onClick={() => onStart({ kind: 'solo', fresh: null })}
+                >
+                  <span>▶ Continue</span>
+                  <span className="title-continue-sub">
+                    {info.name} · Day {info.day}
+                    {info.escaped ? ' · escaped' : ''}
+                  </span>
+                </button>
+              ) : (
+                <button className="menu-btn primary" onClick={() => setView('new')}>
+                  ▶ Start surviving
+                </button>
+              )}
+              {info && (
+                <button className="menu-btn" onClick={() => setView('new')}>
+                  🏝️ New island
+                </button>
+              )}
+              <button className="menu-btn" onClick={() => onStart({ kind: 'host' })}>
+                👥 Play with friends
               </button>
-            )}
-            {!info && (
-              <button
-                className="btn primary big"
-                onClick={() => onStart({ kind: 'solo', fresh: true })}
-              >
-                ▶ Start surviving
-              </button>
-            )}
-            {info &&
-              (confirmNew ? (
-                <div className="card confirm">
-                  <p>A new island replaces your saved one (day {info.day}). Sure?</p>
+              {joining ? (
+                <form
+                  className="card join"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (code.trim().length >= 4) onStart({ kind: 'join', code });
+                  }}
+                >
+                  <label className="label" htmlFor="room-code">
+                    Your friend's island code
+                  </label>
+                  <input
+                    id="room-code"
+                    className="code-input"
+                    value={code}
+                    maxLength={8}
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    onChange={(e) =>
+                      setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))
+                    }
+                    placeholder="ABC123"
+                  />
                   <div className="row">
                     <button
                       className="btn small primary"
-                      onClick={() => onStart({ kind: 'solo', fresh: true })}
+                      type="submit"
+                      disabled={code.trim().length < 4}
                     >
-                      New island
+                      Join
                     </button>
-                    <button className="btn small" onClick={() => setConfirmNew(false)}>
-                      Keep mine
+                    <button className="btn small" type="button" onClick={() => setJoining(false)}>
+                      Cancel
                     </button>
                   </div>
-                </div>
+                </form>
               ) : (
-                <button className="btn" onClick={() => setConfirmNew(true)}>
-                  🏝️ New island
+                <button className="menu-btn" onClick={() => setJoining(true)}>
+                  🔑 Join a friend
                 </button>
-              ))}
-            <button className="btn" onClick={() => onStart({ kind: 'host' })}>
-              👥 Play with friends (host my island)
-            </button>
-            {joining ? (
-              <form
-                className="card join"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (code.trim().length >= 4) onStart({ kind: 'join', code });
-                }}
-              >
-                <label className="label" htmlFor="room-code">
-                  Your friend's island code
-                </label>
-                <input
-                  id="room-code"
-                  className="code-input"
-                  value={code}
-                  maxLength={8}
-                  autoCapitalize="characters"
-                  autoComplete="off"
-                  onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                  placeholder="ABC123"
-                />
-                <div className="row">
-                  <button
-                    className="btn small primary"
-                    type="submit"
-                    disabled={code.trim().length < 4}
-                  >
-                    Join
-                  </button>
-                  <button className="btn small" type="button" onClick={() => setJoining(false)}>
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <button className="btn" onClick={() => setJoining(true)}>
-                🔑 Join a friend
+              )}
+              <div className="title-row">
+                <button className="menu-btn" onClick={() => setDialog('settings')}>
+                  ⚙️ Settings
+                </button>
+                <button className="menu-btn" onClick={() => setDialog('howto')}>
+                  ❓ How to play
+                </button>
+              </div>
+              <button className="menu-btn jam-btn" onClick={voteJam}>
+                🎃 Vote for us in October Jam
               </button>
-            )}
-            <button className="btn" onClick={() => setSettings(true)}>
-              ⚙️ Settings
-            </button>
-          </div>
-        )}
-        {settings && (
-          <div className="menu-screen hub-settings" role="dialog" aria-label="Settings">
-            <div className="menu-card wide">
-              <div className="menu-head">
-                <div className="menu-head-title">⚙️ Settings</div>
-                <button
-                  className="round-btn"
-                  onClick={() => setSettings(false)}
-                  aria-label="Close settings"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="menu-scroll">
-                <SettingsPanel />
-                <p className="muted small-text">
-                  Keys for a keyboard and mouse are under Menu › Settings › Controls in a game.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="card play-how">
-          <div className="label">How it works</div>
-          <ul className="tips">
-            <li>
-              Stick on the left to move, the big button to chop, mine, pick up, fight and open
-              things.
-            </li>
-            <li>
-              Craft tools, a campfire and a shelter. The Bloom comes out at night and fears fire.
-            </li>
-            <li>Every 7th night is a Bloom night. Fire won't save you then: build walls.</li>
-            <li>
-              Monster parts make special gear at a Mashbench. The Husks carry pages of the story of
-              how all this started.
-            </li>
-            <li>
-              Find the three radio parts, call for rescue and hold out until the helicopter lands.
-            </li>
-          </ul>
+              {jam !== 'idle' && <JamLink copied={jam === 'copied'} />}
+            </>
+          )}
         </div>
 
-        <button className="btn ghost" onClick={onVote}>
+        <button className="btn ghost title-vote" onClick={onVote}>
           🗳️ Vote on what gets added next
         </button>
       </div>
+
+      {dialog === 'settings' && (
+        <Dialog title="⚙️ Settings" name="settings" onClose={() => setDialog(null)}>
+          <SettingsPanel />
+          <p className="muted small-text">
+            Keys for a keyboard and mouse are under Menu › Settings › Controls in a game.
+          </p>
+        </Dialog>
+      )}
+      {dialog === 'howto' && (
+        <Dialog title="❓ How to play" name="how to play" onClose={() => setDialog(null)}>
+          <HowTo pc={isPc()} bloomEvery={7} />
+          <p className="muted small-text">
+            Every island can have its own rules: pick them on the New island screen.
+          </p>
+        </Dialog>
+      )}
     </div>
+  );
+}
+
+/** The jam page's link, copied for the player to open in their browser. */
+function JamLink({ copied: first }: { copied: boolean }) {
+  const [copied, setCopied] = useState<boolean | null>(first || null);
+  return (
+    <div className="card jam-link" role="status">
+      <p className="small-text">
+        {first
+          ? '📋 Link copied! Paste it into your browser to vote for Bloom Island in the October Jam.'
+          : 'Open this link in your browser to vote for Bloom Island in the October Jam:'}
+      </p>
+      <input
+        className="jam-url"
+        readOnly
+        value={JAM_URL}
+        aria-label="October Jam link"
+        onFocus={(e) => e.currentTarget.select()}
+      />
+      <button
+        className="btn small"
+        onClick={() => void copyText(JAM_URL).then((ok) => setCopied(ok))}
+      >
+        {copied
+          ? '✓ Copied'
+          : copied === false
+            ? 'Select the link above to copy it'
+            : '📋 Copy link'}
+      </button>
+    </div>
+  );
+}
+
+function Dialog({
+  title,
+  name,
+  onClose,
+  children,
+}: {
+  title: string;
+  name: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="menu-screen hub-settings" role="dialog" aria-label={name}>
+      <div className="menu-card wide">
+        <div className="menu-head">
+          <div className="menu-head-title">{title}</div>
+          <button className="round-btn" onClick={onClose} aria-label={`Close ${name}`}>
+            ✕
+          </button>
+        </div>
+        <div className="menu-scroll">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/** The 3D island behind the menu (a gradient if WebGL isn't there). */
+function Backdrop({ spec }: { spec: IslandSpec }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [ready, setReady] = useState(false);
+  // A new scene only when the island itself changes.
+  const code = specCode(spec);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    let scene: TitleScene | null = null;
+    // Let the menu paint first: making the island takes a moment.
+    const timer = setTimeout(() => {
+      try {
+        scene = new TitleScene(canvas, islandFor(spec));
+        scene.start();
+        setReady(true);
+      } catch {
+        scene = null;
+      }
+    }, 60);
+    return () => {
+      clearTimeout(timer);
+      scene?.dispose();
+    };
+  }, [code]);
+  return (
+    <canvas
+      ref={ref}
+      className={`title-bg${ready ? ' on' : ''}`}
+      aria-hidden="true"
+      data-testid="title-bg"
+    />
   );
 }

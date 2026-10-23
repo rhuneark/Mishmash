@@ -11,15 +11,17 @@ import { bestSlot, count, emptyInv, weaponScore } from './inventory';
 import { DAY, START_TIME } from './time';
 import { newSave, parseIslandSave } from './types';
 import type { S2C } from './protocol';
+import { DEFAULT_RULES, type WorldRules } from '../rules';
+import { dayInfo } from './time';
 
 const island: Island = generateIsland(4242);
 
-function harness(seed = 4242) {
+function harness(seed = 4242, rules?: Partial<WorldRules>) {
   const inbox = new Map<string, S2C[]>();
   const all: S2C[] = [];
   const sim = new IslandSim(
     island,
-    newSave(seed),
+    newSave(seed, undefined, rules && { ...DEFAULT_RULES, ...rules }),
     (to, msg) => {
       all.push(msg);
       if (to) {
@@ -629,5 +631,135 @@ describe('auto tool ranking', () => {
     expect(bestSlot(inv, 'machete')).toBe(12);
     expect(weaponScore(ITEMS['firebomb'])).toBe(0);
     expect(weaponScore(ITEMS['machete'])).toBeGreaterThan(weaponScore(ITEMS['spear']));
+  });
+});
+
+describe('world rules', () => {
+  function storageSpot(h: ReturnType<typeof harness>, k: number): { x: number; z: number } {
+    for (let r = 30 + k * 7; r < 160; r += 3) {
+      for (let a = 0; a < 16; a++) {
+        const x = SPAWN.x + Math.round(Math.sin((a / 16) * Math.PI * 2) * r);
+        const z = SPAWN.z - 20 + Math.round(Math.cos((a / 16) * Math.PI * 2) * r);
+        if (!h.sim.placeProblem('storage', x, z, 0)) return { x, z };
+      }
+    }
+    throw new Error('no spot');
+  }
+
+  function placeBox(h: ReturnType<typeof harness>, k: number) {
+    const p = h.sim.players.get('a')!;
+    const spot = storageSpot(h, k);
+    walkTo(h, 'a', spot.x, spot.z + 2);
+    h.sim.give(p, 'storage', 1);
+    h.sim.handle('a', {
+      type: 'place',
+      slot: p.inv.findIndex((s) => s?.id === 'storage'),
+      x: spot.x,
+      z: spot.z,
+      rot: 0,
+    });
+    const boxes = [...h.sim.buildings.values()].filter((b) => b.kind === 'storage');
+    return boxes[boxes.length - 1]!;
+  }
+
+  function dieWith(rules: Partial<WorldRules>) {
+    const h = harness(4242, rules);
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    p.inv[0] = { id: 'axe_stone', n: 1, d: 100 };
+    p.inv[10] = { id: 'wood', n: 7 };
+    p.hp = 1;
+    h.sim.hurtPlayer(p, 5, p.x, p.z);
+    const bag = [...h.sim.drops.values()].find((d) => d.label.includes('Ann'));
+    return { p, bag };
+  }
+
+  it('drops what the rules say when you fall', () => {
+    const all = dieWith({});
+    expect(all.bag?.items.map((s) => s.id)).toEqual(expect.arrayContaining(['axe_stone', 'wood']));
+    const belt = dieWith({ deathDrop: 'toolbelt' });
+    expect(belt.bag?.items.some((s) => s.id === 'axe_stone')).toBe(true);
+    expect(belt.bag?.items.some((s) => s.id === 'wood')).toBe(false);
+    expect(belt.p.inv[10]?.id).toBe('wood');
+    const pack = dieWith({ deathDrop: 'backpack' });
+    expect(pack.bag?.items.some((s) => s.id === 'wood')).toBe(true);
+    expect(pack.p.inv[0]?.id).toBe('axe_stone');
+    const keep = dieWith({ deathDrop: 'nothing' });
+    expect(keep.bag).toBeUndefined();
+    expect(keep.p.inv[0]?.id).toBe('axe_stone');
+    const gone = dieWith({ deathDrop: 'delete' });
+    expect(gone.bag).toBeUndefined();
+    expect(gone.p.inv.every((s) => !s)).toBe(true);
+  });
+
+  it('hits harder on a harder island and stacks without limit when asked', () => {
+    const h = harness(4242, { difficulty: 200, infiniteStacks: true });
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    p.hp = 100;
+    h.sim.hurtPlayer(p, 10, p.x, p.z);
+    expect(p.hp).toBe(80);
+    p.inv.fill(null);
+    h.sim.give(p, 'wood', 500);
+    expect(p.inv.filter(Boolean)).toHaveLength(1);
+    expect(p.inv.find(Boolean)?.n).toBe(500);
+    // A reload keeps the big stack.
+    const back = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())));
+    expect(back?.players['a']?.inv.find(Boolean)?.n).toBe(500);
+    expect(back?.rules?.infiniteStacks).toBe(true);
+  });
+
+  it('gathers more (or less) with the yield rule', () => {
+    const h = harness(4242, { yield: 300 });
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const branch = nearestNode(NODE.branch, p.x, p.z);
+    walkTo(h, 'a', island.nodeX[branch] as number, (island.nodeZ[branch] as number) + 1);
+    h.run(1);
+    h.sim.handle('a', { type: 'use', kind: 'node', id: branch });
+    expect(count(p.inv, 'wood')).toBe(3);
+  });
+
+  it('connects storage boxes and crafts from them anywhere', () => {
+    const h = harness(4242, { sharedChests: true, craftFromChests: true });
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const one = placeBox(h, 0);
+    p.inv[12] = { id: 'fiber', n: 6 };
+    h.sim.handle('a', { type: 'store', id: one.id, slot: 12 });
+    expect(count(p.inv, 'fiber')).toBe(0);
+    const two = placeBox(h, 3);
+    expect(two.id).not.toBe(one.id);
+    expect(h.sim.net(two).inv?.some((s) => s?.id === 'fiber')).toBe(true);
+    // Walk away from both boxes and craft rope from what's in storage.
+    walkTo(h, 'a', SPAWN.x, SPAWN.z);
+    h.sim.handle('a', { type: 'craft', recipe: 'rope' });
+    expect(count(p.inv, 'rope')).toBe(1);
+    expect(count(h.sim.chest, 'fiber')).toBe(3);
+    // Take it out of the other box.
+    walkTo(h, 'a', two.x, two.z + 2);
+    const at = h.sim.chest.findIndex((s) => s?.id === 'fiber');
+    h.sim.handle('a', { type: 'take', id: two.id, slot: at });
+    expect(count(p.inv, 'fiber')).toBe(3);
+  });
+
+  it('crafts only from your bag by default', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const box = placeBox(h, 0);
+    p.inv[12] = { id: 'fiber', n: 6 };
+    h.sim.handle('a', { type: 'store', id: box.id, slot: 12 });
+    h.sim.handle('a', { type: 'craft', recipe: 'rope' });
+    expect(count(p.inv, 'rope')).toBe(0);
+    expect(h.toasts('a')).toContain('Not enough materials.');
+  });
+
+  it('sets how often the Bloom comes', () => {
+    const night = (day: number) => (day - 1) * DAY + DAY * 0.8;
+    expect(dayInfo(night(7)).bloom).toBe(true);
+    expect(dayInfo(night(3), 3).bloom).toBe(true);
+    expect(dayInfo(night(7), 3).bloom).toBe(false);
+    expect(dayInfo(night(14), 0).bloom).toBe(false);
   });
 });

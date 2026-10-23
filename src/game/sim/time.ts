@@ -1,5 +1,5 @@
 // Island clock. A day is 10 minutes: 6 of daylight, 4 of night. Every 7th
-// night the Bloom wakes (a horde night).
+// night (or as the world rules say) the Bloom wakes (a horde night).
 
 export const DAY = 600;
 export const DUSK = 0.75;
@@ -19,12 +19,13 @@ export interface DayInfo {
   bloom: boolean;
 }
 
-export function dayInfo(t: number): DayInfo {
+/** `bloomEvery`: the world rule (every Nth night is a Bloom night; 0 = never). */
+export function dayInfo(t: number, bloomEvery = BLOOM_EVERY): DayInfo {
   const day = Math.floor(t / DAY) + 1;
   const phase = (t - (day - 1) * DAY) / DAY;
   const night = phase >= NIGHT_START || phase < NIGHT_END;
   const nightOf = phase >= NIGHT_START ? day : day - 1;
-  const bloom = night && nightOf > 0 && nightOf % BLOOM_EVERY === 0;
+  const bloom = bloomEvery > 0 && night && nightOf > 0 && nightOf % bloomEvery === 0;
   return { day, phase, night, nightOf, bloom };
 }
 

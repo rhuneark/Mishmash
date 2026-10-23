@@ -532,7 +532,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   keys, lore, Mashbench) and v1.11.0 (pause menu and settings, volume sliders and music, auto
   tool, landscape, world events and a livelier island) and v1.12.0 (isometric camera, bag
   window by the survivor) and v1.13.0 (islands from parts, world rules, title screen, October
-  Jam link) were private builds; all of it went public with v1.15.0.
+  Jam link) were private builds; all of it went public with v1.15.0. v1.16.0 (build mode and
+  shapes, quests under the minimap, HUD settings, spawn rate, rules changed mid-game) is a
+  private build until the user asks to publish it.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

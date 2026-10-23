@@ -112,7 +112,12 @@ export class Input {
       return;
     }
     const target = e.target as HTMLElement | null;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+    const typing =
+      target?.tagName === 'TEXTAREA' ||
+      (target?.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'range');
+    if (typing) return;
+    // A focused slider keeps its arrow keys; everything else still plays.
+    if (target?.tagName === 'INPUT' && e.code.startsWith('Arrow')) return;
     if (e.code === 'Escape') {
       if (isDown && !e.repeat) this.escape?.();
       return;

@@ -456,6 +456,13 @@ function walker(sim: IslandSim, m: Mob, dt: number, night: boolean): void {
   }
 
   if (!target) {
+    if (m.goal) {
+      // A pack on the move: head for where it was going, then roam there.
+      m.st = 'wander';
+      const s = stepToward(sim, m, m.goal.x, m.goal.z, def.walk, dt, 0.3);
+      if (s.kind !== 'moved' || dist(m.x, m.z, m.goal.x, m.goal.z) < 4) delete m.goal;
+      return;
+    }
     wander(sim, m, dt, def.walk, 10);
     return;
   }

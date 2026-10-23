@@ -1,6 +1,6 @@
 // Inventory: a fixed array of slots; the first HOTBAR slots are the hotbar.
 
-import { ITEMS } from '../content/items';
+import { ITEMS, type ItemDef, type ToolKind } from '../content/items';
 import type { Slot } from './protocol';
 
 export const INV_SIZE = 24;
@@ -10,6 +10,34 @@ export type Inv = (Slot | null)[];
 
 export function emptyInv(): Inv {
   return new Array<Slot | null>(INV_SIZE).fill(null);
+}
+
+/** How good a weapon is: damage per second (a little more for fire), longer reach helps. */
+export function weaponScore(def: ItemDef | undefined): number {
+  const w = def?.weapon;
+  if (!w || def?.throwable || def?.place) return 0;
+  return ((w.damage + (w.burn ?? 0) * 0.5) / w.cooldown) * (1 + (w.reach - 2) * 0.25);
+}
+
+/** How good an item is for a job: a tool kind's power, or 'weapon' (weaponScore). */
+export function jobScore(def: ItemDef | undefined, job: ToolKind | 'weapon'): number {
+  if (job === 'weapon') return weaponScore(def);
+  return def?.tool?.kind === job ? def.tool.power : 0;
+}
+
+/** The slot with the best item for a job (-1: nothing). Ties go to the earlier slot (hotbar first). */
+export function bestSlot(inv: Inv, job: ToolKind | 'weapon'): number {
+  let best = -1;
+  let score = 0;
+  inv.forEach((s, i) => {
+    if (!s) return;
+    const v = jobScore(ITEMS[s.id], job);
+    if (v > score) {
+      score = v;
+      best = i;
+    }
+  });
+  return best;
 }
 
 export function stackOf(id: string): number {

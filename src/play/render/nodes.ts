@@ -6,6 +6,7 @@ import { NODE, NODES } from '../../game/content/nodes';
 import { CHUNK, CHUNKS, HALF, forNodesNear, heightAt, type Island } from '../../game/world';
 import { MAT } from './geo';
 import { nodeGeometries, nodeScale, nodeTint } from './props';
+import { windy } from './wind';
 
 const CAP = 2600;
 const m4 = new THREE.Matrix4();
@@ -17,13 +18,22 @@ const color = new THREE.Color();
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 const TREES: number[] = [NODE.palm, NODE.jungle, NODE.pine];
 const FADE_CAP = 48;
-const FADE_MAT = new THREE.MeshLambertMaterial({
+const FADE_BASE = new THREE.MeshLambertMaterial({
   vertexColors: true,
   flatShading: true,
   transparent: true,
   opacity: 0.3,
   depthWrite: false,
 });
+/** How much each kind of plant sways in the wind. */
+const SWAY: Partial<Record<number, number>> = {
+  [NODE.palm]: 0.005,
+  [NODE.jungle]: 0.003,
+  [NODE.pine]: 0.0035,
+  [NODE.bush]: 0.05,
+  [NODE.berry]: 0.05,
+  [NODE.vines]: 0.02,
+};
 
 export class NodeView {
   private readonly island: Island;
@@ -48,7 +58,8 @@ export class NodeView {
     this.island = island;
     this.y = new Float32Array(island.nodeCount).fill(Number.NaN);
     nodeGeometries().forEach((geo, type) => {
-      const m = new THREE.InstancedMesh(geo, MAT.lit, CAP);
+      const sway = SWAY[type];
+      const m = new THREE.InstancedMesh(geo, sway ? windy(MAT.lit, sway) : MAT.lit, CAP);
       m.count = 0;
       m.frustumCulled = false;
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -56,7 +67,7 @@ export class NodeView {
       this.meshes[type] = m;
       scene.add(m);
       if (TREES.includes(type)) {
-        const f = new THREE.InstancedMesh(geo, FADE_MAT, FADE_CAP);
+        const f = new THREE.InstancedMesh(geo, windy(FADE_BASE, sway ?? 0), FADE_CAP);
         f.count = 0;
         f.frustumCulled = false;
         f.renderOrder = 2;
@@ -205,6 +216,16 @@ export class NodeView {
       f.instanceMatrix.needsUpdate = true;
       if (f.instanceColor) f.instanceColor.needsUpdate = true;
     }
+  }
+
+  geometry(type: number): THREE.BufferGeometry | null {
+    return this.meshes[type]?.geometry ?? null;
+  }
+
+  /** Where a node stands and how it's turned and sized (for a falling tree). */
+  pose(id: number, out: THREE.Matrix4): THREE.Matrix4 {
+    this.matrixFor(id, this.island.nodeType[id] as number, 0);
+    return out.copy(m4);
   }
 
   /** Is this node currently drawn (inside the fill radius)? */

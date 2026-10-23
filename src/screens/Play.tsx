@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { IslandSave } from '../game/sim/types';
+import { SettingsPanel } from '../play/hud/Menu';
 import { describeSave, loadIsland, playerId } from '../play/session';
 
 export type PlayChoice =
@@ -18,6 +19,7 @@ export function Play({
   const [confirmNew, setConfirmNew] = useState(false);
   const [joining, setJoining] = useState(false);
   const [code, setCode] = useState('');
+  const [settings, setSettings] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,6 +133,31 @@ export function Play({
                 🔑 Join a friend
               </button>
             )}
+            <button className="btn" onClick={() => setSettings(true)}>
+              ⚙️ Settings
+            </button>
+          </div>
+        )}
+        {settings && (
+          <div className="menu-screen hub-settings" role="dialog" aria-label="Settings">
+            <div className="menu-card wide">
+              <div className="menu-head">
+                <div className="menu-head-title">⚙️ Settings</div>
+                <button
+                  className="round-btn"
+                  onClick={() => setSettings(false)}
+                  aria-label="Close settings"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="menu-scroll">
+                <SettingsPanel />
+                <p className="muted small-text">
+                  Keys for a keyboard and mouse are under Menu › Settings › Controls in a game.
+                </p>
+              </div>
+            </div>
           </div>
         )}
 

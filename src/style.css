@@ -16,6 +16,8 @@
   --fs: 1;
   --safe-top: 0px;
   --safe-bottom: 0px;
+  --safe-left: 0px;
+  --safe-right: 0px;
 }
 
 * {
@@ -784,6 +786,7 @@ button:disabled {
   overflow: hidden;
   background: #0a0f1e;
   touch-action: none;
+  container-type: size;
 }
 
 .game-canvas {
@@ -937,8 +940,8 @@ button:disabled {
 .hud-top {
   position: absolute;
   top: calc(8px + var(--safe-top));
-  left: 8px;
-  right: 8px;
+  left: calc(8px + var(--safe-left));
+  right: calc(8px + var(--safe-right));
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -1117,7 +1120,7 @@ button:disabled {
 .hud-left {
   position: absolute;
   top: calc(100px + var(--safe-top));
-  left: 8px;
+  left: calc(8px + var(--safe-left));
   right: 116px;
   bottom: calc(232px + var(--safe-bottom));
   display: flex;
@@ -1297,7 +1300,7 @@ button:disabled {
 
 .hud-actions {
   position: absolute;
-  right: 10px;
+  right: calc(10px + var(--safe-right));
   bottom: calc(72px + var(--safe-bottom));
   display: flex;
   flex-direction: column;
@@ -1740,6 +1743,7 @@ button:disabled {
 
 .fullmap {
   width: min(94vw, 540px, 80vh);
+  width: min(94cqw, 540px, 80cqh);
   aspect-ratio: 1;
   border: 2px solid rgba(255, 255, 255, 0.5);
   border-radius: 12px;
@@ -2110,4 +2114,490 @@ button:disabled {
   .hud-left {
     bottom: calc(96px + var(--safe-bottom));
   }
+}
+
+/* Pause menu and settings */
+
+.menu-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(12px + var(--safe-top)) calc(12px + var(--safe-right))
+    calc(12px + var(--safe-bottom)) calc(12px + var(--safe-left));
+  background: radial-gradient(circle at 50% 35%, rgba(34, 28, 60, 0.84), rgba(6, 6, 16, 0.95));
+  pointer-events: auto;
+}
+
+.menu-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 380px;
+  max-height: 100%;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.menu-card.main {
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.menu-card.wide {
+  max-width: 560px;
+  height: 100%;
+  padding: 12px;
+}
+
+.menu-title {
+  font-size: calc(30px * var(--fs));
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.menu-sub,
+.menu-foot {
+  text-align: center;
+}
+
+.menu-sub {
+  font-weight: 700;
+}
+
+.menu-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.menu-btn {
+  min-height: 50px;
+  padding: 10px 16px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  font-size: calc(17px * var(--fs));
+  font-weight: 800;
+  text-align: left;
+}
+
+.menu-btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  text-align: center;
+}
+
+.menu-btn.leave {
+  border-color: rgba(255, 93, 115, 0.6);
+  color: #ffb0bc;
+}
+
+.menu-btn:active {
+  transform: scale(0.98);
+}
+
+.menu-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-head-title {
+  flex: 1;
+  font-size: calc(19px * var(--fs));
+  font-weight: 900;
+  text-align: center;
+}
+
+.menu-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 4px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.settings,
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-tabs {
+  flex-wrap: wrap;
+}
+
+.settings-tabs .tab-btn {
+  flex: 1 1 auto;
+  padding: 8px 10px;
+  font-size: calc(14px * var(--fs));
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  text-align: left;
+}
+
+.set-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.set-label {
+  font-weight: 800;
+}
+
+.set-desc {
+  color: var(--text-soft);
+  font-size: calc(14px * var(--fs));
+}
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 30px;
+  border-radius: 15px;
+  background: #4a4566;
+  transition: background 0.15s;
+}
+
+.switch-knob {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+
+.toggle.on .switch {
+  background: var(--tile-2);
+}
+
+.toggle.on .switch-knob {
+  transform: translateX(22px);
+}
+
+.set-row.slider .set-label {
+  flex: none;
+  width: 96px;
+}
+
+.set-row.slider input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  accent-color: var(--accent);
+  touch-action: none;
+}
+
+.set-value {
+  flex: none;
+  width: 48px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.set-row.choice {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.seg button {
+  flex: 1 1 auto;
+}
+
+.seg button {
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: calc(14px * var(--fs));
+  font-weight: 800;
+}
+
+.seg button.on {
+  border-color: var(--accent);
+  background: rgba(255, 193, 69, 0.22);
+  color: var(--accent);
+}
+
+.reset-btn {
+  align-self: flex-start;
+}
+
+.settings-sheet .sheet-body {
+  padding-top: 8px;
+}
+
+/* Floating "+3 Wood", the auto tool's icon, FPS */
+
+.tag-gain {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #c8ffae;
+  font-size: 15px;
+  font-weight: 900;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 4px #000;
+}
+
+.tag-gain::before {
+  content: '';
+  width: 22px;
+  height: 22px;
+  background: var(--icon) center / contain no-repeat;
+}
+
+.label-icon {
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.fps {
+  position: absolute;
+  top: calc(2px + var(--safe-top));
+  left: 50%;
+  z-index: 5;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: 12px;
+  font-weight: 700;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* Button size */
+
+.game.hud-small .hud-actions,
+.game.hud-large .hud-actions {
+  transform-origin: bottom right;
+}
+
+.game.hud-small .hud-actions {
+  transform: scale(0.85);
+}
+
+.game.hud-large .hud-actions {
+  transform: scale(1.15);
+}
+
+.game.hud-small .hotbar {
+  transform: translateX(-50%) scale(0.88);
+  transform-origin: bottom center;
+}
+
+.game.hud-large .hotbar {
+  transform: translateX(-50%) scale(1.05);
+  transform-origin: bottom center;
+}
+
+.game.hud-small .hud-stats {
+  transform: scale(0.9);
+  transform-origin: top left;
+}
+
+.game.hud-large .hud-stats,
+.game.hud-large .hud-corner {
+  transform: scale(1.1);
+}
+
+.game.hud-large .hud-stats {
+  transform-origin: top left;
+}
+
+.game.hud-large .hud-corner {
+  transform-origin: top right;
+}
+
+/* Left-handed: the stick on the right, the buttons on the left */
+
+.game.lefty .joy-zone {
+  left: auto;
+  right: 0;
+}
+
+.game.lefty .joy-hint {
+  left: auto;
+  right: 30px;
+}
+
+.game.lefty .hud-actions {
+  left: calc(10px + var(--safe-left));
+  right: auto;
+  align-items: flex-start;
+  transform-origin: bottom left;
+}
+
+.game.lefty .action-row {
+  flex-direction: row-reverse;
+}
+
+.game.lefty .action-label {
+  text-align: left;
+}
+
+/* Landscape (a phone turned sideways, or a wide screen) */
+
+.game.landscape .hud-stats {
+  width: 34%;
+  max-width: 200px;
+}
+
+.game.landscape .hud-corner {
+  flex-direction: row-reverse;
+  align-items: flex-start;
+}
+
+.game.landscape .hud-corner-buttons {
+  flex-direction: column;
+}
+
+.game.landscape .minimap {
+  width: 88px;
+  height: 88px;
+}
+
+.game.landscape .hud-left {
+  top: calc(96px + var(--safe-top));
+  right: auto;
+  bottom: auto;
+  width: 34%;
+  max-width: 300px;
+  max-height: calc(100% - 250px);
+  overflow: hidden;
+}
+
+.game.landscape .hud-left.with-quick {
+  top: calc(8px + var(--safe-top));
+  bottom: calc(64px + var(--safe-bottom));
+  width: 330px;
+  max-width: 50%;
+  max-height: none;
+}
+
+.game.landscape .hud-left.with-quick .objective {
+  display: none;
+}
+
+.game.landscape .hud.quick-open .hud-stats {
+  margin-left: min(340px, 51%);
+}
+
+.game.landscape .joy-zone {
+  bottom: calc(8px + var(--safe-bottom));
+  width: 38%;
+  height: 62%;
+}
+
+.game.landscape .hud.quick-open .joy-zone {
+  left: min(340px, 51%);
+  width: 26%;
+}
+
+.game.landscape.lefty .hud.quick-open .joy-zone {
+  left: auto;
+}
+
+.game.landscape .hud-actions {
+  bottom: calc(10px + var(--safe-bottom));
+}
+
+.game.landscape .hotbar {
+  bottom: calc(6px + var(--safe-bottom));
+}
+
+.game.landscape .hotbar .slot {
+  width: 46px;
+  height: 46px;
+}
+
+.game.landscape .banner {
+  top: 30%;
+  max-width: 420px;
+}
+
+.game.landscape .sheet {
+  max-height: 94%;
+}
+
+.landscape .menu-card.main {
+  max-width: 560px;
+}
+
+.landscape .menu-card.main {
+  gap: 6px;
+  padding: 12px 16px;
+}
+
+.landscape .menu-card.main .menu-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.landscape .menu-card.main .menu-btn {
+  min-height: 46px;
+  padding: 8px 12px;
+}
+
+.landscape .menu-foot {
+  display: none;
+}
+
+.landscape .menu-card.main .menu-btn.primary,
+.landscape .menu-card.main .menu-btn.leave {
+  grid-column: 1 / -1;
+}
+
+.landscape .menu-title {
+  font-size: calc(22px * var(--fs));
+}
+
+.hub-settings {
+  position: fixed;
+  z-index: 30;
 }

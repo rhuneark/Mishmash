@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { generateIsland, forNodesNear, type Island } from '../world';
+import { BIOME, biomeAt, generateIsland, forNodesNear, type Island } from '../world';
+import { ITEMS } from '../content/items';
 import { NODE } from '../content/nodes';
 import { POI_BY_ID, SPAWN, MOTHER_SPOT, RESCUE_SECONDS } from '../content/pois';
 import { rng } from '../rng';
 import { IslandSim } from './sim';
 import { spawnMob } from './mobs';
-import { count } from './inventory';
+import { POD_FALL, POD_LOOT, compass, pickEvent, rollLoot } from './events';
+import { bestSlot, count, emptyInv, weaponScore } from './inventory';
 import { DAY, START_TIME } from './time';
 import { newSave, parseIslandSave } from './types';
 import type { S2C } from './protocol';
@@ -534,5 +536,98 @@ describe('monster parts, the Mashbench and the lore', () => {
     expect(box.inv?.[7]?.id).toBe('ration');
     h.sim.handle('a', { type: 'take', id: box.id, slot: 7, to: 20 });
     expect(p.inv[20]?.id).toBe('ration');
+  });
+});
+
+describe('world events', () => {
+  it('rolls loot, names directions and picks events by time of day', () => {
+    const r = rng(3);
+    for (let i = 0; i < 20; i++) {
+      const loot = rollLoot(POD_LOOT, r);
+      expect(loot.length).toBeGreaterThan(0);
+      for (const s of loot) expect(s.n).toBeGreaterThan(0);
+    }
+    expect(compass(0, -10)).toBe('north');
+    expect(compass(10, 0)).toBe('east');
+    expect(compass(-7, 7)).toBe('south-west');
+    expect(pickEvent(0.9, true, 9)).toBe('pod');
+    expect(pickEvent(0.1, true, 9)).toBe('wreck');
+    expect(pickEvent(0.9, false, 1)).toBe('pod');
+    expect(pickEvent(0.9, false, 5)).toBe('pack');
+  });
+
+  it('drops a supply pod that lands with loot and wakes the Bloom', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    // Events come one after another until a pod is on its way down.
+    let tries = 0;
+    while (!h.sim.falling.length && tries++ < 40) {
+      h.sim.nextEvent = h.sim.time;
+      h.run(1);
+    }
+    const fell = h.all.some((m) => m.type === 'fx' && m.k === 'podfall');
+    expect(fell).toBe(true);
+    {
+      const before = h.sim.mobs.size;
+      h.run(POD_FALL + 1.5);
+      const pod = [...h.sim.drops.values()].find((d) => d.kind === 'pod');
+      expect(pod).toBeTruthy();
+      expect(pod?.items.length).toBeGreaterThan(0);
+      expect(h.all.some((m) => m.type === 'fx' && m.k === 'land')).toBe(true);
+      expect(h.sim.mobs.size).toBeGreaterThan(before - 1);
+      expect(h.toasts('a').some((t) => t.includes('supply pod'))).toBe(true);
+    }
+    // Crates and pods survive a save.
+    const save = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())));
+    expect(save?.nextEvent).toBeGreaterThan(0);
+    const kinds = save?.drops.map((d) => d.kind) ?? [];
+    for (const d of h.sim.drops.values()) expect(kinds).toContain(d.kind);
+  });
+
+  it('washes wreckage up on a beach and sends packs by day', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    let crate = false;
+    let pack = false;
+    for (let i = 0; i < 80 && !(crate && pack); i++) {
+      h.sim.nextEvent = h.sim.time;
+      h.sim.time = START_TIME + 3 * DAY + 60;
+      h.run(1);
+      crate ||= [...h.sim.drops.values()].some((d) => d.kind === 'crate');
+      pack ||= h.toasts('a').some((t) => t.includes('pack of Husks'));
+    }
+    expect(crate).toBe(true);
+    expect(pack).toBe(true);
+    expect([...h.sim.mobs.values()].some((m) => m.goal)).toBe(true);
+    const c = [...h.sim.drops.values()].find((d) => d.kind === 'crate');
+    if (c) expect(biomeAt(island, c.x, c.z)).toBe(BIOME.beach);
+    // A crate is picked up like a bag.
+    if (c) {
+      const p = h.sim.players.get('a');
+      if (!p) throw new Error('no player');
+      p.x = c.x;
+      p.z = c.z;
+      h.sim.handle('a', { type: 'use', kind: 'drop', id: c.id });
+      expect(h.sim.drops.has(c.id)).toBe(false);
+    }
+  });
+});
+
+describe('auto tool ranking', () => {
+  it('finds the best tool or weapon in the bag', () => {
+    const inv = emptyInv();
+    inv[0] = { id: 'torch', n: 1, d: 100 };
+    inv[2] = { id: 'axe_stone', n: 1, d: 50 };
+    inv[9] = { id: 'axe_scrap', n: 1, d: 50 };
+    inv[10] = { id: 'spear', n: 1, d: 50 };
+    inv[11] = { id: 'firebomb', n: 2 };
+    expect(bestSlot(inv, 'axe')).toBe(9);
+    expect(bestSlot(inv, 'pick')).toBe(-1);
+    expect(bestSlot(inv, 'weapon')).toBe(10);
+    inv[12] = { id: 'machete', n: 1, d: 50 };
+    expect(bestSlot(inv, 'weapon')).toBe(12);
+    expect(bestSlot(inv, 'machete')).toBe(12);
+    expect(weaponScore(ITEMS['firebomb'])).toBe(0);
+    expect(weaponScore(ITEMS['machete'])).toBeGreaterThan(weaponScore(ITEMS['spear']));
   });
 });

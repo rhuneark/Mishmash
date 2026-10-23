@@ -59,6 +59,8 @@ export class Fx {
   private readonly rings: Ring[] = [];
   private readonly bombs: Bomb[] = [];
   readonly texts: FloatText[] = [];
+  /** Particle count scale (graphics quality). */
+  density = 1;
   private readonly scene: THREE.Scene;
   private readonly ringGeo = new THREE.RingGeometry(0.85, 1, 28).rotateX(-Math.PI / 2);
   private readonly bombGeo = new THREE.IcosahedronGeometry(0.15, 0);
@@ -94,7 +96,8 @@ export class Fx {
       glow?: boolean;
     } = {},
   ): void {
-    for (let i = 0; i < n; i++) {
+    const count = n <= 2 ? n : Math.max(1, Math.round(n * this.density));
+    for (let i = 0; i < count; i++) {
       if (this.parts.length >= CAP * 2) this.parts.shift();
       const a = Math.random() * Math.PI * 2;
       const sp = (opts.speed ?? 3) * (0.4 + Math.random() * 0.8);
@@ -257,4 +260,6 @@ export const FX_COLORS = {
   water: [0x6ad0ff, 0xffffff],
   gold: [0xffe07a, 0xfff6c0],
   dust: [0xb8a888, 0x9a8a6a],
+  sand: [0xe8d8a8, 0xd8c890],
+  metal: [0xb0b6bd, 0x6d737a, 0xe8ecef],
 };

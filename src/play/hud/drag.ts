@@ -3,6 +3,7 @@
 // game view itself drops the item on the ground.
 
 import type { PointerEvent as ReactPointerEvent } from 'react';
+import { toLocal } from '../screen';
 
 export interface SlotRef {
   area: 'inv' | 'box';
@@ -77,12 +78,14 @@ export function startSlotDrag(
       dragging = true;
     }
     ev.preventDefault();
+    // The ghost lives inside the (maybe turned) game; hit-testing uses screen points.
+    const at = toLocal(ev.clientX, ev.clientY);
     state = {
       from,
       id: item.id,
       n: item.n,
-      x: ev.clientX,
-      y: ev.clientY,
+      x: at.x,
+      y: at.y,
       over: targetAt(ev.clientX, ev.clientY),
     };
     notify();

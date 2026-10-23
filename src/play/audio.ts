@@ -1,5 +1,8 @@
-// Sound effects made on the fly with WebAudio (no files to ship): short noise
-// bursts and tones, quieter the further away they happen.
+// Sound made on the fly with WebAudio (no files to ship): effects (short noise
+// bursts and tones, quieter the further away they happen), wind and drone
+// ambience, and music (music.ts), each with its own volume.
+
+import { Music } from './music';
 
 type Sfx =
   | 'chop'
@@ -29,18 +32,33 @@ type Sfx =
   | 'dawn'
   | 'win'
   | 'dead'
-  | 'tap';
+  | 'tap'
+  | 'podfall'
+  | 'creak'
+  | 'thud';
 
 const HEAR = 38;
+
+export interface Volumes {
+  master: number;
+  sfx: number;
+  ambience: number;
+  music: number;
+}
 
 export class Sound {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private sfxBus: GainNode | null = null;
+  private ambBus: GainNode | null = null;
+  private musicBus: GainNode | null = null;
+  private music: Music | null = null;
   private noise: AudioBuffer | null = null;
   private ambient: { src: AudioBufferSourceNode; gain: GainNode; filter: BiquadFilterNode } | null =
     null;
   private drone: { osc: OscillatorNode; gain: GainNode } | null = null;
-  muted = false;
+  /** Gains (already curved), 0..1. */
+  private vol: Volumes = { master: 0.64, sfx: 0.81, ambience: 0.49, music: 0.3 };
 
   /** Must run from a user gesture (browsers keep audio locked until then). */
   unlock(): void {
@@ -53,24 +71,49 @@ export class Sound {
         window.AudioContext ??
         (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return;
-      this.ctx = new Ctor();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.6;
-      this.master.connect(this.ctx.destination);
-      const len = this.ctx.sampleRate;
-      this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      const ctx = new Ctor();
+      this.ctx = ctx;
+      this.master = ctx.createGain();
+      this.master.connect(ctx.destination);
+      this.sfxBus = ctx.createGain();
+      this.ambBus = ctx.createGain();
+      this.musicBus = ctx.createGain();
+      for (const b of [this.sfxBus, this.ambBus, this.musicBus]) b.connect(this.master);
+      this.applyVolumes(0);
+      const len = ctx.sampleRate;
+      this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
       const data = this.noise.getChannelData(0);
       for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
       this.startAmbient();
+      this.music = new Music(ctx, this.musicBus, this.noise);
+      if (this.vol.music > 0) this.music.start();
     } catch {
       this.ctx = null;
     }
   }
 
-  setMuted(m: boolean): void {
-    this.muted = m;
-    if (this.master && this.ctx)
-      this.master.gain.setTargetAtTime(m ? 0 : 0.6, this.ctx.currentTime, 0.05);
+  /** Volumes as gains 0..1 (settings.gain turns slider values into these). */
+  setVolumes(v: Volumes): void {
+    this.vol = v;
+    this.applyVolumes(0.05);
+    if (this.music) {
+      if (v.music > 0 && v.master > 0) this.music.start();
+      else this.music.stop();
+    }
+  }
+
+  private applyVolumes(smooth: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const set = (node: GainNode | null, v: number) => {
+      if (!node) return;
+      if (smooth) node.gain.setTargetAtTime(v, ctx.currentTime, smooth);
+      else node.gain.value = v;
+    };
+    set(this.master, this.vol.master);
+    set(this.sfxBus, this.vol.sfx);
+    set(this.ambBus, this.vol.ambience);
+    set(this.musicBus, this.vol.music);
   }
 
   suspend(): void {
@@ -83,7 +126,7 @@ export class Sound {
 
   private startAmbient(): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master || !this.noise) return;
+    if (!ctx || !this.ambBus || !this.noise) return;
     // Wind and surf: filtered noise that breathes slowly.
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
@@ -92,13 +135,13 @@ export class Sound {
     filter.type = 'lowpass';
     filter.frequency.value = 500;
     const gain = ctx.createGain();
-    gain.gain.value = 0.05;
+    gain.gain.value = 0.08;
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.08;
     const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.025;
+    lfoGain.gain.value = 0.04;
     lfo.connect(lfoGain).connect(gain.gain);
-    src.connect(filter).connect(gain).connect(this.master);
+    src.connect(filter).connect(gain).connect(this.ambBus);
     src.start();
     lfo.start();
     this.ambient = { src, gain, filter };
@@ -111,26 +154,27 @@ export class Sound {
     dl.frequency.value = 180;
     const dg = ctx.createGain();
     dg.gain.value = 0;
-    osc.connect(dl).connect(dg).connect(this.master);
+    osc.connect(dl).connect(dg).connect(this.ambBus);
     osc.start();
     this.drone = { osc, gain: dg };
   }
 
-  /** Night (0..1) and Bloom nights change the ambience. */
-  setMood(night: number, bloom: boolean): void {
+  /** Night (0..1), Bloom nights, how close the Bloom is (0..1) and the rescue. */
+  setMood(night: number, bloom: boolean, danger = 0, rescue = false): void {
     const ctx = this.ctx;
     if (!ctx || !this.ambient || !this.drone) return;
     const t = ctx.currentTime;
     this.ambient.filter.frequency.setTargetAtTime(500 - night * 260, t, 1);
-    this.drone.gain.gain.setTargetAtTime(night * (bloom ? 0.07 : 0.03), t, 1.5);
+    this.drone.gain.gain.setTargetAtTime(night * (bloom ? 0.1 : 0.045), t, 1.5);
     this.drone.osc.frequency.setTargetAtTime(bloom ? 41 : 55, t, 2);
+    this.music?.setMood({ night, bloom, danger, rescue });
   }
 
   /** Plays a sound at a distance (metres) from the listener. */
   play(name: Sfx, distance = 0): void {
     const ctx = this.ctx;
-    const out = this.master;
-    if (!ctx || !out || this.muted || ctx.state !== 'running') return;
+    const out = this.sfxBus;
+    if (!ctx || !out || ctx.state !== 'running' || this.vol.master * this.vol.sfx < 0.001) return;
     const vol = Math.max(0, 1 - distance / HEAR);
     if (vol <= 0.02) return;
     const t = ctx.currentTime;
@@ -289,6 +333,23 @@ export class Sound {
         break;
       case 'tap':
         o('sine', 800, 700, 0.05, 0.1);
+        break;
+      case 'podfall': {
+        // A rising whistle and roar as it comes down.
+        const f = n(3.8, 400, 'bandpass', 0.35, 2.5, 1.2);
+        f.frequency.exponentialRampToValueAtTime(2200, t + 3.6);
+        o('sine', 1800, 500, 3.6, 0.08);
+        break;
+      }
+      case 'creak':
+        o('sawtooth', 110, 70, 0.9, 0.12);
+        o('sawtooth', 116, 64, 0.8, 0.08, 0.1);
+        n(0.5, 500, 'bandpass', 0.2, 0.2, 2);
+        break;
+      case 'thud':
+        o('sine', 80, 30, 0.6, 0.9);
+        n(0.6, 600, 'lowpass', 0.6, 0.004);
+        n(0.4, 2500, 'bandpass', 0.25, 0.02, 0.8);
         break;
     }
   }

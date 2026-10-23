@@ -7,16 +7,23 @@ import { ITEMS } from '../game/content/items';
 import { MONSTERS } from '../game/content/monsters';
 import { NODE } from '../game/content/nodes';
 import { POI_BY_ID } from '../game/content/pois';
+import { POD_FALL } from '../game/sim/events';
 import { MOB_STATE } from '../game/sim/protocol';
 import { daylight } from '../game/sim/time';
 import { colorFor } from '../game/sim/types';
-import { forNodesNear, heightAt, type Island } from '../game/world';
+import { BIOME, biomeAt, forNodesNear, heightAt, type Island } from '../game/world';
 import type { Sound, Sfx } from './audio';
-import type { ClientFx, GameClient } from './client';
+import { RUN, type ClientFx, type GameClient } from './client';
+import { itemIconUrl } from './hud/itemIcons';
+import { buzz } from './prefs';
 import { Actor } from './render/actors';
+import { Ambient } from './render/ambient';
 import { Fx, FX_COLORS } from './render/fx';
-import { bagModel } from './render/items';
+import { bagModel, crateModel, podModel } from './render/items';
 import { NodeView } from './render/nodes';
+import { nodeTint } from './render/props';
+import { WIND } from './render/wind';
+import type { GraphicsLevel } from './settings';
 import {
   buildPois,
   buildingModel,
@@ -27,8 +34,9 @@ import {
 import { Terrain } from './render/terrain';
 
 const LIGHTS = 4;
-const TERRAIN_RADIUS = 3;
-const NODE_RADIUS = 2;
+const TREES: number[] = [NODE.palm, NODE.jungle, NODE.pine];
+/** Seconds a felled tree takes to hit the ground. */
+const FALL = 1.4;
 
 const SKY_DAY = new THREE.Color(0x9fd3ea);
 const SKY_DUSK = new THREE.Color(0xe39a6a);
@@ -41,6 +49,35 @@ const GROUND_DAY = new THREE.Color(0x6a7a4a);
 const GROUND_NIGHT = new THREE.Color(0x1a1a2a);
 const tmpColor = new THREE.Color();
 const tmpVec = new THREE.Vector3();
+const tmpQ = new THREE.Quaternion();
+const tmpM = new THREE.Matrix4();
+
+/** A felled tree on its way down. */
+interface Faller {
+  mesh: THREE.Mesh;
+  mat: THREE.MeshLambertMaterial;
+  pos: THREE.Vector3;
+  base: THREE.Quaternion;
+  scale: THREE.Vector3;
+  axis: THREE.Vector3;
+  dx: number;
+  dz: number;
+  t: number;
+  landed: boolean;
+}
+
+interface DropView {
+  obj: THREE.Object3D;
+  kind: 'bag' | 'crate' | 'pod';
+  light?: THREE.Object3D;
+}
+
+interface Popup {
+  y: number;
+  text: string;
+  icon: string;
+  life: number;
+}
 
 interface Label {
   el: HTMLDivElement;
@@ -58,7 +95,15 @@ class Labels {
     this.n = 0;
   }
 
-  add(x: number, y: number, text: string, cls: string, opacity = 1, width?: number): void {
+  add(
+    x: number,
+    y: number,
+    text: string,
+    cls: string,
+    opacity = 1,
+    width?: number,
+    icon?: string,
+  ): void {
     let l = this.pool[this.n];
     if (!l) {
       const el = document.createElement('div');
@@ -73,6 +118,10 @@ class Labels {
     el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
     el.style.opacity = String(opacity);
     if (width !== undefined) el.style.setProperty('--w', `${Math.round(width * 100)}%`);
+    if (icon !== undefined) {
+      const bg = `url("${icon}")`;
+      if (el.style.getPropertyValue('--icon') !== bg) el.style.setProperty('--icon', bg);
+    }
     el.style.display = '';
   }
 
@@ -99,7 +148,7 @@ export class View {
   private readonly others = new Map<string, Actor>();
   private readonly mobs = new Map<number, Actor>();
   private readonly builds = new Map<number, { view: BuildingView; kind: string }>();
-  private readonly dropMeshes = new Map<number, THREE.Object3D>();
+  private readonly dropMeshes = new Map<number, DropView>();
   private readonly pois: PoiView[];
   private readonly heli: { group: THREE.Group; rotor: THREE.Object3D };
   private heliY = 60;
@@ -124,6 +173,26 @@ export class View {
   private t = 0;
   private emberAcc = 0;
   zoom = 1;
+  private terrainRadius = 3;
+  private nodeRadius = 2;
+  private fogMul = 1;
+  private shakeOn = true;
+  private numbers = true;
+  private w = 1;
+  private h = 1;
+  private readonly ambient: Ambient;
+  private readonly fallers: Faller[] = [];
+  private readonly falling: { group: THREE.Group; x: number; z: number; y: number; t: number }[] =
+    [];
+  private readonly popups: Popup[] = [];
+  private readonly lead = new THREE.Vector3();
+  private camDist = 1.3;
+  private hitStop = 0;
+  private stepAcc = 0;
+  private smokeAcc = 0;
+  /** How close the Bloom is, 0..1 (music, camera). */
+  danger = 0;
+  private readonly dangerSpots: { x: number; z: number }[] = [];
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -149,6 +218,7 @@ export class View {
       this.scene.add(l);
     }
     this.terrain = new Terrain(this.island, this.scene);
+    this.ambient = new Ambient(this.island, this.scene);
     this.nodes = new NodeView(this.island, this.scene, (id) => client.nodeGone(id));
     this.fx = new Fx(this.scene);
     this.pois = buildPois((x, z) => heightAt(this.island, x, z));
@@ -169,7 +239,7 @@ export class View {
     this.scene.add(this.ring);
     this.labels = new Labels(overlay);
     this.me = this.newPlayer(client.you);
-    this.terrain.prime(client.x, client.z, TERRAIN_RADIUS);
+    this.terrain.prime(client.x, client.z, this.terrainRadius);
     this.focus.set(client.x, heightAt(this.island, client.x, client.z), client.z);
     this.syncWorld();
     client.onFx((e) => this.onFx(e));
@@ -189,11 +259,11 @@ export class View {
       this.builds.delete(id);
     }
     for (const [id, m] of this.dropMeshes) {
-      this.scene.remove(m);
+      this.scene.remove(m.obj);
       this.dropMeshes.delete(id);
     }
     for (const b of this.client.buildings.values()) this.addBuilding(b.id, b.kind, b.x, b.z, b.rot);
-    for (const d of this.client.drops.values()) this.addDrop(d.id, d.x, d.z);
+    for (const d of this.client.drops.values()) this.addDrop(d.id, d.x, d.z, d.kind);
     for (const a of this.mobs.values()) this.scene.remove(a.root);
     this.mobs.clear();
     this.nodes.markDirty();
@@ -207,14 +277,52 @@ export class View {
     this.builds.set(id, { view, kind });
   }
 
-  private addDrop(id: number, x: number, z: number): void {
-    const m = bagModel();
-    m.position.set(x, heightAt(this.island, x, z), z);
-    this.scene.add(m);
-    this.dropMeshes.set(id, m);
+  private addDrop(id: number, x: number, z: number, kind?: 'crate' | 'pod'): void {
+    let view: DropView;
+    if (kind === 'crate') view = { obj: crateModel(), kind };
+    else if (kind === 'pod') {
+      const pod = podModel();
+      view = { obj: pod.group, kind, light: pod.light };
+    } else view = { obj: bagModel(), kind: 'bag' };
+    view.obj.position.set(x, heightAt(this.island, x, z) - (kind === 'crate' ? 0.15 : 0), z);
+    if (kind) view.obj.rotation.y = id * 1.7;
+    this.scene.add(view.obj);
+    this.dropMeshes.set(id, view);
+  }
+
+  /** Player settings: camera, effects and graphics quality. */
+  configure(o: {
+    zoom: number;
+    shake: boolean;
+    numbers: boolean;
+    gfx: GraphicsLevel;
+    life: boolean;
+  }): void {
+    this.zoom = o.zoom;
+    this.shakeOn = o.shake;
+    this.numbers = o.numbers;
+    this.fogMul = o.gfx.fog;
+    this.terrainRadius = o.gfx.terrain;
+    if (this.nodeRadius !== o.gfx.nodes) {
+      this.nodeRadius = o.gfx.nodes;
+      this.nodes.markDirty();
+    }
+    this.fx.density = o.gfx.particles;
+    const pr = Math.min(window.devicePixelRatio || 1, o.gfx.pixelRatio);
+    if (this.renderer.getPixelRatio() !== pr) {
+      this.renderer.setPixelRatio(pr);
+      this.resize(this.w, this.h);
+    }
+    this.ambient.configure(o.gfx.grass, o.life);
+  }
+
+  private kick(amount: number): void {
+    if (this.shakeOn) this.shake = Math.max(this.shake, amount);
   }
 
   resize(w: number, h: number): void {
+    this.w = w;
+    this.h = h;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
@@ -239,7 +347,16 @@ export class View {
         return;
       case 'node':
         this.nodes.markDirty();
+        if (e.fell) this.felled(e.id);
         return;
+      case 'gain': {
+        const name = ITEMS[e.id]?.name ?? e.id;
+        const last = this.popups[this.popups.length - 1];
+        const y = last && last.life > 1.2 ? last.y + 0.9 : 2.5;
+        this.popups.push({ y, text: `+${e.n} ${name}`, icon: itemIconUrl(e.id), life: 1.6 });
+        if (this.popups.length > 6) this.popups.shift();
+        return;
+      }
       case 'swing': {
         const a = e.id === this.client.you ? this.me : this.others.get(e.id);
         if (a) a.swing = 1;
@@ -260,12 +377,12 @@ export class View {
         return;
       }
       case 'drop':
-        if (!this.dropMeshes.has(e.d.id)) this.addDrop(e.d.id, e.d.x, e.d.z);
+        if (!this.dropMeshes.has(e.d.id)) this.addDrop(e.d.id, e.d.x, e.d.z, e.d.kind);
         return;
       case 'undrop': {
         const m = this.dropMeshes.get(e.id);
         if (m) {
-          this.scene.remove(m);
+          this.scene.remove(m.obj);
           this.dropMeshes.delete(e.id);
         }
         return;
@@ -274,6 +391,7 @@ export class View {
         if (e.e === 'dead') {
           this.me.dying = 0.01;
           this.sound.play('dead');
+          buzz('error');
         } else if (e.e === 'respawn') {
           this.scene.remove(this.me.root);
           this.me = this.newPlayer(this.client.you);
@@ -312,7 +430,8 @@ export class View {
         this.fx.burst(x, y + 1.2, z, 10, FX_COLORS.blood, { speed: 3 });
         if (e.n) this.fx.text(x, y + 2.2, z, `-${e.n}`, mine ? '#ff5a5a' : '#ffb0b0');
         if (mine) {
-          this.shake = Math.max(this.shake, 0.35);
+          this.kick(0.35);
+          buzz('medium');
           const a = this.me;
           a.hurt = 0.3;
         } else if (e.by) {
@@ -336,12 +455,19 @@ export class View {
           );
         const m = this.nearestMob(x, z);
         if (m) m.hurt = 0.25;
+        if (mine) {
+          // A beat of hit-stop and a nudge make a hit land.
+          this.hitStop = 0.06;
+          this.kick(0.1);
+          buzz('light');
+        }
         this.sfx('mobhit', x, z);
         break;
       }
       case 'death':
         this.fx.burst(x, y + 1, z, 22, FX_COLORS.spore, { speed: 4, up: 4, glow: true, life: 1.1 });
         this.fx.burst(x, y + 0.5, z, 10, FX_COLORS.dust, { speed: 2, up: 1 });
+        this.ambient.scare(x, z, 20);
         this.sfx('death', x, z);
         break;
       case 'burst':
@@ -382,13 +508,17 @@ export class View {
           life: 1.6,
           size: 2,
         });
-        this.shake = Math.max(this.shake, Math.max(0, 0.5 - this.dist(x, z) / 40));
+        this.kick(Math.max(0, 0.5 - this.dist(x, z) / 40));
+        if (this.dist(x, z) < 15) buzz('heavy');
+        this.ambient.scare(x, z, 30);
         this.sfx('boom', x, z);
         break;
       case 'slam':
         this.fx.ring(x, y, z, e.r ?? 3.2, 0xd8a070, 0.7, { grow: true });
         this.fx.burst(x, y + 0.3, z, 30, FX_COLORS.dust, { speed: 6, up: 3, life: 1 });
-        this.shake = Math.max(this.shake, Math.max(0, 0.7 - this.dist(x, z) / 30));
+        this.kick(Math.max(0, 0.7 - this.dist(x, z) / 30));
+        if (this.dist(x, z) < 12) buzz('heavy');
+        this.ambient.scare(x, z, 30);
         this.sfx('slam', x, z);
         break;
       case 'slamwarn':
@@ -434,6 +564,7 @@ export class View {
           life: 0.7,
         });
         this.sfx('craft', x, z);
+        if (mine) buzz('success');
         break;
       case 'deny':
         if (mine) this.sound.play('deny');
@@ -452,6 +583,27 @@ export class View {
         });
         this.sfx('pickup', x, z);
         break;
+      case 'podfall': {
+        const group = podModel().group;
+        group.position.set(x + 14, y + 60, z - 10);
+        group.rotation.set(0.5, 0, -0.35);
+        this.scene.add(group);
+        this.falling.push({ group, x, z, y, t: 0 });
+        // Heard from far away: it's meant to draw you (and everything else) in.
+        this.sound.play('podfall', this.dist(x, z) / 5);
+        break;
+      }
+      case 'land': {
+        const d = this.dist(x, z);
+        this.fx.ring(x, y, z, e.r ?? 4, 0xffd08a, 0.8, { grow: true });
+        this.fx.burst(x, y + 0.4, z, 40, FX_COLORS.dust, { speed: 7, up: 4, life: 1.2 });
+        this.fx.burst(x, y + 0.6, z, 20, FX_COLORS.fire, { speed: 5, up: 4, glow: true });
+        this.kick(Math.max(0, 0.8 - d / 45));
+        if (d < 30) buzz('heavy');
+        this.ambient.scare(x, z, 45);
+        this.sound.play('boom', d / 3);
+        break;
+      }
       case 'throw': {
         const from =
           e.by === this.client.you
@@ -462,6 +614,131 @@ export class View {
           this.sfx('throw', from.x, from.z);
         }
         break;
+      }
+    }
+  }
+
+  /** A node was used up: trees topple, rocks crumble, bushes burst. */
+  private felled(id: number): void {
+    const island = this.island;
+    const type = island.nodeType[id] as number;
+    const x = island.nodeX[id] as number;
+    const z = island.nodeZ[id] as number;
+    const d = this.dist(x, z);
+    if (d > 70) return;
+    const y = this.y(x, z);
+    if (type === NODE.rock || type === NODE.scrap) {
+      const colors = type === NODE.rock ? FX_COLORS.stone : FX_COLORS.metal;
+      this.fx.burst(x, y + 0.6, z, 24, colors, { speed: 5, up: 4, size: 1.6 });
+      this.fx.burst(x, y + 0.3, z, 14, FX_COLORS.dust, { speed: 3, up: 2, life: 1 });
+      this.kick(Math.max(0, 0.18 - d / 60));
+      this.sfx('break', x, z);
+      return;
+    }
+    if (type === NODE.bush || type === NODE.berry || type === NODE.vines) {
+      this.fx.burst(x, y + 0.6, z, 16, FX_COLORS.leaf, { speed: 3, up: 3 });
+      return;
+    }
+    if (!TREES.includes(type)) return;
+    const geo = this.nodes.geometry(type);
+    if (!geo) return;
+    const mat = new THREE.MeshLambertMaterial({
+      vertexColors: true,
+      flatShading: true,
+      transparent: true,
+      color: nodeTint(type, island.nodeVar[id] as number, new THREE.Color()),
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.matrixAutoUpdate = false;
+    const pos = new THREE.Vector3();
+    const base = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    this.nodes.pose(id, tmpM).decompose(pos, base, scale);
+    // It falls away from you when you felled it, any old way otherwise.
+    let dx = x - this.client.x;
+    let dz = z - this.client.z;
+    let len = Math.hypot(dx, dz);
+    if (len > 8 || len < 0.01) {
+      const a = Math.random() * Math.PI * 2;
+      dx = Math.sin(a);
+      dz = Math.cos(a);
+      len = 1;
+    }
+    dx /= len;
+    dz /= len;
+    const axis = new THREE.Vector3(dz, 0, -dx);
+    mesh.matrix.compose(pos, base, scale);
+    this.scene.add(mesh);
+    this.fallers.push({ mesh, mat, pos, base, scale, axis, dx, dz, t: 0, landed: false });
+    this.fx.burst(x, y + 3, z, 10, FX_COLORS.leaf, { speed: 2, up: 1, grav: 2, life: 1.4 });
+    this.sfx('creak', x, z);
+  }
+
+  private updateFallers(dt: number): void {
+    for (let i = this.fallers.length - 1; i >= 0; i--) {
+      const f = this.fallers[i] as Faller;
+      f.t += dt;
+      const k = Math.min(1, f.t / FALL);
+      tmpQ.setFromAxisAngle(f.axis, (Math.PI / 2 - 0.1) * k * k).multiply(f.base);
+      if (k >= 1 && !f.landed) {
+        f.landed = true;
+        const d = this.dist(f.pos.x, f.pos.z);
+        const reach = 5 * f.scale.y;
+        for (let s = 1; s <= 3; s++) {
+          const px = f.pos.x + (f.dx * (reach * s)) / 3;
+          const pz = f.pos.z + (f.dz * (reach * s)) / 3;
+          this.fx.burst(px, this.y(px, pz) + 0.3, pz, 8, FX_COLORS.dust, { speed: 3, up: 2 });
+        }
+        const tx = f.pos.x + f.dx * reach;
+        const tz = f.pos.z + f.dz * reach;
+        this.fx.burst(tx, this.y(tx, tz) + 0.8, tz, 18, FX_COLORS.leaf, { speed: 4, up: 3 });
+        this.kick(Math.max(0, 0.28 - d / 50));
+        if (d < 10) buzz('light');
+        this.ambient.scare(f.pos.x, f.pos.z, 25);
+        this.sound.play('thud', d);
+      }
+      if (f.landed) {
+        const after = f.t - FALL;
+        if (after > 1) {
+          f.mat.opacity = Math.max(0, 1 - (after - 1));
+          f.pos.y -= dt * 0.4;
+        }
+        if (after > 2) {
+          this.scene.remove(f.mesh);
+          f.mat.dispose();
+          this.fallers.splice(i, 1);
+          continue;
+        }
+      }
+      f.mesh.matrix.compose(f.pos, tmpQ, f.scale);
+    }
+  }
+
+  private updateFalling(dt: number): void {
+    for (let i = this.falling.length - 1; i >= 0; i--) {
+      const p = this.falling[i] as (typeof this.falling)[number];
+      p.t += dt;
+      const k = Math.min(1, p.t / POD_FALL);
+      const e = k * k;
+      p.group.position.set(p.x + 14 * (1 - e), p.y + 60 * (1 - e), p.z - 10 * (1 - e));
+      const g = p.group.position;
+      this.fx.burst(g.x, g.y + 1, g.z, 2, FX_COLORS.fire, {
+        speed: 0.6,
+        up: 0.5,
+        grav: 0,
+        glow: true,
+        life: 0.5,
+      });
+      this.fx.burst(g.x, g.y + 1.5, g.z, 1, FX_COLORS.smoke, {
+        speed: 0.4,
+        up: 0.3,
+        grav: 0,
+        life: 2.2,
+        size: 2.5,
+      });
+      if (k >= 1) {
+        this.scene.remove(p.group);
+        this.falling.splice(i, 1);
       }
     }
   }
@@ -498,15 +775,20 @@ export class View {
 
   update(dt: number): void {
     this.t += dt;
+    WIND.value = this.t;
     const c = this.client;
     const island = this.island;
+    // Hit-stop: the fighters freeze for a beat when a blow lands.
+    const adt = this.hitStop > 0 ? dt * 0.1 : dt;
+    this.hitStop -= dt;
     // Survivors.
     const meVisible = !!c.me && !c.me.escaped && (c.me.alive || this.me.dying > 0);
     this.me.root.visible = meVisible;
     this.me.root.position.set(c.x, this.y(c.x, c.z), c.z);
     this.me.root.rotation.y = c.ry;
     this.me.setHeld(c.heldSlot()?.id ?? '');
-    this.me.update(dt, c.speed, c.mv);
+    this.me.update(adt, c.speed, c.mv);
+    if (meVisible && c.speed > 0.5) this.footsteps(dt, c.x, c.z, c.mv === 2);
     for (const [id, a] of this.others) {
       if (!c.others.has(id)) {
         this.scene.remove(a.root);
@@ -523,7 +805,7 @@ export class View {
       a.root.position.set(o.x, this.y(o.x, o.z), o.z);
       a.root.rotation.y = o.ry;
       a.setHeld(o.held);
-      a.update(dt, o.speed, o.mv);
+      a.update(adt, o.speed, o.mv);
     }
     // Monsters.
     for (const [id, a] of this.mobs) {
@@ -545,7 +827,7 @@ export class View {
       if (m.dying > 0 && a.dying === 0) a.dying = 0.01;
       a.root.position.set(m.x, this.y(m.x, m.z), m.z);
       a.root.rotation.y = m.ry;
-      a.update(dt, m.speed, m.state);
+      a.update(adt, m.speed, m.state);
       if (m.state === MOB_STATE.strike && a.swing <= 0) a.swing = 1;
       if (m.burning && embers && m.dying === 0) {
         this.fx.burst(m.x, a.root.position.y + 1, m.z, 2, FX_COLORS.fire, {
@@ -588,21 +870,48 @@ export class View {
         v.water.position.y = 0.1 + k * 0.35;
       }
     }
+    this.smokeAcc += dt;
+    const smoke = this.smokeAcc > 0.22;
+    if (smoke) this.smokeAcc = 0;
     for (const [id, m] of this.dropMeshes) {
-      m.rotation.y = this.t * 0.8 + id;
       const d = c.drops.get(id);
-      if (d) m.position.y = heightAt(island, d.x, d.z) + Math.sin(this.t * 2 + id) * 0.05;
+      if (!d) continue;
+      if (m.kind === 'bag') {
+        m.obj.rotation.y = this.t * 0.8 + id;
+        m.obj.position.y = heightAt(island, d.x, d.z) + Math.sin(this.t * 2 + id) * 0.05;
+      } else if (m.kind === 'pod') {
+        if (m.light) m.light.visible = Math.sin(this.t * 5 + id) > -0.2;
+        // A column of smoke that shows where it came down from far away.
+        if (smoke && this.dist(d.x, d.z) < 110)
+          this.fx.burst(d.x, m.obj.position.y + 2, d.z, 1, FX_COLORS.smoke, {
+            speed: 0.3,
+            up: 2.2,
+            grav: -0.4,
+            life: 4,
+            size: 3,
+          });
+      }
     }
+    this.updateFallers(dt);
+    this.updateFalling(dt);
+    this.updateDanger();
     this.updatePois(dt);
     this.updateGhost();
     this.updateRing();
     this.updateLighting(dt, time);
-    // Camera.
-    // Look a little ahead (north), so the survivor sits below the HUD's top rows.
-    const target = tmpVec.set(c.x, this.y(c.x, c.z) + 0.8, c.z - 3.5);
+    // Camera: a little ahead (north, and where you're heading), so the survivor sits
+    // below the HUD's top rows; sprinting and a fight pull it back a touch.
+    const run = Math.min(1, c.speed / RUN);
+    const ease = 1 - Math.exp(-dt * 2.5);
+    this.lead.x += ((c.speed > 0 ? Math.sin(c.ry) : 0) * 2.4 * run - this.lead.x) * ease;
+    this.lead.z += ((c.speed > 0 ? Math.cos(c.ry) : 0) * 2.4 * run - this.lead.z) * ease;
+    const target = tmpVec.set(c.x + this.lead.x, this.y(c.x, c.z) + 0.8, c.z - 3.5 + this.lead.z);
     this.focus.lerp(target, 1 - Math.exp(-dt * 8));
     const portrait = this.camera.aspect < 1;
-    const dist = (portrait ? 1.3 : 1.05) * this.zoom;
+    const want =
+      (portrait ? 1.3 : 1.05) * this.zoom * (1 + (c.mv === 2 ? 0.06 : 0) + this.danger * 0.08);
+    this.camDist += (want - this.camDist) * (1 - Math.exp(-dt * 2));
+    const dist = this.camDist;
     this.camera.position.set(this.focus.x, this.focus.y + 22 * dist, this.focus.z + 11.5 * dist);
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt);
@@ -611,10 +920,62 @@ export class View {
       this.camera.position.y += (Math.random() - 0.5) * s;
     }
     this.camera.lookAt(this.focus);
-    this.terrain.update(c.x, c.z, TERRAIN_RADIUS);
-    this.nodes.update(c.x, c.z, NODE_RADIUS, dt);
+    this.terrain.update(c.x, c.z, this.terrainRadius);
+    this.nodes.update(c.x, c.z, this.nodeRadius, dt);
+    const day = daylight(c.info().phase);
+    this.ambient.update(dt, this.t, c.x, c.z, day, c.info().bloom, this.dangerSpots);
     this.fx.update(dt);
+    for (let i = this.popups.length - 1; i >= 0; i--) {
+      const p = this.popups[i] as Popup;
+      p.life -= dt;
+      p.y += dt * 0.7;
+      if (p.life <= 0) this.popups.splice(i, 1);
+    }
     this.updateLabels();
+  }
+
+  /** Dust (or splashes) at the survivor's feet. */
+  private footsteps(dt: number, x: number, z: number, sprint: boolean): void {
+    this.stepAcc += dt * (sprint ? 1.7 : 1);
+    if (this.stepAcc < 0.3) return;
+    this.stepAcc = 0;
+    const h = heightAt(this.island, x, z);
+    if (h < 0.05) {
+      this.fx.burst(x, Math.max(h, -0.5) + 0.1, z, 3, FX_COLORS.water, {
+        speed: 1.4,
+        up: 2.2,
+        life: 0.5,
+      });
+      return;
+    }
+    const biome = biomeAt(this.island, x, z);
+    const colors = biome === BIOME.beach ? FX_COLORS.sand : FX_COLORS.dust;
+    this.fx.burst(x, h + 0.08, z, sprint ? 2 : 1, colors, {
+      speed: 0.6,
+      up: 0.8,
+      grav: 2,
+      life: 0.45,
+      size: 0.8,
+    });
+  }
+
+  /** How close the Bloom is (drums in the music, birds take off, the camera pulls back). */
+  private updateDanger(): void {
+    const c = this.client;
+    let n = 0;
+    this.dangerSpots.length = 0;
+    for (const m of c.mobs.values()) {
+      if (m.dying > 0 || !MONSTERS[m.kind].hostile) continue;
+      const d = Math.hypot(m.x - c.x, m.z - c.z);
+      if (d < 30) this.dangerSpots.push({ x: m.x, z: m.z });
+      if (m.kind === 'mother' && d < 45) n += 3;
+      else if (d < 18) {
+        const active =
+          m.state === MOB_STATE.run || m.state === MOB_STATE.windup || m.state === MOB_STATE.strike;
+        n += active ? 1 : 0.35;
+      }
+    }
+    this.danger = c.me?.alive ? Math.min(1, n / 3) : 0;
   }
 
   private updatePois(dt: number): void {
@@ -732,8 +1093,8 @@ export class View {
     sky.lerp(SKY_DUSK, warm * 0.6);
     (this.scene.background as THREE.Color).copy(sky);
     this.fog.color.copy(sky);
-    this.fog.near = 18 + day * 40;
-    this.fog.far = 62 + day * 70;
+    this.fog.near = (18 + day * 40) * this.fogMul;
+    this.fog.far = (62 + day * 70) * this.fogMul;
     this.hemi.color.copy(bloom ? HEMI_BLOOM : HEMI_NIGHT).lerp(HEMI_DAY, day);
     this.hemi.groundColor.copy(GROUND_NIGHT).lerp(GROUND_DAY, day);
     this.hemi.intensity = 0.8 + day * 0.9;
@@ -742,7 +1103,7 @@ export class View {
     this.sun.position.set(c.x + 30, 60, c.z + 20);
     this.sun.target.position.set(c.x, 0, c.z);
     this.terrain.setWaterTint(day, bloom);
-    this.sound.setMood(1 - day, bloom);
+    this.sound.setMood(1 - day, bloom, this.danger, c.rescue.phase === 'calling');
     // Fire light: the nearest fires and torches get the four point lights.
     const sources: { x: number; z: number; y: number; r: number; d: number; color?: number }[] = [];
     for (const b of c.buildings.values()) {
@@ -805,16 +1166,23 @@ export class View {
       const p = project(m.x, this.y(m.x, m.z) + (m.kind === 'thornback' ? 2 : 2.3), m.z);
       if (p) this.labels.add(p.x, p.y, '', 'tag-hp', 1, m.hp / 100);
     }
-    for (const t of this.fx.texts) {
-      const p = project(t.x, t.y, t.z);
+    if (this.numbers)
+      for (const t of this.fx.texts) {
+        const p = project(t.x, t.y, t.z);
+        if (p)
+          this.labels.add(
+            p.x,
+            p.y,
+            t.text,
+            t.color === '#ff5a5a' || t.color === '#ffb0b0' ? 'tag-dmg hurt' : 'tag-dmg',
+            Math.min(1, t.life * 2),
+          );
+      }
+    const base = this.y(c.x, c.z);
+    for (const g of this.popups) {
+      const p = project(c.x, base + g.y, c.z);
       if (p)
-        this.labels.add(
-          p.x,
-          p.y,
-          t.text,
-          t.color === '#ff5a5a' || t.color === '#ffb0b0' ? 'tag-dmg hurt' : 'tag-dmg',
-          Math.min(1, t.life * 2),
-        );
+        this.labels.add(p.x, p.y, g.text, 'tag-gain', Math.min(1, g.life * 2), undefined, g.icon);
     }
     this.labels.end();
   }
@@ -824,6 +1192,7 @@ export class View {
   }
 
   dispose(): void {
+    this.ambient.dispose();
     this.renderer.dispose();
   }
 }

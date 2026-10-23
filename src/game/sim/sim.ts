@@ -30,6 +30,7 @@ import {
   transfer,
   wear,
 } from './inventory';
+import { FIRST_EVENT, runEvents } from './events';
 import { burrowAll, damageMob, runDirector, updateMobs } from './mobs';
 import { placementProblem } from './place';
 import {
@@ -99,6 +100,9 @@ export class IslandSim {
   readonly notes = new Set<string>();
   motherHp: number | null;
   rescue: RescueState;
+  /** World events (events.ts): when the next one comes, and pods on their way down. */
+  nextEvent: number;
+  readonly falling: { x: number; z: number; at: number }[] = [];
   readonly snapDeadUntil = new Map<number, number>();
   readonly snapMob = new Map<number, number>();
   lights: Light[] = [];
@@ -157,6 +161,7 @@ export class IslandSim {
     for (const n of save.notes) this.notes.add(n);
     this.motherHp = save.motherHp;
     this.rescue = { ...save.rescue };
+    this.nextEvent = save.nextEvent ?? this.time + FIRST_EVENT;
     for (const poi of POIS) {
       for (const spot of poi.spots) {
         this.spots.set(spot.id, { poi, spot, x: poi.x + spot.dx, z: poi.z + spot.dz });
@@ -325,6 +330,7 @@ export class IslandSim {
       notes: [...this.notes],
       motherHp: this.currentMotherHp(),
       rescue: { ...this.rescue },
+      nextEvent: Math.round(this.nextEvent),
     };
   }
 
@@ -471,22 +477,19 @@ export class IslandSim {
     const neverBack = def.regrow === null || this.island.towerVines.includes(id);
     this.nodes.set(id, { hp: 0, until: neverBack ? -1 : this.time + (def.regrow ?? DAY) });
     this.broadcast({ type: 'node', id, hp: 0, gone: 1 });
-    const got: string[] = [];
+    // What you get shows as "+3 Wood" over your head (the client sees the bag change).
     if (type === NODE.luggage) {
       for (let k = 0; k < 2; k++) {
         const pick = pickWeighted(LUGGAGE_LOOT, hash01(id, k, this.seed + 77));
         this.give(p, pick.item, pick.n);
-        got.push(`${pick.n} ${ITEMS[pick.item]?.name ?? pick.item}`);
       }
     } else {
       for (const drop of def.drops) {
         const chance = drop.chance ?? 1;
         if (chance < 1 && this.random() >= chance) continue;
         this.give(p, drop.item, drop.n);
-        got.push(`${drop.n} ${ITEMS[drop.item]?.name ?? drop.item}`);
       }
     }
-    if (got.length) this.toast(p.id, `+ ${got.join(', ')}`);
     if (this.island.towerVines.includes(id) && this.towerClear()) {
       this.broadcast({
         type: 'toast',
@@ -922,8 +925,15 @@ export class IslandSim {
     }
   }
 
-  makeBag(x: number, z: number, items: Slot[], label: string, until: number): void {
-    const d: Drop = { id: this.newId(), x, z, items, label, until };
+  makeBag(
+    x: number,
+    z: number,
+    items: Slot[],
+    label: string,
+    until: number,
+    kind?: 'crate' | 'pod',
+  ): void {
+    const d: Drop = { id: this.newId(), x, z, items, label, until, ...(kind ? { kind } : {}) };
     this.drops.set(d.id, d);
     this.broadcast({ type: 'drop', d: dropNet(d) });
   }
@@ -1039,6 +1049,7 @@ export class IslandSim {
     if (this.slowAcc >= 1) {
       this.slowAcc -= 1;
       runDirector(this);
+      runEvents(this);
       this.discover();
       this.expireDrops();
       this.updateRescue();
@@ -1372,7 +1383,15 @@ export function buildingNet(b: Building): BuildingNet {
 }
 
 export function dropNet(d: Drop): DropNet {
-  return { id: d.id, x: d.x, z: d.z, items: d.items.map((s) => ({ ...s })), label: d.label };
+  const net: DropNet = {
+    id: d.id,
+    x: d.x,
+    z: d.z,
+    items: d.items.map((s) => ({ ...s })),
+    label: d.label,
+  };
+  if (d.kind === 'crate' || d.kind === 'pod') net.kind = d.kind;
+  return net;
 }
 
 function mobStateCode(m: Mob): number {

@@ -133,3 +133,49 @@ export function bagModel(): THREE.Mesh {
   ]);
   return new THREE.Mesh(bagGeo, MAT.lit);
 }
+
+let crateGeo: THREE.BufferGeometry | null = null;
+
+/** A crate from MX207's hold, washed up and half sunk in the sand. */
+export function crateModel(): THREE.Object3D {
+  crateGeo ??= merge([
+    box(1.05, 0.8, 0.8, 0x9a7444, { y: 0.32, rz: 0.08 }),
+    box(1.1, 0.12, 0.84, 0x6f5130, { y: 0.66, rz: 0.08 }),
+    box(1.1, 0.12, 0.84, 0x6f5130, { y: 0.02, rz: 0.08 }),
+    box(0.1, 0.84, 0.86, 0x6f5130, { x: -0.48, y: 0.32, rz: 0.08 }),
+    box(0.1, 0.84, 0.86, 0x6f5130, { x: 0.48, y: 0.32, rz: 0.08 }),
+    box(0.5, 0.18, 0.02, 0xd0453b, { y: 0.4, z: 0.41, rz: 0.08 }),
+    cyl(0.03, 0.03, 1.3, 4, 0x2f6a3a, { x: 0.2, y: 0.05, z: 0.5, rz: 1.4, ry: 0.4 }),
+    cyl(0.03, 0.03, 0.9, 4, 0x3a7a42, { x: -0.5, y: 0.05, z: -0.4, rz: 1.5, ry: -0.8 }),
+  ]);
+  const m = new THREE.Mesh(crateGeo, MAT.lit);
+  m.rotation.y = 0.5;
+  return m;
+}
+
+let podGeo: THREE.BufferGeometry | null = null;
+let podGlowGeo: THREE.BufferGeometry | null = null;
+
+/** A Verdance supply pod: white shell, green lights, still smoking. */
+export function podModel(): { group: THREE.Group; light: THREE.Object3D } {
+  podGeo ??= merge([
+    cyl(0.55, 0.62, 1.5, 8, 0xe8ecef, { y: 0.75 }),
+    cone(0.55, 0.6, 8, 0xd0d6da, { y: 1.8 }),
+    cyl(0.64, 0.64, 0.14, 8, 0x3a4048, { y: 0.1 }),
+    box(0.08, 0.6, 0.5, 0x3a4048, { x: 0.62, y: 0.35 }),
+    box(0.08, 0.6, 0.5, 0x3a4048, { x: -0.62, y: 0.35 }),
+    box(0.5, 0.6, 0.08, 0x3a4048, { z: 0.62, y: 0.35 }),
+    box(0.5, 0.6, 0.08, 0x3a4048, { z: -0.62, y: 0.35 }),
+    box(0.62, 0.22, 0.04, 0x2a9a5a, { y: 1.05, z: 0.58 }),
+  ]);
+  podGlowGeo ??= merge([
+    cyl(0.6, 0.6, 0.06, 8, 0x7aff9a, { y: 0.55 }),
+    sphere(0.08, 6, 4, 0x9aff7a, { y: 2.12 }),
+  ]);
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(podGeo, MAT.lit));
+  const light = new THREE.Mesh(podGlowGeo, MAT.glow);
+  group.add(light);
+  group.rotation.z = 0.12;
+  return { group, light };
+}

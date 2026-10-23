@@ -65,6 +65,28 @@ function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts
     if (!d.label.endsWith("'s bag")) continue;
     ctx.fillText('🎒', px(d.x), py(d.z));
   }
+  // Washed-up crates and supply pods: on the minimap's rim when they're further away.
+  for (const d of c.drops.values()) {
+    if (d.kind !== 'crate' && d.kind !== 'pod') continue;
+    let x = px(d.x);
+    let y = py(d.z);
+    if (!o.full) {
+      const r = w / 2 - iconSize * 0.7;
+      const dx = x - w / 2;
+      const dy = y - h / 2;
+      const dd = Math.hypot(dx, dy);
+      if (dd > r) {
+        x = w / 2 + (dx / dd) * r;
+        y = h / 2 + (dy / dd) * r;
+      }
+    }
+    ctx.strokeStyle = d.kind === 'pod' ? 'rgba(120, 255, 150, 0.9)' : 'rgba(255, 220, 140, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, iconSize * (0.75 + Math.sin(o.t * 5) * 0.15), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillText(d.kind === 'pod' ? '🛰️' : '📦', x, y);
+  }
   for (const other of c.others.values()) {
     if (!other.alive) continue;
     const info = c.players.find((p) => p.id === other.id);

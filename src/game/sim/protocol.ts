@@ -72,6 +72,8 @@ export interface DropNet {
   items: Slot[];
   /** Whose things these were (a fallen player's bag). */
   label: string;
+  /** 'crate' (washed up) or 'pod' (Verdance supply pod); missing: a bag. */
+  kind?: 'crate' | 'pod';
 }
 
 export interface PlayerInfo {
@@ -137,7 +139,11 @@ export type FxKind =
   | 'pickup'
   | 'drink'
   | 'throw'
-  | 'spore';
+  | 'spore'
+  /** A supply pod starts falling here (it lands POD_FALL seconds later). */
+  | 'podfall'
+  /** ...and lands. */
+  | 'land';
 
 export type S2C =
   | { type: 'welcome'; you: string; part: number; parts: number; data: string }

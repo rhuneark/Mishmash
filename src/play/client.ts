@@ -3,13 +3,13 @@
 // action button would do right now.
 
 import { BUILDINGS, CAMPFIRE_FUEL_MAX, STATION_RANGE } from '../game/content/buildings';
-import { ITEMS, type ItemDef } from '../game/content/items';
+import { ITEMS, type ItemDef, type ToolKind } from '../game/content/items';
 import { MONSTERS, type MonsterKind } from '../game/content/monsters';
 import { NODES } from '../game/content/nodes';
 import { POIS, type PoiDef, type Spot } from '../game/content/pois';
 import { RECIPES, type Station } from '../game/content/recipes';
 import { currentObjective, type Objective } from '../game/objectives';
-import { HOTBAR, hasAll } from '../game/sim/inventory';
+import { HOTBAR, bestSlot, hasAll, jobScore } from '../game/sim/inventory';
 import { placementProblem, snapPlacement } from '../game/sim/place';
 import {
   MOB_KINDS,
@@ -46,6 +46,8 @@ const BUILD_REACH = 3.8;
 const DROP_REACH = 3;
 const GHOST_AHEAD = 2.6;
 const TOAST_SECONDS = 3.6;
+/** Auto tool: seconds after the last swing before switching back. */
+const AUTO_BACK = 1.8;
 
 export interface Other {
   id: string;
@@ -94,8 +96,10 @@ export interface Target {
   building?: number;
 }
 
-export type Panel =
-  'bag' | 'craft' | 'storage' | 'keypad' | 'journal' | 'map' | 'menu' | 'note' | 'controls';
+export type Panel = 'bag' | 'craft' | 'storage' | 'keypad' | 'journal' | 'map' | 'menu' | 'note';
+
+/** Pages of the pause menu. */
+export type MenuPage = 'main' | 'settings' | 'friends' | 'howto';
 
 export interface Toast {
   id: number;
@@ -111,7 +115,9 @@ export interface Banner {
 
 export type ClientFx =
   | { type: 'fx'; k: FxKind; x: number; z: number; by?: string; n?: number; r?: number }
-  | { type: 'node'; id: number; gone: boolean }
+  | { type: 'node'; id: number; gone: boolean; fell: boolean }
+  /** Items that just landed in your bag (picked up, crafted, taken). */
+  | { type: 'gain'; id: string; n: number }
   | { type: 'swing'; id: string }
   | { type: 'build'; b: BuildingNet; fresh: boolean }
   | { type: 'unbuild'; id: number }
@@ -182,6 +188,18 @@ export class GameClient {
   /** The quick bag/craft panel (doesn't stop you moving). */
   quickOpen = false;
   quickTab: 'bag' | 'craft' = 'bag';
+  menuPage: MenuPage = 'main';
+  /** Auto tool / weapon (Menu › Settings › Gameplay). */
+  auto = { tool: true, weapon: true, back: true };
+  /** What an automatic switch replaced, to switch back to. */
+  private autoSwap: {
+    /** The slot you held before. */
+    prev: number;
+    /** Bag slot the tool came from (swapped into your hand), or null (a hotbar slot). */
+    bag: number | null;
+    tool: string;
+    until: number;
+  } | null = null;
   storageId: number | null = null;
   noteId: string | null = null;
   /** Where closing a note returns to (the journal, or the game). */
@@ -303,6 +321,7 @@ export class GameClient {
       case 'me': {
         const before = this.me;
         if (before && msg.me.hp < before.hp - 0.5 && msg.me.alive) this.hurtFlash = 1;
+        if (before?.alive && msg.me.alive) this.gains(before.inv, msg.me.inv);
         this.me = msg.me;
         break;
       }
@@ -312,11 +331,13 @@ export class GameClient {
           if (!msg.list.some((p) => p.id === id)) this.others.delete(id);
         break;
       case 'node': {
+        const was = this.nodes.get(msg.id);
+        const fell = msg.gone === 1 && !(was && was.until !== 0);
         if (msg.gone) this.nodes.set(msg.id, { hp: 0, until: 1 });
         else if (NODES[this.island.nodeType[msg.id] as number]?.hp === msg.hp)
           this.nodes.delete(msg.id);
         else this.nodes.set(msg.id, { hp: msg.hp, until: 0 });
-        this.emit({ type: 'node', id: msg.id, gone: msg.gone === 1 });
+        this.emit({ type: 'node', id: msg.id, gone: msg.gone === 1, fell });
         this.ghost = null;
         break;
       }
@@ -387,6 +408,20 @@ export class GameClient {
     this.phase = 'ready';
     this.emit({ type: 'reset' });
     this.touch();
+  }
+
+  /** "+3 Wood": what's new in the bag (moving things around changes nothing). */
+  private gains(before: (Slot | null)[], after: (Slot | null)[]): void {
+    const total = (inv: (Slot | null)[]) => {
+      const m = new Map<string, number>();
+      for (const s of inv) if (s) m.set(s.id, (m.get(s.id) ?? 0) + s.n);
+      return m;
+    };
+    const a = total(before);
+    for (const [id, n] of total(after)) {
+      const more = n - (a.get(id) ?? 0);
+      if (more > 0) this.emit({ type: 'gain', id, n: more });
+    }
   }
 
   private setTime(t: number): void {
@@ -525,6 +560,7 @@ export class GameClient {
         return;
       case 'dead':
         this.panel = null;
+        this.autoSwap = null;
         this.emit({ type: 'event', e });
         return;
       case 'respawn':
@@ -625,6 +661,10 @@ export class GameClient {
       (this.target.kind === 'mob' || this.target.kind === 'node')
     ) {
       this.use();
+    }
+    if (this.autoSwap && this.clock > this.autoSwap.until && !useHeld) {
+      if (this.auto.back) this.autoRestore();
+      else this.autoSwap = null;
     }
     // Crafting stations come and go as you walk: the craft lists depend on them.
     this.stationAcc += dt;
@@ -875,6 +915,14 @@ export class GameClient {
     }
     if (foe && (foe as Target).hostile) return foe;
     if (foe) offer(foe, foeScore);
+    // With auto tool on, any tool in the bag counts as in hand.
+    const kinds = new Set<string>();
+    if (held?.tool) kinds.add(held.tool.kind);
+    if (this.auto.tool && this.me)
+      for (const s of this.me.inv) {
+        const k = s ? ITEMS[s.id]?.tool?.kind : undefined;
+        if (k) kinds.add(k);
+      }
     forNodesNear(island, x, z, NODE_REACH + 1.4, (id) => {
       if (this.nodeGone(id)) return;
       const def = NODES[island.nodeType[id] as number];
@@ -883,7 +931,7 @@ export class GameClient {
       const nz = island.nodeZ[id] as number;
       if (Math.hypot(nx - x, nz - z) > NODE_REACH + def.radius) return;
       // A node the held tool works on beats one it doesn't.
-      const fits = def.tool === 'hand' || held?.tool?.kind === def.tool;
+      const fits = def.tool === 'hand' || kinds.has(def.tool);
       offer(
         { kind: 'node', id, x: nx, z: nz, verb: def.verb, name: def.name, hostile: false },
         score(nx, nz) - def.radius + (fits ? -0.8 : 1.5),
@@ -1042,6 +1090,8 @@ export class GameClient {
     text: string;
     kind: 'place' | 'attack' | 'throw' | 'use' | 'eat' | 'none';
     blocked?: string;
+    /** The tool or weapon an automatic switch will take out. */
+    item?: string;
   } {
     const held = this.heldItem();
     if (this.ghost) {
@@ -1052,9 +1102,17 @@ export class GameClient {
       };
     }
     const t = this.target;
-    if (t?.hostile) return { text: `${t.verb} ${t.name}`, kind: 'attack' };
+    const pick = this.autoChoice(t);
+    const item = pick >= 0 ? this.me?.inv[pick]?.id : undefined;
+    const auto = item ? { item } : {};
+    if (t?.hostile) return { text: `${t.verb} ${t.name}`, kind: 'attack', ...auto };
     if (held?.throwable) return { text: `Throw ${held.name}`, kind: 'throw' };
-    if (t) return { text: `${t.verb} ${t.name}`.trim(), kind: t.kind === 'mob' ? 'attack' : 'use' };
+    if (t)
+      return {
+        text: `${t.verb} ${t.name}`.trim(),
+        kind: t.kind === 'mob' ? 'attack' : 'use',
+        ...auto,
+      };
     if (this.wantsToEat()) {
       if (held?.heal) return { text: `Use ${held.name}`, kind: 'eat' };
       if (held?.food)
@@ -1121,10 +1179,11 @@ export class GameClient {
         }
         return;
       }
+      if (t.kind === 'mob' || t.kind === 'node') this.autoEquip(t);
       this.send({ type: 'use', kind: t.kind, id: t.id });
       if (t.kind === 'mob' || t.kind === 'node') {
         this.emit({ type: 'swing', id: this.you });
-        this.nextUse = this.clock + cooldown;
+        this.nextUse = this.clock + (this.heldItem()?.weapon?.cooldown ?? cooldown);
       } else {
         this.nextUse = this.clock + 0.3;
       }
@@ -1161,12 +1220,19 @@ export class GameClient {
   // Commands from the HUD.
 
   openPanel(p: Panel | null): void {
+    if (p === 'menu' && this.panel !== 'menu') this.menuPage = 'main';
     this.panel = p;
     this.touch();
   }
 
-  select(slot: number): void {
+  setMenuPage(page: MenuPage): void {
+    this.menuPage = page;
+    this.touch();
+  }
+
+  select(slot: number, auto = false): void {
     if (!this.me || slot < 0 || slot >= HOTBAR) return;
+    if (!auto) this.autoSwap = null;
     this.me = { ...this.me, held: slot };
     this.send({ type: 'equip', slot });
     this.touch();
@@ -1181,7 +1247,89 @@ export class GameClient {
   }
 
   moveSlot(from: number, to: number): void {
+    this.autoSwap = null;
     this.send({ type: 'move', from, to });
+  }
+
+  // -------------------------------------------------------------------------
+  // Auto tool and auto weapon.
+
+  /** What a target needs: a tool kind, 'weapon', or null (bare hands do, or it's off). */
+  private autoJob(t: Target): ToolKind | 'weapon' | null {
+    if (t.kind === 'node') {
+      const def = NODES[(this.island as Island).nodeType[Number(t.id)] as number];
+      return def && def.tool !== 'hand' && this.auto.tool ? def.tool : null;
+    }
+    if (t.kind === 'mob' && t.hostile && this.auto.weapon) return 'weapon';
+    return null;
+  }
+
+  /** The slot an automatic switch would take for this target (-1: keep what you hold). */
+  autoChoice(t: Target | null): number {
+    const me = this.me;
+    if (!t || !me || this.ghost) return -1;
+    const job = this.autoJob(t);
+    if (!job) return -1;
+    const held = this.heldItem();
+    const i = bestSlot(me.inv, job);
+    if (i < 0 || i === me.held) return -1;
+    const best = jobScore(ITEMS[me.inv[i]?.id ?? ''], job);
+    const have = jobScore(held, job);
+    // Weapons only change for a clear step up (a spear user keeps their spear for a club).
+    return best > have * (job === 'weapon' ? 1.15 : 1) ? i : -1;
+  }
+
+  private autoEquip(t: Target): void {
+    if (this.autoSwap) this.autoSwap.until = this.clock + AUTO_BACK;
+    let i = this.autoChoice(t);
+    if (i < 0) return;
+    // One switch at a time: undo the last one first, so switching back stays simple.
+    const prior = this.autoSwap;
+    if (prior) {
+      this.autoRestore();
+      i = this.autoChoice(t);
+      if (i < 0) return;
+    }
+    const me = this.me;
+    if (!me) return;
+    const tool = me.inv[i]?.id ?? '';
+    const prev = prior?.prev ?? me.held;
+    if (i < HOTBAR) {
+      this.select(i, true);
+      this.autoSwap = { prev, bag: null, tool, until: this.clock + AUTO_BACK };
+    } else {
+      // From the bag: swap it into your hand (and back again later).
+      this.swapLocal(i, me.held);
+      this.autoSwap = { prev: me.held, bag: i, tool, until: this.clock + AUTO_BACK };
+    }
+  }
+
+  /** Back to what you held before the automatic switch. */
+  private autoRestore(): void {
+    const a = this.autoSwap;
+    const me = this.me;
+    this.autoSwap = null;
+    if (!a || !me?.alive) return;
+    if (a.bag !== null) {
+      const inHand = me.inv[a.prev];
+      if (me.held === a.prev && (!inHand || inHand.id === a.tool)) this.swapLocal(a.prev, a.bag);
+    } else {
+      const inHand = me.inv[me.held];
+      if (me.held !== a.prev && (!inHand || inHand.id === a.tool)) this.select(a.prev, true);
+    }
+  }
+
+  /** Swaps two slots (the authority does the same; the mirror follows at once). */
+  private swapLocal(from: number, to: number): void {
+    const me = this.me;
+    if (!me) return;
+    this.send({ type: 'move', from, to });
+    const inv = me.inv.slice();
+    const a = inv[from] ?? null;
+    inv[from] = inv[to] ?? null;
+    inv[to] = a;
+    this.me = { ...me, inv };
+    this.touch();
   }
 
   dropSlot(slot: number): void {

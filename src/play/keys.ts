@@ -26,12 +26,14 @@ export type Action =
   | 'slot5'
   | 'slot6'
   | 'next'
-  | 'prev';
+  | 'prev'
+  | 'zoomIn'
+  | 'zoomOut';
 
 export interface ActionDef {
   id: Action;
   label: string;
-  group: 'Move' | 'Act' | 'Screens' | 'Hotbar';
+  group: 'Move' | 'Act' | 'Screens' | 'Hotbar' | 'Camera';
   def: string[];
 }
 
@@ -63,6 +65,8 @@ export const ACTIONS: ActionDef[] = [
   { id: 'slot6', label: 'Hotbar 6', group: 'Hotbar', def: ['Digit6', 'Numpad6'] },
   { id: 'next', label: 'Next hotbar slot', group: 'Hotbar', def: ['WheelDown'] },
   { id: 'prev', label: 'Previous hotbar slot', group: 'Hotbar', def: ['WheelUp'] },
+  { id: 'zoomIn', label: 'Camera closer', group: 'Camera', def: ['Equal', 'NumpadAdd'] },
+  { id: 'zoomOut', label: 'Camera further', group: 'Camera', def: ['Minus', 'NumpadSubtract'] },
 ];
 
 export const ACTION_IDS = ACTIONS.map((a) => a.id);
@@ -195,6 +199,12 @@ const NAMES: Record<string, string> = {
   CapsLock: 'Caps Lock',
   PageUp: 'Page Up',
   PageDown: 'Page Down',
+  NumpadAdd: 'Num +',
+  NumpadSubtract: 'Num -',
+  NumpadMultiply: 'Num *',
+  NumpadDivide: 'Num /',
+  NumpadEnter: 'Num Enter',
+  NumpadDecimal: 'Num .',
   IntlBackslash: '\\',
 };
 

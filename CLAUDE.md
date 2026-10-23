@@ -22,7 +22,8 @@ update to the user with this link)
   build it → "Now voting: what to add next". Buttons (pinned under the text): Play, Vote on
   what's next, Say hi in chat.
 - **Play** (`screens/Play.tsx`): Continue · Day N (or Start surviving), New island (confirm:
-  replaces the save), Play with friends (host my island), Join a friend (room code).
+  replaces the save), Play with friends (host my island), Join a friend (room code), ⚙️
+  Settings (the game's settings panel without the key list).
 - **Vote** (`screens/Vote.tsx`, `game/poll.ts`): shows `CURRENT_POLL` = `NEXT_POLL` (id
   `next1`, Round 2: what gets added next: boats, farming, pets, weather, ranged weapons, new
   monsters, bigger bases, puzzles & secrets) under a "Round 1 is closed" card. `BASE_POLL`
@@ -38,6 +39,8 @@ update to the user with this link)
   **Never rename a live poll or option id**: its votes stay under the old content type. To
   close a poll set `open: false`; a new round is a new `Poll` with a new id (point
   `CURRENT_POLL` at it). When a round's winner is built, say so on the Vote tab and in About.
+  **Don't build a ballot option before it wins** (weather, boats, farming, pets, ranged
+  weapons, new monsters, bigger bases, puzzles & secrets): the vote decides those.
 - **Chat** (`screens/Chat.tsx`, `game/chat.ts`): the Town Square. Messages are UGC entries of
   type `chat` (`{ v: 1, text }`, one line, ≤200 characters, `cleanMessage`). Newest 30 every
   15 s while the tab is open (`applyLatest` drops messages the server stopped returning:
@@ -130,6 +133,16 @@ survivor) over a flat-shaded low-poly island. Everything is procedural (no art f
   thorn wall (tough, cuts), snap trap (`trap`: bites, holds a monster `heldUntil`, re-arms;
   `b.v` = seconds until armed) and the heart lantern (`repels`: nothing of the Bloom enters
   its light, not even enraged hordes; `IslandSim.repelAt`). Tendrils also twist into rope.
+- **World events** (`sim/events.ts`, `runEvents` once a second): every 3.5–6.5 minutes
+  (`EVENT_GAP`; first one 150 s into a new island, `IslandSave.nextEvent`) something happens near
+  a random survivor, announced to everyone with distance and direction (`compass`): **wreckage
+  washes up** on a beach (a `crate` drop, `WRECK_LOOT`, 1.5 days), a **Verdance supply pod**
+  falls (fx `podfall`, lands `POD_FALL` 4 s later with fx `land`, hurts anyone under it, a `pod`
+  drop with `POD_LOOT`, 2 days; the crash wakes 2–5 monsters that guard it; lore: Verdance's
+  drones still resupply the station), or by day from day 2 a **pack of Husks** (+ a Thornback
+  from day 5) heads for where you stood (`Mob.goal`). Drops carry `kind` (`bag`/`crate`/`pod`, missing = bag); crates
+  and pods show on the minimap (on its rim when further) and map. `pickEvent` picks by time of
+  day; nothing happens during the rescue. Events never change world generation.
 - **Monsters** (`sim/mobs.ts`): the director (every 1 s) spawns roamers near players by
   biome, day/night and Bloom night, wakes rooted Snapjaws within 45 m, grows the Mother
   Bloom at Kessler Station within 75 m (her HP is kept when she despawns), crabs on beaches.
@@ -144,6 +157,14 @@ survivor) over a flat-shaded low-poly island. Everything is procedural (no art f
   Bloom's remains. Build the radio at a workbench, use the beacon by the tower: 3 minutes of
   enraged waves (`RESCUE_SECONDS`), then the helicopter waits 2 minutes (`HELI_WAIT`) on the
   helipad. Board it to win; if it leaves, call again.
+- **Auto tool / auto weapon** (`client.ts` `autoChoice`/`autoEquip`/`autoRestore`, ranking in
+  `inventory.ts` `bestSlot`/`jobScore`/`weaponScore`): before a swing at a node that needs a
+  tool, or at a hostile monster, the client takes out the best tool (power) or weapon (dps ×
+  reach, a clear 15% step up) from the hotbar (`select`) or the bag (swapped into your hand with
+  `move`, mirrored at once), and `AUTO_BACK` 1.8 s after the last swing switches back (the bag
+  swap is undone). A manual select or move cancels it. Target picking counts bag tools as in
+  hand; the action label shows the tool's picture (`actionLabel().item`). Settings toggles:
+  Auto tool, Auto weapon, Switch back (`client.auto`, set by Game).
 - **Client** (`play/client.ts` `GameClient`): mirrors the authority, moves the local survivor
   (collision with trees/rocks, landmark boxes, blocking buildings, deep water; stamina and
   sprint), picks what the action button does (`findTarget`: hostile monster in reach first,
@@ -155,12 +176,50 @@ survivor) over a flat-shaded low-poly island. Everything is procedural (no art f
   see-through), procedural rigs for survivors and the Bloom (`actors.ts`), buildings and
   landmarks (`structures.ts`), particles/rings/damage numbers (`fx.ts`), day/night lighting
   with fog, 4 pooled point lights for fires and torches. `three` is the host's embedded copy
-  (exact `0.183.2`, no addons). Sound is made on the fly with WebAudio (`play/audio.ts`).
+  (exact `0.183.2`, no addons). `view.configure` applies the settings (camera distance, shake,
+  damage numbers, quality: `settings.ts` `graphicsFor`).
+- **Making it feel alive** (all client-side, nothing synced): trees, bushes and vines sway
+  (`render/wind.ts` `windy()`: vertex-shader sway, one shared time uniform); grass chunks around
+  you that sway and part as you walk (`render/ambient.ts`, deterministic per 32 m chunk, not on
+  landmarks; density by quality); birds pecking in meadows and on beaches that scatter when you
+  or a monster come close or something loud happens (`ambient.scare`), flocks passing over,
+  butterflies by day, fireflies at night, pink spores on Bloom nights; felled trees topple away
+  from you and crash (`view.felled`, client `node` fx with `fell`), rocks and wreckage
+  crumble; dust or splashes at your feet; "+3 Wood" popups with the item picture over your
+  head (client diffs your bag: `gain` fx; the authority no longer toasts what you gathered);
+  the camera leads where you walk, pulls back a little when sprinting or in a fight, shakes on
+  hits and blasts, with a 60 ms hit-stop when your blow lands; crates, smoking supply pods.
+  Vibration through `run.haptic` (`prefs.buzz`, Settings › Screen › Vibration).
+- **Sound** (`play/audio.ts`, made on the fly with WebAudio): effects, ambience (wind, night
+  drone) and music each have a bus under a master gain (`setVolumes`, sliders curved by
+  `settings.gain`). **Music** (`play/music.ts`): generated chords and a plucked melody with
+  reverb and echo; day = major and busy, night = minor and sparse, Bloom nights = a dissonant
+  drone, and drums rise with `view.danger` (hostile monsters close and active, the Mother
+  near) and during the rescue call.
 - **HUD** (`play/hud/`): stat bars, clock, objective, minimap (fog of war, `map.ts` `Fog`,
   saved per island under `mishmash_fog`), journal (objectives, notes, cargo code so far,
-  Kessler pages, tips), map, bag + crafting sheet, storage box, keypad, menu (room code,
-  sound, controls, how to play, leave), death and win screens. Floating joystick on the left
-  half (touch only: a mouse clicks the island through it).
+  Kessler pages, tips), map, bag + crafting sheet, storage box, keypad, pause menu, death and
+  win screens. Floating joystick on the left half (touch only: a mouse clicks the island
+  through it).
+- **Pause menu** (`hud/Menu.tsx`, ☰ or Esc; `client.menuPage`: main / settings / friends /
+  howto): Resume, Settings, Journal, Map, Play with friends (room code), How to play, Save and
+  quit. Solo play pauses while it's open (`link.pause`, also when the app is in the background).
+  **Settings** (`SettingsPanel`, tabs): Gameplay (auto tool, auto weapon, switch back), Audio
+  (master, effects, ambience, music), Screen (phones: portrait/landscape + turn the other way,
+  left-handed; button size, camera distance, shake, damage numbers, vibration), Graphics
+  (quality auto/low/medium/high, grass and wildlife, FPS), Controls (key list). Settings live
+  in `play/settings.ts` (pure: `parseSettings` repairs saved data) and `play/prefs.ts` (store,
+  `usePrefs`, saved in appStorage under `mishmash_settings` 0.4 s after a change, loaded at
+  start-up in `main.tsx`).
+- **Landscape on phones** (`play/screen.ts`, Game.tsx): RUN locks the game upright, so
+  Settings › Screen › Landscape turns the whole `.game` a quarter turn (`rotationFor`,
+  clockwise; "turn the other way" anticlockwise) when the screen is upright and the device is
+  touch; the player turns the phone. Pointer points go through `toLocal` (joystick, drag ghost;
+  `elementFromPoint` keeps screen points), safe areas turn with it (`turnInsets`, all four
+  `--safe-*` set on `.game`). `.game.landscape` (any wide game, turned or not) has its own HUD
+  layout (stats and minimap in a row, quick panel as a left column with the stick beside it,
+  smaller hotbar); `.lefty` swaps stick and buttons; `.hud-small/large` scale the button
+  groups. `.game` is a size container (`cqw`/`cqh` for the full map).
 - **Item pictures** (`hud/itemIcons.ts`): every item is a small SVG (48×48, flat colours,
   dark outline) shown as a data-URL `<img>` (`Slots.tsx` `ItemIcon`). Not emoji: newer emoji
   (wood, rock, rope…) are empty boxes on older phones and Windows. `itemIcons.test.ts`
@@ -181,7 +240,8 @@ survivor) over a flat-shaded low-poly island. Everything is procedural (no art f
   (`bind` moves it); saved per player in appStorage under `mishmash_keys` (`parseBindings`
   repairs it). Defaults: WASD/arrows, Shift sprint, Space/E/left click action, F eat, Q drop,
   R turn, Tab quick panel, I/B bag, C craft, J journal, M map, 1–6 hotbar, wheel cycles the
-  hotbar. Esc is fixed (closes screens). Key hints show on devices with a mouse
+  hotbar, = and - move the camera (saved as the camera setting). Esc is fixed (opens and closes
+  the menu, steps back a menu page). Key hints show on devices with a mouse
   (`isPc`: `(pointer: fine)`).
 - **Saves**: your island is one JSON in appStorage (`mishmash_island`, `IslandSave` v1,
   `parseIslandSave` repairs untrusted data; keep it accepting old saves). The player key is the
@@ -251,17 +311,20 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
   objectives.ts      the escape checklist from flags/notes/inventory
   content/           items, recipes, nodes, buildings, monsters, landmarks (pois), notes
   sim/               the island authority: sim.ts (IslandSim), mobs.ts (monsters, director),
-                     protocol.ts (messages), types.ts (save format, collision helpers),
-                     inventory.ts, place.ts (build rules), time.ts (day/night)
+                     events.ts (world events), protocol.ts (messages), types.ts (save format,
+                     collision helpers), inventory.ts (+ best tool/weapon), place.ts (build
+                     rules), time.ts (day/night)
   *.test.ts          vitest unit tests
 src/sdk/run.ts     THE ONLY client module that imports the RUN SDK. Waits for start-up,
                    catches everything. UgcApi + run.ugc, realtime rooms (createRoom/joinRoom).
 src/server/IslandRoom.ts  co-op GameRoom (imports the SDK's mp-server; runs IslandSim)
 src/play/          the game client: session.ts (solo/host/join, saves), link.ts (LocalLink),
                    roomLink.ts, client.ts (GameClient), input.ts, keys.ts (PC bindings),
-                   audio.ts, view.ts (scene), Game.tsx (canvas, frame loop), render/
-                   (terrain, nodes, actors, structures, items, props, fx, geo), hud/ (Hud,
-                   Panels, QuickPanel, Craft, Slots, drag, itemIcons, MapView, map)
+                   settings.ts + prefs.ts (settings), screen.ts (landscape), audio.ts +
+                   music.ts, view.ts (scene), Game.tsx (canvas, frame loop, settings), render/
+                   (terrain, nodes, actors, structures, items, props, fx, geo, wind, ambient),
+                   hud/ (Hud, Menu, Panels, QuickPanel, Craft, Slots, drag, itemIcons,
+                   MapView, map)
 src/app/           community.ts (chat, votes, Dev area over UgcApi), localUgc.ts (dev stand-in),
                    usePolling.ts, appEvents.ts (host lifecycle → game pause/resume)
 src/screens/       Play, Intro (also the About tab), Vote, Chat, Dev (owner only)
@@ -319,7 +382,9 @@ npm run dev                 # then, in another shell:
 npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, vote, chat, owner
                             # delete, Dev area), the game (walk, read, gather, craft, build, night
                             # fight, death, item pictures, quick panel, drag and drop, Mashbench,
-                            # research page, rebinding a key, save/continue) and local co-op;
+                            # research page, auto tool, a supply pod, pause menu, settings,
+                            # rebinding a key, landscape, save/continue), hub settings and
+                            # local co-op;
                             # must print "clean"
 ```
 
@@ -357,7 +422,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   workflow runs again, and only when the user asks. Server config (UGC limits, textGen off,
   realtime rooms) reaches public players with each publish. The survival game (v1.8.0,
   2026-10-22) and its next update (v1.10.0: item pictures, drag and drop, quick panel, PC
-  keys, lore, Mashbench) are private until the user asks to publish them.
+  keys, lore, Mashbench) and v1.11.0 (pause menu and settings, volume sliders and music, auto
+  tool, landscape, world events and a livelier island) are private until the user asks to
+  publish them.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

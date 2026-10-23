@@ -552,6 +552,22 @@ export function funnel(step: number, name: string): void {
   fire('funnel', () => RundotGameAPI.analytics.trackFunnelStep(step, name, 'first_session', 1));
 }
 
+// ---------------------------------------------------------------------------
+// Haptics.
+
+export type Haptic = 'light' | 'medium' | 'heavy' | 'success' | 'warning' | 'error';
+type HapticStyle = Parameters<typeof RundotGameAPI.triggerHapticAsync>[0];
+
+let lastHaptic = 0;
+
+/** A short vibration (a no-op where the device has none). At most one every 90 ms. */
+export function haptic(style: Haptic): void {
+  const now = performance.now();
+  if (!isReady || now - lastHaptic < 90) return;
+  lastHaptic = now;
+  fire('haptic', () => RundotGameAPI.triggerHapticAsync(style as HapticStyle));
+}
+
 export interface LifecycleHandlers {
   pause?: () => void;
   resume?: () => void;

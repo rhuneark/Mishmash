@@ -13,18 +13,12 @@ import { clockLabel } from '../../game/sim/time';
 import type { GameClient } from '../client';
 import type { Input } from '../input';
 import type { Sound } from '../audio';
+import { toLocal } from '../screen';
 import { keyHint, type Action, type Bindings } from '../keys';
 import type { Fog } from './map';
 import { FullMap, MiniMap } from './MapView';
-import {
-  BagSheet,
-  ControlsSheet,
-  JournalSheet,
-  KeypadSheet,
-  MenuSheet,
-  NoteSheet,
-  StorageSheet,
-} from './Panels';
+import { PauseMenu } from './Menu';
+import { BagSheet, JournalSheet, KeypadSheet, NoteSheet, StorageSheet } from './Panels';
 import { QuickPanel } from './QuickPanel';
 import { DragLayer, ItemIcon, SlotButton, quickUse } from './Slots';
 
@@ -159,6 +153,9 @@ export function Hud(props: HudProps) {
             <span className="key-cap">{hint('use')}</span>
           ) : null}
           {label.blocked ?? label.text}
+          {!label.blocked && label.item ? (
+            <ItemIcon id={label.item} className="label-icon" />
+          ) : null}
         </div>
         <div className="action-row">
           <div className="action-side">
@@ -207,9 +204,6 @@ export function Hud(props: HudProps) {
       <DragLayer />
       {panel === 'bag' && <BagSheet client={client} onClose={close} tab="bag" pc={pc} />}
       {panel === 'craft' && <BagSheet client={client} onClose={close} tab="craft" pc={pc} />}
-      {panel === 'controls' && (
-        <ControlsSheet input={input} onClose={() => client.openPanel('menu')} />
-      )}
       {panel === 'storage' && <StorageSheet client={client} onClose={close} />}
       {panel === 'keypad' && <KeypadSheet client={client} onClose={close} />}
       {panel === 'journal' && <JournalSheet client={client} onClose={close} />}
@@ -217,11 +211,11 @@ export function Hud(props: HudProps) {
         <NoteSheet client={client} onClose={() => client.openPanel(client.noteBack ?? null)} />
       )}
       {panel === 'menu' && (
-        <MenuSheet
+        <PauseMenu
           client={client}
+          input={input}
           sound={sound}
           pc={pc}
-          onClose={close}
           onLeave={props.onLeave}
           onHost={props.onHost}
         />
@@ -370,8 +364,9 @@ function Joystick({ input }: { input: Input }) {
   const pointer = useRef<number | null>(null);
   const R = 46;
   const move = (e: ReactPointerEvent, base: { x: number; y: number }) => {
-    let dx = e.clientX - base.x;
-    let dy = e.clientY - base.y;
+    const p = toLocal(e.clientX, e.clientY);
+    let dx = p.x - base.x;
+    let dy = p.y - base.y;
     const d = Math.hypot(dx, dy);
     if (d > R) {
       dx = (dx / d) * R;
@@ -398,7 +393,7 @@ function Joystick({ input }: { input: Input }) {
         if (pointer.current !== null || e.pointerType === 'mouse') return;
         pointer.current = e.pointerId;
         zone.current?.setPointerCapture(e.pointerId);
-        const base = { x: e.clientX, y: e.clientY };
+        const base = toLocal(e.clientX, e.clientY);
         setStick({ ...base, dx: 0, dy: 0 });
       }}
       onPointerMove={(e) => {

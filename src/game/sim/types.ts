@@ -50,6 +50,10 @@ export interface Building {
   inv?: (Slot | null)[];
 }
 
+/** A bag on the ground, a crate washed up on a beach, or a Verdance supply pod. */
+export type DropKind = 'bag' | 'crate' | 'pod';
+export const DROP_KINDS: DropKind[] = ['bag', 'crate', 'pod'];
+
 export interface Drop {
   id: number;
   x: number;
@@ -57,6 +61,8 @@ export interface Drop {
   items: Slot[];
   label: string;
   until: number;
+  /** Missing: a bag. */
+  kind?: DropKind;
 }
 
 export interface Mob {
@@ -93,6 +99,8 @@ export interface Mob {
   nextSpawn: number;
   /** Held by a snap trap until then (sim time). */
   heldUntil: number;
+  /** Where it's headed when nobody is in sight (a roaming pack). */
+  goal?: { x: number; z: number };
 }
 
 export interface RescueState {
@@ -132,6 +140,8 @@ export interface IslandSave {
   notes: string[];
   motherHp: number | null;
   rescue: RescueState;
+  /** Island time of the next world event (events.ts); missing in older saves. */
+  nextEvent?: number;
 }
 
 export function newSave(seed: number): IslandSave {
@@ -206,6 +216,7 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
         items,
         label: str(o['label'], 'Bag'),
         until: num(o['until'], 0),
+        ...(o['kind'] === 'crate' || o['kind'] === 'pod' ? { kind: o['kind'] } : {}),
       });
       save.nextId = Math.max(save.nextId, id + 1);
     }
@@ -244,6 +255,8 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
   if (phase === 'calling' || phase === 'landed') {
     save.rescue = { phase, endsAt: num(r?.['endsAt'], 0) };
   }
+  const ne = d['nextEvent'];
+  if (typeof ne === 'number' && Number.isFinite(ne)) save.nextEvent = ne;
   return save;
 }
 

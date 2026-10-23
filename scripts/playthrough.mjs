@@ -116,10 +116,10 @@ const pressUse = async (page) => {
   const b = await page.locator('.use-btn').boundingBox();
   await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
 };
-const until = async (page, fn, what, ms = 15000) => {
+const until = async (page, fn, what, ms = 15000, arg) => {
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    if (await game(page, fn)) return true;
+    if (await game(page, fn, arg)) return true;
     await page.waitForTimeout(200);
   }
   check(false, what);
@@ -132,6 +132,10 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.getByRole('button', { name: 'Play', exact: true }).first().click();
   await page.getByRole('button', { name: /Start surviving/ }).click();
   await page.locator('.hud').waitFor({ timeout: 60000 });
+  // World events come on their own; the playthrough sends one when it wants it.
+  await game(page, () => {
+    window.__game.client.link.sim.nextEvent = Infinity;
+  });
   await noSideScroll('game');
   const hotbar = await page.locator('.hotbar').boundingBox();
   const use = await page.locator('.use-btn').boundingBox();
@@ -427,25 +431,185 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     .waitFor();
   await page.keyboard.press('Escape');
 
-  // PC keys can be changed: journal on K instead of J.
+  // Auto tool: with a torch in hand, the axe comes out of the bag for a tree and goes back.
+  await give(page, [
+    ['torch', 1],
+    ['axe_scrap', 1],
+  ]);
+  await page.waitForTimeout(400);
+  await hold(page, 'torch', 0);
+  await game(page, () => {
+    const c = window.__game.client;
+    const i = c.me.inv.findIndex((s) => s && s.id === 'axe_scrap');
+    if (i !== 20) setTimeout(() => c.moveSlot(i, 20), 500);
+  });
+  await page.waitForTimeout(900);
+  const tree = await game(page, () => {
+    const c = window.__game.client;
+    const isl = c.island;
+    let best = null;
+    let bd = Infinity;
+    for (let id = 0; id < isl.nodeCount; id++) {
+      if (isl.nodeType[id] > 2 || c.nodeGone(id)) continue;
+      const d = Math.hypot(isl.nodeX[id] - c.x, isl.nodeZ[id] - c.z);
+      if (d < bd && d > 8) {
+        bd = d;
+        best = [id, isl.nodeX[id], isl.nodeZ[id]];
+      }
+    }
+    return best;
+  });
+  await teleport(page, tree[1], tree[2] + 1.6);
+  await game(page, () => {
+    window.__game.client.ry = Math.PI;
+  });
+  await until(
+    page,
+    () => window.__game.client.actionLabel().item === 'axe_scrap',
+    `${tag} auto tool: the axe isn't offered for the tree`,
+  );
+  check(
+    (await page.locator('.action-label .label-icon').count()) === 1,
+    `${tag} auto tool: no axe picture on the action label`,
+  );
+  const felled = await game(page, () => window.__game.client.target?.id);
+  const chop = await page.locator('.use-btn').boundingBox();
+  await page.mouse.move(chop.x + chop.width / 2, chop.y + chop.height / 2);
+  await page.mouse.down();
+  await until(
+    page,
+    () => window.__game.client.heldSlot()?.id === 'axe_scrap',
+    `${tag} auto tool: didn't take the axe out`,
+  );
+  await until(
+    page,
+    (id) => window.__game.client.nodeGone(id),
+    `${tag} auto tool: the tree didn't come down`,
+    25000,
+    felled,
+  );
+  await page.mouse.up();
+  await until(
+    page,
+    () => {
+      const c = window.__game.client;
+      return c.heldSlot()?.id === 'torch' && c.me.inv[20]?.id === 'axe_scrap';
+    },
+    `${tag} auto tool: didn't switch back to the torch`,
+  );
+
+  // A Verdance supply pod comes down nearby; its loot is picked up like a bag.
+  await game(page, () => {
+    const c = window.__game.client;
+    const sim = c.link.sim;
+    sim.falling.push({ x: c.x + 4, z: c.z - 7, at: sim.time + 4 });
+    sim.fx('podfall', c.x + 4, c.z - 7);
+  });
+  await until(
+    page,
+    () => [...window.__game.client.drops.values()].some((d) => d.kind === 'pod'),
+    `${tag} events: no supply pod landed`,
+    20000,
+  );
+  await shot('9e-pod');
+  const pod = await game(page, () => {
+    const d = [...window.__game.client.drops.values()].find((d) => d.kind === 'pod');
+    return [d.x, d.z];
+  });
+  await teleport(page, pod[0] + 1.2, pod[1]);
+  await until(
+    page,
+    () => window.__game.client.target?.kind === 'drop',
+    `${tag} events: the pod isn't in reach`,
+  );
+  await pressUse(page);
+  await until(
+    page,
+    () => ![...window.__game.client.drops.values()].some((d) => d.kind === 'pod'),
+    `${tag} events: couldn't empty the pod`,
+  );
+
+  // The pause menu: solo play waits while it's open.
   await page.getByRole('button', { name: 'Menu' }).click();
-  await page.getByRole('button', { name: /Controls/ }).click();
+  await page.getByText('Paused').waitFor();
+  const t0 = await game(page, () => window.__game.client.link.sim.time);
+  await page.waitForTimeout(1200);
+  check(
+    (await game(page, () => window.__game.client.link.sim.time)) === t0,
+    `${tag} menu: the island didn't pause`,
+  );
+  await noSideScroll('menu');
+  await shot('9c-menu');
+  // Settings: PC keys can be changed (journal on K instead of J) and volumes set.
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('tab', { name: /Controls/ }).click();
   await page.getByRole('button', { name: 'Journal, key 1' }).click();
   await page.keyboard.press('KeyK');
   await page.getByText('K → Journal').waitFor();
   await noSideScroll('controls');
+  await page.getByRole('tab', { name: /Audio/ }).click();
+  await page.getByRole('slider', { name: 'Music' }).fill('20');
+  await page.locator('.set-value', { hasText: '20%' }).waitFor();
+  await shot('9d-settings');
   await page.keyboard.press('Escape');
+  await page.getByText('Paused').waitFor();
   await page.keyboard.press('Escape');
-  await page.locator('.sheet').waitFor({ state: 'detached' });
+  await page.locator('.menu-screen').waitFor({ state: 'detached' });
+  await page.waitForTimeout(600);
+  check(
+    (await game(page, () => window.__game.client.link.sim.time)) > t0,
+    `${tag} menu: the island didn't carry on after the menu`,
+  );
   await page.keyboard.press('KeyK');
   await page.locator('.label', { hasText: /Dr. Kessler's research \([1-8]\/8\)/ }).waitFor();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Menu' }).click();
-  await page.getByRole('button', { name: /Controls/ }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('tab', { name: /Controls/ }).click();
   await page.getByRole('button', { name: 'Reset to defaults' }).click();
+
+  // Landscape: the game turns sideways inside the upright phone, and still plays.
+  await page.getByRole('tab', { name: /Screen/ }).click();
+  await page.getByRole('radio', { name: /Landscape/ }).click();
+  await page.locator('.game.turned').waitFor();
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
-  await page.locator('.sheet').waitFor({ state: 'detached' });
+  await page.locator('.menu-screen').waitFor({ state: 'detached' });
+  await page.waitForTimeout(600);
+  const hb = await page.locator('.hotbar').boundingBox();
+  check(
+    hb && hb.height > hb.width && hb.x >= 0 && hb.y >= 0 && hb.y + hb.height <= height,
+    `${tag} landscape: the hotbar isn't turned on screen`,
+  );
+  await noSideScroll('landscape');
+  await shot('9f-landscape');
+  // The stick, turned: pushing towards the top of the turned game walks north.
+  const tz = await game(page, () => window.__game.client.z);
+  const jz = await page.locator('.joy-zone').boundingBox();
+  const jx = jz.x + jz.width / 2;
+  const jy = jz.y + jz.height / 2;
+  const cdp2 = await page.context().newCDPSession(page);
+  const touch2 = (type, x, y) =>
+    cdp2.send('Input.dispatchTouchEvent', {
+      type,
+      touchPoints: type === 'touchEnd' ? [] : [{ x, y }],
+    });
+  await touch2('touchStart', jx, jy);
+  for (let k = 1; k <= 4; k++) await touch2('touchMove', jx + k * 11, jy);
+  await page.waitForTimeout(1200);
+  await touch2('touchEnd', jx + 44, jy);
+  check(
+    tz - (await game(page, () => window.__game.client.z)) > 0.5,
+    `${tag} landscape: the turned stick didn't walk north`,
+  );
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('tab', { name: /Screen/ }).click();
+  await page.getByRole('radio', { name: /Portrait/ }).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.locator('.menu-screen').waitFor({ state: 'detached' });
+  await page.locator('.game.turned').waitFor({ state: 'detached' });
   await page.waitForTimeout(600);
 
   // Journal and map.
@@ -461,7 +625,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   // Save, leave and continue where you were.
   const here = await game(page, () => [window.__game.client.x, window.__game.client.z]);
   await page.getByRole('button', { name: 'Menu' }).click();
-  await page.getByRole('button', { name: /Save and leave/ }).click();
+  await page.getByRole('button', { name: /Save and quit/ }).click();
   await page.getByRole('button', { name: /Continue · Day/ }).click();
   await page.locator('.hud').waitFor({ timeout: 60000 });
   await page.waitForTimeout(500);
@@ -476,7 +640,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   );
   check(back[2] >= 1, `${tag} game: continue lost the campfire`);
   await page.getByRole('button', { name: 'Menu' }).click();
-  await page.getByRole('button', { name: /Save and leave/ }).click();
+  await page.getByRole('button', { name: /Save and quit/ }).click();
   await page.getByRole('button', { name: /Continue · Day/ }).waitFor();
 }
 
@@ -514,8 +678,8 @@ async function playCoop() {
   );
   await friend.page.screenshot({ path: `${SHOTS}/coop-friend.png` });
   await host.page.getByRole('button', { name: 'Menu' }).click();
-  await host.page.getByText(code).waitFor();
-  await host.page.getByRole('button', { name: /Close the island and leave/ }).click();
+  await host.page.getByText(code).first().waitFor();
+  await host.page.getByRole('button', { name: /Close the island and quit/ }).click();
   await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 15000 });
   for (const who of [host, friend]) {
     check(who.errors.length === 0, `co-op console errors: ${who.errors.join(' | ')}`);
@@ -613,6 +777,18 @@ for (const [width, height] of VIEWPORTS) {
     (await page.getByText('A game the players build.').count()) === 0,
     `${tag} intro shown again`,
   );
+
+  // Settings from the Play tab too.
+  await page.getByRole('button', { name: /Settings/ }).click();
+  const autoTool = page.getByRole('switch', { name: 'Auto tool' });
+  await autoTool.click();
+  check(
+    (await autoTool.getAttribute('aria-checked')) === 'false',
+    `${tag} settings: Auto tool didn't turn off`,
+  );
+  await autoTool.click();
+  await noSideScroll('settings');
+  await page.getByRole('button', { name: 'Close settings' }).click();
 
   // The game's owner (?owner plays the owner in the local preview) can delete
   // anyone's message.

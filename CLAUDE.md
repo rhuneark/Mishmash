@@ -474,7 +474,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   takes shape. Since 2026-10-23 the name is **Bloom Island** and the tags are survival,
   crafting, base-building, horror, zombies, island, co-op, multiplayer, open-world,
   exploration, monsters, sandbox, procedural, plane-crash, escape, low-poly, halloween,
-  spooky, community-build, voting, player-made, chat (community and social retired). Despite RUN's docs, `set-keywords` **adds** to
+  spooky, community-build, voting, player-made, chat (community and social retired). RUN
+  rate-limits these calls (v1.14.0's set-description got a 429 after ~28 calls), so the step
+  paces the tag deletes and retries each setter. Despite RUN's docs, `set-keywords` **adds** to
   the game's tags and fails past 30 (v1.9.0's deploy hit "at most 30 tags"), so the step
   first runs `delete-keyword` on every listed tag and on `GAME_KEYWORDS_RETIRED` (tags to
   drop: put a removed tag there rather than just deleting it from the list). The share link
@@ -485,7 +487,7 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   version into RUN's review; it goes on Explore once review passes. GitHub only registered this
   workflow after a later push touched it (dispatching it 404'd before).
 - **Going public:** v1.7.0 (the hub, Dev area, thumbnail, tags) was submitted with the Publish
-  workflow on 2026-10-22 at the user's request, and v1.14.0 (Bloom Island: the survival game
+  workflow on 2026-10-22 at the user's request, and v1.15.0 (Bloom Island: the survival game
   with everything up to the islands, rules and title screen, the new name and thumbnail) on
   2026-10-23, also at the user's request. Pushes after that still deploy private builds
   (the share link opens the newest); Explore only gets a newer version when the Publish
@@ -495,7 +497,7 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   keys, lore, Mashbench) and v1.11.0 (pause menu and settings, volume sliders and music, auto
   tool, landscape, world events and a livelier island) and v1.12.0 (isometric camera, bag
   window by the survivor) and v1.13.0 (islands from parts, world rules, title screen, October
-  Jam link) were private builds; all of it went public with v1.14.0.
+  Jam link) were private builds; all of it went public with v1.15.0.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

@@ -85,11 +85,20 @@ jobs:
       - name: Set name, keywords and description
         if: steps.setup.outputs.ready == 'true'
         run: |
-          if [ -n "$GAME_NAME" ]; then rundot game set-name "$GAME_NAME"; fi
+          # RUN rate-limits these calls (429 after ~30 in a burst): pace them and retry.
+          retry() {
+            for i in 1 2 3 4 5; do
+              "$@" && return 0
+              sleep 20
+            done
+            return 1
+          }
+          if [ -n "$GAME_NAME" ]; then retry rundot game set-name "$GAME_NAME"; fi
           if [ -n "$GAME_KEYWORDS" ]; then
             for k in $(echo "$GAME_KEYWORDS_RETIRED,$GAME_KEYWORDS" | tr ',' ' '); do
               rundot game delete-keyword "$k" > /dev/null 2>&1 || true
+              sleep 2
             done
-            rundot game set-keywords "$GAME_KEYWORDS"
+            retry rundot game set-keywords "$GAME_KEYWORDS"
           fi
-          if [ -n "$GAME_DESCRIPTION" ]; then rundot game set-description "$GAME_DESCRIPTION"; fi
+          if [ -n "$GAME_DESCRIPTION" ]; then retry rundot game set-description "$GAME_DESCRIPTION"; fi

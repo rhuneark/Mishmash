@@ -870,7 +870,29 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     () => window.__game.client.target?.id === 'bunker_sign',
     `${tag} secrets: the bunker sign isn't in reach`,
   );
-  await pressUse(page);
+  for (let k = 0; k < 6; k++) {
+    const why = await game(page, () => {
+      const c = window.__game.client;
+      return JSON.stringify({
+        clock: c.clock?.toFixed?.(2),
+        nextUse: c.nextUse?.toFixed?.(2),
+        panel: c.panel,
+        target: c.target?.id,
+        label: c.actionLabel().text,
+        quick: c.quickOpen,
+        top: (() => {
+          const r = document.querySelector('.use-btn')?.getBoundingClientRect();
+          const el = r && document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          return el ? `${el.tagName}.${el.className}` : null;
+        })(),
+      });
+    });
+    await pressUse(page);
+    if (await page.getByText('Verdance shelter sign').isVisible()) break;
+    await page.waitForTimeout(700);
+    if (await page.getByText('Verdance shelter sign').isVisible()) break;
+    console.log(`${tag} secrets: a press didn't read the sign ${why}`);
+  }
   await page.getByText('Verdance shelter sign').waitFor();
   await page.keyboard.press('Escape');
   await until(

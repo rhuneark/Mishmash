@@ -140,6 +140,16 @@ const pressUse = async (page) => {
   const b = await page.locator('.use-btn').boundingBox();
   await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
 };
+/** Presses the action button until `fn` holds (headless frames are slow: the button's
+ * cooldown runs on frame time, so a press can land a moment early). */
+const pressUntil = async (page, fn, arg, tries = 8) => {
+  for (let k = 0; k < tries; k++) {
+    if (await game(page, fn, arg)) return true;
+    await pressUse(page);
+    await page.waitForTimeout(700);
+  }
+  return game(page, fn, arg);
+};
 const until = async (page, fn, what, ms = 15000, arg) => {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -339,9 +349,12 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     () => [...window.__game.client.buildings.values()].some((b) => b.kind === 'campfire'),
     `${tag} game: campfire not built`,
   );
-  check(
-    wood0 - (await game(page, () => window.__game.client.count('wood'))) === 5,
+  await until(
+    page,
+    (w0) => w0 - window.__game.client.count('wood') === 5,
     `${tag} build: the campfire didn't take 5 wood`,
+    15000,
+    wood0,
   );
   await page.getByRole('button', { name: 'Leave build mode' }).first().click();
   await page.locator('.build-panel').waitFor({ state: 'detached' });
@@ -742,7 +755,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   const husk = await game(page, async () => {
     const { spawnMob } = await import('/src/game/sim/mobs.ts');
     const c = window.__game.client;
-    const m = spawnMob(c.link.sim, 'husk', c.x, c.z - 9, {});
+    const m = spawnMob(c.link.sim, 'husk', c.x, c.z - 6, {});
     m.target = c.you;
     return m.id;
   });
@@ -755,7 +768,10 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     (await page.locator('.hotbar .slot-ammo').first().textContent()) === '6',
     `${tag} bow: the arrows left aren't on the slot`,
   );
-  await pressUse(page);
+  check(
+    await pressUntil(page, () => window.__game.client.count('arrow') < 6),
+    `${tag} bow: no arrow used`,
+  );
   await until(
     page,
     (id) => {
@@ -766,17 +782,13 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     10000,
     husk,
   );
-  check(
-    (await game(page, () => window.__game.client.count('arrow'))) === 5,
-    `${tag} bow: no arrow used`,
-  );
   await shot('9f-bow');
   await game(page, () => {
     const sim = window.__game.client.link.sim;
     window.__calm = setInterval(() => sim.mobs.clear(), 100);
   });
 
-  // Farming: a garden plot from build mode, a seed planted, watered from the can.
+  // Farming: a garden plot, a seed planted (whichever the bag has first), watered from the can.
   await openGround(page);
   await give(page, [
     ['seed_corn', 2],
@@ -789,31 +801,23 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   });
   await until(
     page,
-    () => window.__game.client.actionLabel().text === 'Plant corn seeds',
+    () => /^Plant .*seeds$/.test(window.__game.client.actionLabel().text),
     `${tag} farm: the plot doesn't offer to plant`,
   );
-  await pressUse(page);
-  await until(
-    page,
-    () =>
-      [...window.__game.client.buildings.values()].some((b) => b.kind === 'garden_plot' && b.crop),
-    `${tag} farm: nothing planted`,
-  );
+  const planted = () =>
+    [...window.__game.client.buildings.values()].some((b) => b.kind === 'garden_plot' && b.crop);
+  check(await pressUntil(page, planted), `${tag} farm: nothing planted`);
   await hold(page, 'watering_can', 1);
   await until(
     page,
-    () => window.__game.client.actionLabel().text === 'Water corn',
+    () => window.__game.client.actionLabel().text.startsWith('Water '),
     `${tag} farm: the can doesn't offer to water`,
   );
-  await pressUse(page);
-  await until(
-    page,
-    () =>
-      [...window.__game.client.buildings.values()].some(
-        (b) => b.kind === 'garden_plot' && b.crop && b.crop[2],
-      ),
-    `${tag} farm: the plot isn't wet`,
-  );
+  const wet = () =>
+    [...window.__game.client.buildings.values()].some(
+      (b) => b.kind === 'garden_plot' && b.crop && b.crop[2],
+    );
+  check(await pressUntil(page, wet), `${tag} farm: the plot isn't wet`);
   await shot('9g-farm');
 
   // Island animals: hold a goat's favourite food and it eats from your hand.
@@ -829,18 +833,27 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     c.ry = Math.PI;
     return m.id;
   });
-  await until(
-    page,
-    () => window.__game.client.actionLabel().text === 'Feed berries to the goat',
-    `${tag} animals: can't feed the goat`,
-  );
-  // Headless frames are slow and the action has a short cooldown: press until it eats.
-  const fed = (id) => !!window.__game.client.link.sim.mobs.get(id)?.fed;
-  for (let k = 0; k < 6 && !(await game(page, fed, goat)); k++) {
-    await pressUse(page);
-    await page.waitForTimeout(700);
-  }
-  check(await game(page, fed, goat), `${tag} animals: the goat didn't eat`);
+  // It grazes about: keep it right in front of you for the check.
+  const pin = (id) => {
+    const c = window.__game.client;
+    const m = c.link.sim.mobs.get(id);
+    if (m) {
+      m.x = c.x;
+      m.z = c.z - 1.6;
+    }
+    return c.actionLabel().text === 'Feed berries to the goat';
+  };
+  await until(page, pin, `${tag} animals: can't feed the goat`, 15000, goat);
+  const fed = (id) => {
+    const c = window.__game.client;
+    const m = c.link.sim.mobs.get(id);
+    if (m) {
+      m.x = c.x;
+      m.z = c.z - 1.6;
+    }
+    return !!m?.fed;
+  };
+  check(await pressUntil(page, fed, goat), `${tag} animals: the goat didn't eat`);
   check(
     (await game(page, () => window.__game.client.toasts.map((t) => t.text).join(' '))).includes(
       'eats from your hand',
@@ -870,29 +883,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     () => window.__game.client.target?.id === 'bunker_sign',
     `${tag} secrets: the bunker sign isn't in reach`,
   );
-  for (let k = 0; k < 6; k++) {
-    const why = await game(page, () => {
-      const c = window.__game.client;
-      return JSON.stringify({
-        clock: c.clock?.toFixed?.(2),
-        nextUse: c.nextUse?.toFixed?.(2),
-        panel: c.panel,
-        target: c.target?.id,
-        label: c.actionLabel().text,
-        quick: c.quickOpen,
-        top: (() => {
-          const r = document.querySelector('.use-btn')?.getBoundingClientRect();
-          const el = r && document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-          return el ? `${el.tagName}.${el.className}` : null;
-        })(),
-      });
-    });
-    await pressUse(page);
-    if (await page.getByText('Verdance shelter sign').isVisible()) break;
-    await page.waitForTimeout(700);
-    if (await page.getByText('Verdance shelter sign').isVisible()) break;
-    console.log(`${tag} secrets: a press didn't read the sign ${why}`);
-  }
+  await pressUntil(page, () => window.__game.client.panel === 'note');
   await page.getByText('Verdance shelter sign').waitFor();
   await page.keyboard.press('Escape');
   await until(

@@ -790,6 +790,12 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   });
 
   // Farming: a garden plot, a seed planted (whichever the bag has first), watered from the can.
+  // A dry spell, so the can has something to do (rain waters plots by itself).
+  await game(page, () => {
+    const sim = window.__game.client.link.sim;
+    sim.weather = { kind: 'clear', until: sim.time + 3000 };
+    sim.broadcast({ type: 'weather', w: 'clear' });
+  });
   await openGround(page);
   await give(page, [
     ['seed_corn', 2],

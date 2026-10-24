@@ -18,6 +18,14 @@ import { ITEMS, powerFor, type ItemDef } from '../content/items';
 import { LUGGAGE_LOOT, NODE, NODES } from '../content/nodes';
 import { CROPS, CROP_BY_ID, WET_SECONDS, cropForSeed, cropStage } from '../content/crops';
 import { NOTES, PAGES } from '../content/notes';
+import {
+  BOTTLE_MAPS,
+  DIG_HP,
+  GENERATOR_SAP,
+  TREASURE_LOOT,
+  bunkerCode,
+  wreckCode,
+} from '../content/secrets';
 import { RESCUE_SECONDS, type PoiDef, type Spot } from '../content/pois';
 import { isClassic, type IslandParts } from '../islands';
 import {
@@ -31,10 +39,11 @@ import {
 import { RECIPES, type Station } from '../content/recipes';
 import { hash01 } from '../rng';
 import { MAX_SAY, SAY_GAP, cleanMessage } from '../chat';
-import { HALF, forNodesNear, poolNear, type Island } from '../world';
+import { HALF, forNodesNear, hitCollider, poolNear, type Island } from '../world';
 import {
   add,
   cleanInv,
+  count,
   emptyInv,
   HOTBAR,
   moveSlot,
@@ -44,7 +53,7 @@ import {
   wear,
   type Inv,
 } from './inventory';
-import { FIRST_EVENT, runEvents } from './events';
+import { FIRST_EVENT, rollLoot, runEvents } from './events';
 import { parseWeather, runWeather, type WeatherState } from './weather';
 import { burrowAll, damageMob, runDirector, spawnMob, updateMobs } from './mobs';
 import { MONSTERS, PET_NAMES } from '../content/monsters';
@@ -52,6 +61,7 @@ import { placementProblem } from './place';
 import {
   MOB_KINDS,
   MOB_STATE,
+  SHOTS,
   splitParts,
   type BuildingNet,
   type C2S,
@@ -65,7 +75,7 @@ import {
   type Snapshot,
   type UseKind,
 } from './protocol';
-import { DAY, DUSK, NIGHT_END, NIGHT_START, dayInfo, type DayInfo } from './time';
+import { DAY, DUSK, NIGHT_END, NIGHT_START, dayInfo, lowTide, type DayInfo } from './time';
 import {
   blocksNow,
   circleHitsBox,
@@ -144,6 +154,10 @@ export class IslandSim {
   private readonly meAt = new Map<string, number>();
   private readonly lastMe = new Map<string, string>();
   private readonly booms: { x: number; z: number; at: number; by: string; item: string }[] = [];
+  /** Treasure being dug up: hits left (map number → hp). */
+  private readonly digs = new Map<number, number>();
+  /** Arrows in the air: they hit `mob` when they get there. */
+  private readonly shots: { mob: number; at: number; by: string; dmg: number; burn: number }[] = [];
 
   constructor(island: Island, save: IslandSave, out: Out, random: () => number) {
     this.island = island;
@@ -478,6 +492,8 @@ export class IslandSim {
         return this.onUse(p, msg.kind, msg.id);
       case 'throw':
         return this.onThrow(p, msg.slot, msg.x, msg.z);
+      case 'shoot':
+        return this.onShoot(p, msg.x, msg.z);
       case 'eat':
         return this.onEat(p, msg.slot);
       case 'equip':
@@ -564,6 +580,8 @@ export class IslandSim {
         return this.useDrop(p, Number(id));
       case 'pool':
         return this.usePool(p);
+      case 'dig':
+        return this.useDig(p, Number(id));
     }
   }
 
@@ -574,6 +592,7 @@ export class IslandSim {
   }
 
   nodeGone(id: number): boolean {
+    if (this.island.hidden[id]) return true;
     const s = this.nodes.get(id);
     return !!s && s.until !== 0;
   }
@@ -711,7 +730,10 @@ export class IslandSim {
     if (gives && this.time >= tame.next) {
       tame.next = this.time + gives.every;
       this.give(p, gives.item, 1);
-      this.toast(p.id, `${tame.name} gives you ${ITEMS[gives.item]?.name.toLowerCase() ?? 'something'}.`);
+      this.toast(
+        p.id,
+        `${tame.name} gives you ${ITEMS[gives.item]?.name.toLowerCase() ?? 'something'}.`,
+      );
       this.fx('pickup', m.x, m.z, p.id);
     } else {
       tame.mode = tame.mode === 'follow' ? 'stay' : 'follow';
@@ -786,6 +808,12 @@ export class IslandSim {
     if (!s) return;
     if (dist(p.x, p.z, s.x, s.z) > REACH + 1) return;
     const { spot } = s;
+    if (spot.after && !this.flags.has(spot.after)) return;
+    if (spot.tide && !lowTide(this.time)) {
+      this.toast(p.id, 'The hold is flooded. Low water is from 04:00 to 08:00 and 16:00 to 20:00.');
+      this.fx('deny', s.x, s.z, p.id);
+      return;
+    }
     switch (spot.kind) {
       case 'note':
       case 'tag': {
@@ -813,14 +841,39 @@ export class IslandSim {
         });
         this.toast(p.id, `Found: ${got.join(', ')}`);
         this.fx('pickup', s.x, s.z, p.id);
+        if (spot.note) this.findNote(p, spot.note);
         this.broadcastProgress();
         this.dirty(p);
         return;
       }
       case 'lock':
-        if (this.flags.has('cargo_open'))
-          this.toast(p.id, 'The cargo container is open and empty.');
+        if (this.flags.has(lockFlag(spot)))
+          this.toast(
+            p.id,
+            spot.lock === 'bunker' ? 'The bunker door stands open.' : 'Open and empty.',
+          );
         return;
+      case 'generator': {
+        if (this.flags.has('bunker_power')) {
+          this.toast(p.id, 'The generator hums. The keypad by the door is lit.');
+          return;
+        }
+        if (count(p.inv, 'sap') < GENERATOR_SAP) {
+          this.toast(p.id, `The generator is out of fuel. It needs ${GENERATOR_SAP} Bloom sap.`);
+          this.fx('deny', s.x, s.z, p.id);
+          return;
+        }
+        remove(p.inv, 'sap', GENERATOR_SAP);
+        this.flags.add('bunker_power');
+        this.fx('unlock', s.x, s.z, p.id);
+        this.broadcast({
+          type: 'toast',
+          text: `${p.name} fuelled the bunker's generator. The keypad by the door lights up.`,
+        });
+        this.broadcastProgress();
+        this.dirty(p);
+        return;
+      }
       case 'antenna': {
         if (this.flags.has('antenna_taken')) {
           this.toast(p.id, 'The antenna is already gone.');
@@ -1055,10 +1108,100 @@ export class IslandSim {
     this.dirty(p);
   }
 
+  /**
+   * The held bow, crossbow or slingshot: the first of its ammo in the bag flies toward
+   * (x, z) and hits the first creature on the line, unless a tree, rock or wreckage is
+   * in the way. Arrows fly over walls, so you can shoot from behind your own.
+   */
+  private onShoot(p: SimPlayer, x: number, z: number): void {
+    const held = p.inv[p.held];
+    const bow = held ? ITEMS[held.id]?.ranged : undefined;
+    if (!p.alive || !bow || !Number.isFinite(x) || !Number.isFinite(z)) return;
+    const ammoSlot = p.inv.findIndex((s) => !!s && bow.ammo.includes(s.id));
+    const ammo = p.inv[ammoSlot];
+    if (!ammo) {
+      this.toast(p.id, `No ${(ITEMS[bow.ammo[0] as string]?.name ?? 'ammo').toLowerCase()}s left.`);
+      return;
+    }
+    if (!this.cooldownOk(p, bow.cooldown)) return;
+    let dx = x - p.x;
+    let dz = z - p.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.01) {
+      dx = Math.sin(p.ry);
+      dz = Math.cos(p.ry);
+    } else {
+      dx /= len;
+      dz /= len;
+    }
+    const range = bow.range;
+    // The first creature along the line...
+    let hit: Mob | null = null;
+    let far = range;
+    for (const m of this.mobs.values()) {
+      if (m.tame || m.hp <= 0 || m.st === 'burrow') continue;
+      const ox = m.x - p.x;
+      const oz = m.z - p.z;
+      const t = ox * dx + oz * dz;
+      if (t < 0.2 || t > far) continue;
+      if (Math.abs(ox * dz - oz * dx) > (MONSTER_RADIUS[m.kind] ?? 0.5) + 0.35) continue;
+      hit = m;
+      far = t;
+    }
+    // ...unless something solid comes first.
+    const block = this.shotBlocked(p.x, p.z, dx, dz, far);
+    if (block < far) {
+      hit = null;
+      far = block;
+    }
+    const ammoId = ammo.id;
+    const extra = ITEMS[ammoId]?.ammo;
+    remove(p.inv, ammoId, 1);
+    if (wear(p.inv, p.held))
+      this.toast(p.id, `Your ${ITEMS[held?.id ?? '']?.name ?? 'bow'} broke.`);
+    const look = SHOTS.indexOf(ammoId as (typeof SHOTS)[number]);
+    this.fx('shot', p.x + dx * far, p.z + dz * far, p.id, bow.speed, Math.max(0, look));
+    if (hit) {
+      this.shots.push({
+        mob: hit.id,
+        at: this.time + far / bow.speed,
+        by: p.id,
+        dmg: bow.damage + (extra?.damage ?? 0),
+        burn: extra?.burn ?? 0,
+      });
+    }
+    this.dirty(p);
+  }
+
+  /** How far a shot gets before a tree, rock or landmark wall stops it. */
+  private shotBlocked(x: number, z: number, dx: number, dz: number, range: number): number {
+    let stop = range;
+    for (let s = 0.5; s < stop; s += 0.5) {
+      if (hitCollider(this.island, x + dx * s, z + dz * s, 0.05)) {
+        stop = s;
+        break;
+      }
+    }
+    const mx = x + (dx * range) / 2;
+    const mz = z + (dz * range) / 2;
+    forNodesNear(this.island, mx, mz, range / 2 + 2, (id) => {
+      if (this.nodeGone(id)) return;
+      const r = NODES[this.island.nodeType[id] as number]?.radius ?? 0;
+      if (r <= 0) return;
+      const ox = (this.island.nodeX[id] as number) - x;
+      const oz = (this.island.nodeZ[id] as number) - z;
+      const t = ox * dx + oz * dz;
+      if (t < 0.5 || t > stop) return;
+      if (Math.abs(ox * dz - oz * dx) < r) stop = t;
+    });
+    return stop;
+  }
+
   private onEat(p: SimPlayer, slot: number): void {
     const s = p.inv[slot];
     const def = s ? ITEMS[s.id] : undefined;
     if (!p.alive || !s || !def) return;
+    if (def.reads) return this.readBottle(p, slot);
     if (!def.food && !def.heal) return;
     if (def.food) {
       p.food = Math.min(100, p.food + def.food.food);
@@ -1258,22 +1401,107 @@ export class IslandSim {
     this.dirty(p);
   }
 
+  /** A code typed on the keypad of the nearest lock: the cargo hold, the bunker or the safe. */
   private onCode(p: SimPlayer, code: string): void {
-    const s = this.spots.get('cargo_lock');
-    if (!p.alive || !s || dist(p.x, p.z, s.x, s.z) > REACH + 1.5) return;
-    if (this.flags.has('cargo_open')) return;
-    if (String(code).trim() !== this.island.code) {
+    if (!p.alive) return;
+    let s: { spot: Spot; x: number; z: number } | null = null;
+    for (const v of this.spots.values()) {
+      if (v.spot.kind !== 'lock' || dist(p.x, p.z, v.x, v.z) > REACH + 1.5) continue;
+      if (!s || dist(p.x, p.z, v.x, v.z) < dist(p.x, p.z, s.x, s.z)) s = v;
+    }
+    if (!s) return;
+    const { spot } = s;
+    const flag = lockFlag(spot);
+    if (this.flags.has(flag)) return;
+    if (spot.lock === 'bunker' && !this.flags.has('bunker_power')) {
+      this.toast(p.id, 'The keypad is dead. The generator next to the door has no fuel.');
+      return;
+    }
+    if (spot.tide && !lowTide(this.time)) {
+      this.toast(p.id, 'The safe is under water. Come back at low tide.');
+      return;
+    }
+    const want =
+      spot.lock === 'bunker'
+        ? bunkerCode(this.seed)
+        : spot.lock === 'wreck'
+          ? wreckCode(this.seed)
+          : this.island.code;
+    if (String(code).trim() !== want) {
       this.toast(p.id, "Click. The lock doesn't budge.");
       this.fx('deny', s.x, s.z, p.id);
       return;
     }
-    this.flags.add('cargo_open');
-    const got = (s.spot.loot ?? []).map((l) => {
+    this.flags.add(flag);
+    const got = (spot.loot ?? []).map((l) => {
       this.give(p, l.item, l.n);
       return `${l.n} ${ITEMS[l.item]?.name ?? l.item}`;
     });
     this.fx('unlock', s.x, s.z, p.id);
-    this.broadcast({ type: 'toast', text: `${p.name} opened the cargo hold: ${got.join(', ')}` });
+    const what =
+      spot.lock === 'bunker'
+        ? 'opened the bunker door'
+        : spot.lock === 'wreck'
+          ? "opened the captain's safe"
+          : 'opened the cargo hold';
+    this.broadcast({ type: 'toast', text: `${p.name} ${what}: ${got.join(', ')}` });
+    if (spot.note) this.findNote(p, spot.note);
+    this.broadcastProgress();
+    this.dirty(p);
+  }
+
+  /** A note found somewhere other than a spot (a treasure map): shared, and shown to the finder. */
+  private findNote(p: SimPlayer, id: string): void {
+    if (!NOTES[id]) return;
+    this.notes.add(id);
+    this.send(p.id, { type: 'event', e: 'note', id });
+  }
+
+  /** Reads a message in a bottle: the next treasure map, or a castaway's letter. */
+  private readBottle(p: SimPlayer, slot: number): void {
+    const s = p.inv[slot];
+    if (!s) return;
+    s.n -= 1;
+    if (s.n <= 0) p.inv[slot] = null;
+    const next = BOTTLE_MAPS.map((n) => `treasure_${n}`).find((id) => !this.notes.has(id));
+    this.findNote(p, next ?? 'bottle_letter');
+    if (next) this.toast(p.id, 'A treasure map! The X is on your map.');
+    this.broadcastProgress();
+    this.dirty(p);
+  }
+
+  /** Digs at treasure map `n`'s X with a shovel: a few blows and the chest comes up. */
+  private useDig(p: SimPlayer, n: number): void {
+    const at = this.island.treasures[n - 1];
+    if (!at || !this.notes.has(`treasure_${n}`) || this.flags.has(`dug:${n}`)) return;
+    if (dist(p.x, p.z, at.x, at.z) > REACH + 0.8) return;
+    const held = this.held(p);
+    if (held?.tool?.kind !== 'shovel') {
+      this.toast(p.id, 'You need a shovel to dig here. Make one at a workbench.');
+      this.fx('deny', at.x, at.z, p.id);
+      return;
+    }
+    if (!this.cooldownOk(p, held.weapon?.cooldown ?? 0.75)) return;
+    if (wear(p.inv, p.held)) this.toast(p.id, 'Your shovel broke.');
+    const left = (this.digs.get(n) ?? DIG_HP) - held.tool.power;
+    this.fx('dig', at.x, at.z, p.id);
+    if (left > 0) {
+      this.digs.set(n, left);
+      this.dirty(p);
+      return;
+    }
+    this.digs.delete(n);
+    this.flags.add(`dug:${n}`);
+    this.makeBag(
+      at.x,
+      at.z,
+      rollLoot(TREASURE_LOOT, this.random),
+      'Buried chest',
+      this.time + 3 * DAY,
+      'crate',
+    );
+    this.broadcast({ type: 'toast', text: `${p.name} dug up a buried chest!` });
+    this.fx('unlock', at.x, at.z, p.id);
     this.broadcastProgress();
     this.dirty(p);
   }
@@ -1635,6 +1863,13 @@ export class IslandSim {
   }
 
   private updateBooms(): void {
+    for (let i = this.shots.length - 1; i >= 0; i--) {
+      const shot = this.shots[i] as (typeof this.shots)[number];
+      if (this.time < shot.at) continue;
+      this.shots.splice(i, 1);
+      const m = this.mobs.get(shot.mob);
+      if (m && !m.tame && m.st !== 'burrow') damageMob(this, m, shot.dmg, shot.by, shot.burn);
+    }
     for (let i = this.booms.length - 1; i >= 0; i--) {
       const boom = this.booms[i] as (typeof this.booms)[number];
       if (this.time < boom.at) continue;
@@ -1896,4 +2131,9 @@ function round1(v: number): number {
 
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
+}
+
+/** The flag an opened lock sets (the cargo hold's predates the others). */
+function lockFlag(spot: Spot): string {
+  return `${spot.lock ?? 'cargo'}_open`;
 }

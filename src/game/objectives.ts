@@ -101,6 +101,54 @@ export function starterQuest(p: StarterProgress): Quest | null {
   return { id: 'starter', title: '🔥 The first night', steps };
 }
 
+/**
+ * A card for a secret you've come across (the bunker, the wreck, a treasure map): one at a
+ * time, the treasure first, so the HUD stays tidy.
+ */
+export function secretQuest(p: Progress & { treasures: number }): Quest | null {
+  const f = p.flags;
+  const n = p.notes;
+  if (p.treasures > 0) {
+    return {
+      id: 'treasure',
+      title: '🗺️ Buried treasure',
+      steps: [
+        { id: 'shovel', text: 'Make a shovel at a workbench', done: p.carrying.has('shovel') },
+        {
+          id: 'dig',
+          text: `Dig where the X is on your map${p.treasures > 1 ? ` (${p.treasures} left)` : ''}`,
+          done: false,
+        },
+      ],
+    };
+  }
+  if (f.has('seen:wreck') && !f.has('wreck_open')) {
+    return {
+      id: 'wreck',
+      title: '⚓ The Marisol',
+      steps: [
+        { id: 'log', text: "Read the ship's log", done: n.has('wreck_log') },
+        { id: 'plate', text: 'Find her hull number on the bow', done: n.has('wreck_plate') },
+        { id: 'safe', text: 'Open the safe at low tide (04–08, 16–20)', done: false },
+      ],
+    };
+  }
+  if (f.has('seen:bunker') && !f.has('bunker_open')) {
+    const markers = ['a', 'b', 'c', 'd'].filter((k) => n.has(`marker_${k}_plate`)).length;
+    return {
+      id: 'bunker',
+      title: '🚪 The Verdance bunker',
+      steps: [
+        { id: 'sign', text: 'Read the sign by the door', done: n.has('bunker_sign') },
+        { id: 'markers', text: `Find the survey markers (${markers}/4)`, done: markers === 4 },
+        { id: 'power', text: 'Fuel the generator (3 Bloom sap)', done: f.has('bunker_power') },
+        { id: 'code', text: 'Enter the code at the door', done: false },
+      ],
+    };
+  }
+  return null;
+}
+
 function checklist(p: Progress): Objective[] {
   const f = p.flags;
   const has = (id: string) => p.carrying.has(id);

@@ -38,6 +38,7 @@ export const WRECK_LOOT: LootRow[] = [
   { id: 'torch', min: 1, max: 1, chance: 0.3 },
   { id: 'seed_tomato', min: 2, max: 3, chance: 0.25 },
   { id: 'seed_corn', min: 2, max: 3, chance: 0.25 },
+  { id: 'bottle', min: 1, max: 1, chance: 0.3 },
 ];
 
 export const POD_LOOT: LootRow[] = [

@@ -1543,6 +1543,20 @@ button:disabled {
   text-shadow: 0 1px 2px #000;
 }
 
+.slot-ammo {
+  position: absolute;
+  right: 3px;
+  top: 1px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #ffe07a;
+  text-shadow: 0 1px 2px #000;
+}
+
+.slot-ammo.out {
+  color: #ff8a7a;
+}
+
 .slot-key {
   position: absolute;
   left: 4px;

@@ -339,7 +339,8 @@ function wildAnimal(sim: IslandSim, m: Mob, dt: number): void {
     m.t -= dt;
     if (m.t > 0) return;
     const p = alivePlayer(sim, m.target);
-    if (p && dist(p.x, p.z, m.x, m.z) <= def.reach + 0.7) sim.hurtPlayer(p, def.damage, m.x, m.z, false);
+    if (p && dist(p.x, p.z, m.x, m.z) <= def.reach + 0.7)
+      sim.hurtPlayer(p, def.damage, m.x, m.z, false);
     else sim.fx('swing', m.x, m.z);
     m.st = 'recover';
     m.t = def.cooldown;

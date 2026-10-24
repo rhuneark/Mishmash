@@ -23,6 +23,7 @@ import {
   unplace,
 } from './islands';
 import { rng } from './rng';
+import { SECRET_IDS } from './content/secrets';
 
 function checksum(island: Island): number {
   let h = 0;
@@ -124,7 +125,9 @@ function fingerprint(i: Island): string {
   for (const p of i.pools) [p.x, p.z, p.r, p.y].forEach(num);
   for (const s of i.snapjaws) [s.x, s.z].forEach(num);
   for (const t of i.towerVines) fnv(t);
-  for (const c of i.colliders) [c.x, c.z, c.hw, c.hd].forEach(num);
+  // Secret sites came later (they hide nodes, never move them).
+  for (const c of i.colliders.filter((c) => !SECRET_IDS.includes(c.poi)))
+    [c.x, c.z, c.hw, c.hd].forEach(num);
   return `${i.seed}:${h.toString(16)}:${i.nodeCount}:${i.code}`;
 }
 
@@ -164,8 +167,9 @@ describe('islands from parts', () => {
       const parts = randomParts(random, { terrain });
       const island = generateIsland(1000 + Math.floor(random() * 9000), parts);
       for (const p of island.pois) {
+        // The shipwreck lies at the water's edge.
         expect(heightAt(island, p.x, p.z), `${p.id} on ${specCode(island.spec)}`).toBeGreaterThan(
-          0.5,
+          p.secret ? 0.1 : 0.5,
         );
       }
       for (const v of island.towerVines) expect(island.nodeType[v]).toBe(NODE.vines);
@@ -191,5 +195,30 @@ describe('islands from parts', () => {
     expect(parseSpecCode(specCode(spec))).toEqual(spec);
     expect(parseSpecCode('nonsense')).toBeNull();
     expect(islandName(spec)).toMatch(/^\w+ \w+$/);
+  });
+});
+
+describe('secret sites', () => {
+  it('puts a bunker, a shipwreck, four survey markers and five treasures on every island', () => {
+    for (const island of islands) {
+      const ids = island.pois.filter((p) => p.secret).map((p) => p.id);
+      expect(ids.sort()).toEqual([...SECRET_IDS].sort());
+      expect(island.treasures).toHaveLength(5);
+      const wreck = island.poiById['wreck'];
+      expect(wreck && biomeAt(island, wreck.x, wreck.z)).toBe(BIOME.beach);
+      const bunker = island.poiById['bunker'];
+      expect(bunker && heightAt(island, bunker.x, bunker.z)).toBeGreaterThan(2);
+      // Standing on the ground as it was: nothing grows through them.
+      for (const id of ['bunker', 'wreck']) {
+        const p = island.poiById[id];
+        if (!p) continue;
+        forNodesNear(island, p.x, p.z, 4, (n) => expect(island.hidden[n]).toBe(1));
+        expect(hitCollider(island, p.x, p.z, 0.3)?.poi).toBe(id);
+      }
+    }
+    // The same everywhere.
+    const again = generateIsland(12345);
+    expect(again.treasures).toEqual(islands[0]?.treasures);
+    expect(again.poiById['bunker']?.x).toBe(islands[0]?.poiById['bunker']?.x);
   });
 });

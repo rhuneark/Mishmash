@@ -103,6 +103,36 @@ function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts
     ctx.stroke();
     ctx.fillText(d.kind === 'pod' ? '🛰️' : '📦', x, y);
   }
+  // Treasure maps' X (on the minimap's rim when further away).
+  for (const t of markers === 'none' ? [] : c.treasureMarks()) {
+    let [x, y] = at(t.x, t.z);
+    if (!o.full) {
+      const r = w / 2 - iconSize * 0.7;
+      const dx = x - w / 2;
+      const dy = y - h / 2;
+      const dd = Math.hypot(dx, dy);
+      if (dd > r) {
+        x = w / 2 + (dx / dd) * r;
+        y = h / 2 + (dy / dd) * r;
+      }
+    }
+    const k = o.full ? 7 : 5;
+    ctx.lineCap = 'round';
+    for (const [width, color] of [
+      [5, 'rgba(0, 0, 0, 0.75)'],
+      [2.5, '#ff4a3a'],
+    ] as const) {
+      ctx.lineWidth = width;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x - k, y - k);
+      ctx.lineTo(x + k, y + k);
+      ctx.moveTo(x + k, y - k);
+      ctx.lineTo(x - k, y + k);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+  }
   for (const other of markers === 'all' ? c.others.values() : []) {
     if (!other.alive) continue;
     const info = c.players.find((p) => p.id === other.id);

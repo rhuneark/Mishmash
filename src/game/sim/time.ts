@@ -29,6 +29,12 @@ export function dayInfo(t: number, bloomEvery = BLOOM_EVERY): DayInfo {
   return { day, phase, night, nightOf, bloom };
 }
 
+/** Low water (the wreck's hold is dry): 04:00–08:00 and 16:00–20:00 on the island clock. */
+export function lowTide(t: number): boolean {
+  const hour = (((t % DAY) + DAY) % DAY) / (DAY / 24);
+  return (hour >= 4 && hour < 8) || (hour >= 16 && hour < 20);
+}
+
 /** Daylight 0..1 for a phase (smooth dawn and dusk). */
 export function daylight(phase: number): number {
   const up = (phase - (NIGHT_END - 0.03)) / 0.1;

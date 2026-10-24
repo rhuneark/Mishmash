@@ -3,9 +3,10 @@
 
 export type SpotKind =
   | 'note' // a lore note (goes to the journal)
-  | 'tag' // a torn luggage tag with one digit of the cargo code
+  | 'tag' // a torn luggage tag (or survey marker) with one digit of a code
   | 'loot' // a one-time cache
-  | 'lock' // the cargo container's 4-digit lock (holds the battery)
+  | 'lock' // a 4-digit lock: the cargo container (holds the battery), the bunker, the safe
+  | 'generator' // the bunker's generator (fuelled with sap)
   | 'antenna' // up the radio tower, behind the vines
   | 'beacon' // where the emergency radio is used
   | 'heli'; // the rescue helicopter (only once it lands)
@@ -20,6 +21,14 @@ export interface Spot {
   loot?: { item: string; n: number }[];
   /** Tag spots: which code digit (0-3). */
   digit?: number;
+  /** Tag spots: whose code (default the cargo lock's). */
+  code?: 'cargo' | 'bunker';
+  /** Lock spots: which lock (default the cargo hold). */
+  lock?: 'cargo' | 'bunker' | 'wreck';
+  /** Only there once this flag is set (inside the bunker). */
+  after?: string;
+  /** Only reachable at low tide (the wreck's hold). */
+  tide?: boolean;
 }
 
 export interface Box {
@@ -43,6 +52,10 @@ export interface PoiDef {
   spots: Spot[];
   /** Shown on the map once discovered (or revealed by a note). */
   icon: string;
+  /** Placed after generation (secrets.ts): the ground isn't flattened under it. */
+  secret?: boolean;
+  /** Secret sites: how far the site is turned (its boxes and spots already are). */
+  rot?: number;
 }
 
 export const POIS: PoiDef[] = [

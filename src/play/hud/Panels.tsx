@@ -6,6 +6,7 @@ import { ITEMS } from '../../game/content/items';
 import { NOTES, PAGES, noteText } from '../../game/content/notes';
 import { bloomOrdinal } from '../../game/rules';
 import { POIS } from '../../game/content/pois';
+import { SECRETS, TREASURES, bunkerCode } from '../../game/content/secrets';
 import { STATION_NAMES, STATIONS, RECIPE_LIST } from '../../game/content/recipes';
 import { knownCode, objectives, tagsFound } from '../../game/objectives';
 import { HOTBAR, INV_SIZE } from '../../game/sim/inventory';
@@ -263,35 +264,60 @@ export function StorageSheet({ client, onClose }: { client: GameClient; onClose:
 // ---------------------------------------------------------------------------
 // The cargo hold's lock.
 
+/** Survey marker plates found so far (the bunker code). */
+const MARKER_SPOTS = ['marker_a_plate', 'marker_b_plate', 'marker_c_plate', 'marker_d_plate'];
+
 export function KeypadSheet({ client, onClose }: { client: GameClient; onClose: () => void }) {
   const [code, setCode] = useState('');
-  const known = knownCode(client.seed, client.notes);
+  const lock = client.keypadLock;
   const press = (d: string) => setCode((c) => (c.length >= 4 ? c : c + d));
   const submit = () => {
     if (code.length !== 4) return;
     client.enterCode(code);
     setCode('');
   };
-  if (client.flags.has('cargo_open')) {
+  const title =
+    lock === 'bunker' ? 'Bunker door' : lock === 'wreck' ? "Captain's safe" : 'Cargo hold lock';
+  if (client.flags.has(`${lock}_open`)) {
     return (
-      <Sheet title="🔓 Cargo lock" onClose={onClose}>
-        <p>The lock is open.</p>
+      <Sheet title={`🔓 ${title}`} onClose={onClose}>
+        <p>It's open.</p>
       </Sheet>
     );
   }
+  if (lock === 'bunker' && !client.flags.has('bunker_power')) {
+    return (
+      <Sheet title={`🔒 ${title}`} onClose={onClose}>
+        <p>The keypad is dark. The generator next to the door has no fuel.</p>
+      </Sheet>
+    );
+  }
+  let hint: string;
+  if (lock === 'bunker') {
+    const found = MARKER_SPOTS.filter((id) => client.notes.has(id)).length;
+    const digits = bunkerCode(client.seed)
+      .split('')
+      .map((d, i) => (client.notes.has(MARKER_SPOTS[i] as string) ? d : '_'));
+    hint = found
+      ? `From the survey markers: ${digits.join(' ')}`
+      : 'Four digits. One is on each Verdance survey marker, A to D.';
+  } else if (lock === 'wreck') {
+    hint = 'A heavy dial safe, four digits. The captain must have written it down somewhere.';
+  } else {
+    const known = knownCode(client.seed, client.notes);
+    hint = tagsFound(client.notes)
+      ? `From the luggage tags: ${known.split('').join(' ')}`
+      : 'Four digits. Luggage tags near the crash site might have them.';
+  }
   return (
-    <Sheet title="🔒 Cargo hold lock" onClose={onClose}>
+    <Sheet title={`🔒 ${title}`} onClose={onClose}>
       <div className="keypad">
         <div className="keypad-screen">
           {Array.from({ length: 4 }, (_, i) => (
             <span key={i}>{code[i] ?? '·'}</span>
           ))}
         </div>
-        <p className="muted small-text center">
-          {tagsFound(client.notes)
-            ? `From the luggage tags: ${known.split('').join(' ')}`
-            : 'Four digits. Luggage tags near the crash site might have them.'}
-        </p>
+        <p className="muted small-text center">{hint}</p>
         <div className="keypad-keys">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
             <button key={d} className="key" onClick={() => press(d)}>
@@ -316,7 +342,7 @@ export function KeypadSheet({ client, onClose }: { client: GameClient; onClose: 
 // ---------------------------------------------------------------------------
 // Journal and notes.
 
-const SPOTS = new Map(POIS.flatMap((p) => p.spots.map((s) => [s.id, s] as const)));
+const SPOTS = new Map([...POIS, ...SECRETS].flatMap((p) => p.spots.map((s) => [s.id, s] as const)));
 
 /** The note behind something found: a spot on the island or a research page. */
 function noteFor(found: string) {
@@ -336,6 +362,11 @@ const TIPS = [
   'Monsters drop parts: Husk tendrils, Snapjaw teeth, Puffer spore sacs (kill it before it bursts), Thornback plates. Build a Mashbench at a workbench to turn them into special gear.',
   "Husks still carry pages of Dr. Kessler's research. Collect all 8 to learn what the Bloom is.",
   'A bedroll sets where you wake up after you fall. Your bag stays where you dropped.',
+  'Build mode (🔨) pays for each piece from your bag. Floors, roofs and furniture make a real home.',
+  'Garden plots grow seeds while watered. Rain does it for you; a roof over a plot keeps it dry.',
+  'Feed an island animal its favourite food a few times and it will follow you.',
+  'Bows need arrows: wood, stone and feathers (or fiber). Fire arrows set the Bloom burning.',
+  'Low water at the wreck is from 04:00 to 08:00 and from 16:00 to 20:00.',
 ];
 
 export function JournalSheet({ client, onClose }: { client: GameClient; onClose: () => void }) {
@@ -349,6 +380,9 @@ export function JournalSheet({ client, onClose }: { client: GameClient; onClose:
   const notes = [...client.notes].filter((id) => SPOTS.has(id));
   const every = client.rules.bloomEvery;
   const pages = PAGES.filter((id) => client.notes.has(id));
+  const maps = Array.from({ length: TREASURES }, (_, i) => i + 1).filter((n) =>
+    client.notes.has(`treasure_${n}`),
+  );
   const tags = tagsFound(client.notes);
   const open = (id: string) => {
     client.noteId = id;
@@ -385,6 +419,22 @@ export function JournalSheet({ client, onClose }: { client: GameClient; onClose:
           );
         })}
       </div>
+      {maps.length > 0 && (
+        <>
+          <div className="label">
+            Treasure maps ({maps.length}/{TREASURES})
+          </div>
+          <div className="note-list">
+            {maps.map((n) => (
+              <button key={n} className="note-row" onClick={() => open(`treasure_${n}`)}>
+                {client.flags.has(`dug:${n}`) ? '✅' : '🗺️'}{' '}
+                {NOTES[`treasure_${n}`]?.title ?? 'Map'}
+                {client.flags.has(`dug:${n}`) ? ' (dug up)' : ''}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       <div className="label">
         Dr. Kessler's research ({pages.length}/{PAGES.length})
       </div>

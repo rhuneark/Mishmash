@@ -23,6 +23,7 @@ import {
   currentObjective,
   mainQuest,
   objectives,
+  secretQuest,
   starterQuest,
   type Objective,
   type Quest,
@@ -47,7 +48,8 @@ import {
   type UseKind,
 } from '../game/sim/protocol';
 import { MONSTER_RADIUS } from '../game/sim/sim';
-import { dayInfo, type DayInfo } from '../game/sim/time';
+import { dayInfo, lowTide, type DayInfo } from '../game/sim/time';
+import { GENERATOR_SAP } from '../game/content/secrets';
 import { WEATHER_KINDS, type WeatherKind } from '../game/sim/weather';
 import { footprint, pushOutOfBox } from '../game/sim/types';
 import { DEEP, HALF, forNodesNear, heightAt, poolNear, type Island } from '../game/world';
@@ -64,6 +66,15 @@ const NODE_REACH = 2.7;
 const SPOT_REACH = 3.6;
 const BUILD_REACH = 3.8;
 const DROP_REACH = 3;
+const DIG_REACH = 2.4;
+
+/** What the action button calls the secret sites' locks and caches. */
+const LOCK_NAMES = { cargo: 'cargo lock', bunker: 'the bunker door', wreck: "the captain's safe" };
+const LOOT_NAMES: Record<string, string> = {
+  bunker_vault: 'the seed vault',
+  bunker_locker: 'the weapons locker',
+  wreck_hold: "the ship's hold",
+};
 const GHOST_AHEAD = 2.6;
 /** Pieces go down this far from you at most (the authority allows 7 m). */
 const BUILD_RANGE = 6.5;
@@ -154,6 +165,10 @@ export interface Target {
   panel?: Panel;
   /** A building that can be taken down. */
   building?: number;
+  /** Shot at with the held bow, crossbow or slingshot. */
+  shoot?: boolean;
+  /** Keypad targets: which lock. */
+  lock?: 'cargo' | 'bunker' | 'wreck';
 }
 
 export type Panel = 'bag' | 'craft' | 'storage' | 'keypad' | 'journal' | 'map' | 'menu' | 'note';
@@ -224,6 +239,10 @@ export class GameClient {
   weather: WeatherKind = 'clear';
   /** Animals that trust someone, by monster id. */
   readonly pets = new Map<number, PetNet>();
+  /** Which lock the keypad sheet is for (the last lock spot targeted). */
+  keypadLock: 'cargo' | 'bunker' | 'wreck' = 'cargo';
+  /** PC: the ground under the mouse, for aiming bows (Game sets it). */
+  private aim: { x: number; z: number } | null = null;
   me: MeNet | null = null;
   readonly others = new Map<string, Other>();
   readonly mobs = new Map<number, MobMirror>();
@@ -774,8 +793,10 @@ export class GameClient {
       alive &&
       this.clock >= this.nextUse &&
       this.target &&
-      ((this.target.kind === 'mob' && (this.target.hostile || this.target.verb === 'Hunt')) ||
-        this.target.kind === 'node')
+      ((this.target.kind === 'mob' &&
+        (this.target.hostile || this.target.shoot || this.target.verb === 'Hunt')) ||
+        this.target.kind === 'node' ||
+        this.target.kind === 'dig')
     ) {
       this.use();
     }
@@ -911,8 +932,19 @@ export class GameClient {
   }
 
   nodeGone(id: number): boolean {
+    if (this.island?.hidden[id]) return true;
     const s = this.nodes.get(id);
     return !!s && s.until !== 0;
+  }
+
+  /** Treasure maps found whose X hasn't been dug up yet: [map number, x, z]. */
+  treasureMarks(): { n: number; x: number; z: number }[] {
+    const out: { n: number; x: number; z: number }[] = [];
+    (this.island?.treasures ?? []).forEach((t, i) => {
+      const n = i + 1;
+      if (this.notes.has(`treasure_${n}`) && !this.flags.has(`dug:${n}`)) out.push({ n, ...t });
+    });
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -1125,6 +1157,17 @@ export class GameClient {
   private findTarget(): Target | null {
     // In build mode the action button only builds.
     if (this.build) return null;
+    const shot = this.shotTarget();
+    if (shot) return shot;
+    const near = this.nearTarget();
+    // PC: with a bow in hand, pointing the mouse away from what's near you shoots instead.
+    const aim = this.aim;
+    if (near && aim && this.ammoLeft() > 0 && Math.hypot(near.x - aim.x, near.z - aim.z) > 2.5)
+      return null;
+    return near;
+  }
+
+  private nearTarget(): Target | null {
     const island = this.island as Island;
     const held = this.heldItem();
     const x = this.x;
@@ -1211,6 +1254,21 @@ export class GameClient {
         if (t) offer(t, score(sx, sz) + this.spotPriority(spot));
       }
     }
+    for (const t of this.treasureMarks()) {
+      if (Math.hypot(t.x - x, t.z - z) > DIG_REACH) continue;
+      offer(
+        {
+          kind: 'dig',
+          id: t.n,
+          x: t.x,
+          z: t.z,
+          verb: 'Dig',
+          name: 'here: X marks the spot',
+          hostile: false,
+        },
+        score(t.x, t.z) - 1.5,
+      );
+    }
     for (const d of this.drops.values()) {
       if (Math.hypot(d.x - x, d.z - z) > DROP_REACH) continue;
       offer(
@@ -1232,6 +1290,67 @@ export class GameClient {
         };
     }
     return best;
+  }
+
+  /** Arrows (or bolts, or stones) left for the held ranged weapon. */
+  ammoLeft(): number {
+    const bow = this.heldItem()?.ranged;
+    if (!bow || !this.me) return 0;
+    let n = 0;
+    for (const s of this.me.inv) if (s && bow.ammo.includes(s.id)) n += s.n;
+    return n;
+  }
+
+  /**
+   * With a bow in hand: the creature to shoot. The one nearest the mouse on PC, else the
+   * best in range (the Bloom first, then what's in front of you).
+   */
+  private shotTarget(): Target | null {
+    const bow = this.heldItem()?.ranged;
+    if (!bow || this.ammoLeft() <= 0) return null;
+    const aim = this.aim;
+    let best: MobMirror | null = null;
+    let bestScore = Infinity;
+    const fx = Math.sin(this.ry);
+    const fz = Math.cos(this.ry);
+    for (const m of this.mobs.values()) {
+      if (m.dying > 0 || m.state === MOB_STATE.burrow || this.pets.has(m.id)) continue;
+      const def = MONSTERS[m.kind];
+      const d = Math.hypot(m.x - this.x, m.z - this.z);
+      if (d > bow.range || d < 0.3) continue;
+      let s: number;
+      if (aim) {
+        const off = Math.hypot(m.x - aim.x, m.z - aim.z);
+        if (off > 3 + (MONSTER_RADIUS[m.kind] ?? 0.5)) continue;
+        s = off;
+      } else {
+        const front = ((m.x - this.x) * fx + (m.z - this.z) * fz) / d;
+        // Wild animals only when you face them; the Bloom always.
+        if (!def.hostile && front < 0.5) continue;
+        s = d - front * 6 - (def.hostile ? 20 : 0);
+      }
+      if (s < bestScore) {
+        bestScore = s;
+        best = m;
+      }
+    }
+    if (!best) return null;
+    const def = MONSTERS[best.kind];
+    return {
+      kind: 'mob',
+      id: best.id,
+      x: best.x,
+      z: best.z,
+      verb: 'Shoot',
+      name: def.animal ? `the ${def.animal.noun}` : (MOB_NAMES[best.kind] ?? def.name),
+      hostile: def.hostile,
+      shoot: true,
+    };
+  }
+
+  /** PC: where the mouse points on the ground (aims bows), or null. */
+  setAim(at: { x: number; z: number } | null): void {
+    this.aim = at;
   }
 
   private buildingTarget(b: Built): Target | null {
@@ -1302,7 +1421,8 @@ export class GameClient {
   private animalAction(m: MobMirror): { verb: string; name: string } {
     const def = MONSTERS[m.kind];
     const animal = def.animal;
-    if (def.hostile || !animal) return { verb: def.hostile ? 'Attack' : 'Catch', name: MOB_NAMES[m.kind] };
+    if (def.hostile || !animal)
+      return { verb: def.hostile ? 'Attack' : 'Catch', name: MOB_NAMES[m.kind] };
     const pet = this.pets.get(m.id);
     if (pet) {
       if (pet.owner !== this.you) {
@@ -1318,7 +1438,10 @@ export class GameClient {
     }
     const held = this.heldSlot();
     if (held && animal.food.includes(held.id))
-      return { verb: `Feed ${ITEMS[held.id]?.name.toLowerCase() ?? ''} to`, name: `the ${animal.noun}` };
+      return {
+        verb: `Feed ${ITEMS[held.id]?.name.toLowerCase() ?? ''} to`,
+        name: `the ${animal.noun}`,
+      };
     return { verb: 'Hunt', name: MOB_NAMES[m.kind] };
   }
 
@@ -1350,6 +1473,11 @@ export class GameClient {
 
   private spotTarget(poi: PoiDef, spot: Spot, x: number, z: number): Target | null {
     const base = { kind: 'spot' as const, id: spot.id, x, z, hostile: false };
+    if (spot.after && !this.flags.has(spot.after)) return null;
+    if (spot.tide && !lowTide(this.time) && !this.flags.has(`loot:${spot.id}`)) {
+      if (spot.kind !== 'lock' || !this.flags.has('wreck_open'))
+        return { ...base, verb: 'Flooded:', name: 'the hold (low tide 04–08, 16–20)' };
+    }
     switch (spot.kind) {
       case 'note':
         return {
@@ -1358,15 +1486,24 @@ export class GameClient {
           name: this.notes.has(spot.id) ? 'the note again' : 'a note',
         };
       case 'tag':
-        return { ...base, verb: 'Read', name: 'a luggage tag' };
+        return {
+          ...base,
+          verb: 'Read',
+          name: spot.code === 'bunker' ? 'the survey marker' : 'a luggage tag',
+        };
       case 'loot':
         return this.flags.has(`loot:${spot.id}`)
           ? null
-          : { ...base, verb: 'Search', name: 'the supply crate' };
-      case 'lock':
-        return this.flags.has('cargo_open')
-          ? null
-          : { ...base, verb: 'Enter code:', name: 'cargo lock', panel: 'keypad' };
+          : { ...base, verb: 'Search', name: LOOT_NAMES[spot.id] ?? 'the supply crate' };
+      case 'lock': {
+        const lock = spot.lock ?? 'cargo';
+        if (this.flags.has(`${lock}_open`)) return null;
+        return { ...base, verb: 'Enter code:', name: LOCK_NAMES[lock], panel: 'keypad', lock };
+      }
+      case 'generator':
+        return this.flags.has('bunker_power')
+          ? { ...base, verb: 'Check', name: 'the generator' }
+          : { ...base, verb: 'Fuel', name: `the generator (${GENERATOR_SAP} sap)` };
       case 'antenna':
         return this.flags.has('antenna_taken')
           ? null
@@ -1438,15 +1575,24 @@ export class GameClient {
     const pick = this.autoChoice(t);
     const item = pick >= 0 ? this.me?.inv[pick]?.id : undefined;
     const auto = item ? { item } : {};
+    if (t?.shoot) return { text: `Shoot ${t.name}`, kind: 'attack' };
     if (t?.hostile) return { text: `${t.verb} ${t.name}`, kind: 'attack', ...auto };
+    if (held?.ranged && !t) {
+      const ammo = ITEMS[held.ranged.ammo[0] ?? '']?.name.toLowerCase() ?? 'ammo';
+      return this.ammoLeft() > 0
+        ? { text: 'Shoot', kind: 'attack' }
+        : { text: '', kind: 'none', blocked: `No ${ammo}s left.` };
+    }
     if (held?.throwable) return { text: `Throw ${held.name}`, kind: 'throw' };
     if (t)
       return {
         text: `${t.verb} ${t.name}`.trim(),
-        kind: t.kind === 'mob' ? 'attack' : 'use',
+        // Feeding, petting and calling a pet aren't fights.
+        kind: t.kind === 'mob' && ['Hunt', 'Attack', 'Catch'].includes(t.verb) ? 'attack' : 'use',
         ...auto,
       };
     if (this.wantsToEat()) {
+      if (held?.reads) return { text: `Read ${held.name}`, kind: 'eat' };
       if (held?.heal && !held.food) return { text: `Use ${held.name}`, kind: 'eat' };
       if (held?.food)
         return {
@@ -1462,6 +1608,7 @@ export class GameClient {
     const held = this.heldItem();
     const me = this.me;
     if (!held || !me) return false;
+    if (held.reads) return true;
     const hungry =
       !!held.food &&
       ((held.food.food > 0 && me.food < 90) || (held.food.water > 0 && me.water < 90));
@@ -1494,6 +1641,24 @@ export class GameClient {
     }
     if (this.build) return;
     const t = this.target;
+    if (held?.ranged && (t?.shoot || !t)) {
+      if (this.ammoLeft() <= 0) {
+        this.toast(this.actionLabel().blocked ?? 'Nothing to shoot.');
+        this.nextUse = this.clock + 0.5;
+        return;
+      }
+      const ahead = Math.min(12, held.ranged.range);
+      const aim = t ??
+        this.aim ?? {
+          x: this.x + Math.sin(this.ry) * ahead,
+          z: this.z + Math.cos(this.ry) * ahead,
+        };
+      this.ry = Math.atan2(aim.x - this.x, aim.z - this.z);
+      this.send({ type: 'shoot', x: round2(aim.x), z: round2(aim.z) });
+      this.emit({ type: 'swing', id: this.you });
+      this.nextUse = this.clock + held.ranged.cooldown;
+      return;
+    }
     if (held?.throwable && !(t?.hostile && t.kind === 'mob' && !held.weapon)) {
       const aim = this.aimThrow(held.throwable.range);
       this.ry = Math.atan2(aim.x - this.x, aim.z - this.z);
@@ -1507,6 +1672,7 @@ export class GameClient {
       this.ry = Math.atan2(t.x - this.x, t.z - this.z);
       if (t.panel) {
         if (t.panel === 'storage') this.storageId = Number(t.id);
+        if (t.panel === 'keypad') this.keypadLock = t.lock ?? 'cargo';
         // Crafting opens the quick panel, so you can keep an eye on things.
         if (t.panel === 'craft') {
           this.quickOpen = true;
@@ -1517,9 +1683,9 @@ export class GameClient {
         }
         return;
       }
-      if (t.kind === 'mob' || t.kind === 'node') this.autoEquip(t);
+      if (t.kind === 'mob' || t.kind === 'node' || t.kind === 'dig') this.autoEquip(t);
       this.send({ type: 'use', kind: t.kind, id: t.id });
-      if (t.kind === 'mob' || t.kind === 'node') {
+      if (t.kind === 'mob' || t.kind === 'node' || t.kind === 'dig') {
         this.emit({ type: 'swing', id: this.you });
         this.nextUse = this.clock + (this.heldItem()?.weapon?.cooldown ?? cooldown);
       } else {
@@ -1599,6 +1765,7 @@ export class GameClient {
 
   /** What a target needs: a tool kind, 'weapon', or null (bare hands do, or it's off). */
   private autoJob(t: Target): ToolKind | 'weapon' | null {
+    if (t.kind === 'dig') return this.auto.tool ? 'shovel' : null;
     if (t.kind === 'node') {
       const def = NODES[(this.island as Island).nodeType[Number(t.id)] as number];
       return def && def.tool !== 'hand' && this.auto.tool ? def.tool : null;
@@ -1610,7 +1777,7 @@ export class GameClient {
   /** The slot an automatic switch would take for this target (-1: keep what you hold). */
   autoChoice(t: Target | null): number {
     const me = this.me;
-    if (!t || !me || this.ghost) return -1;
+    if (!t || !me || this.ghost || t.shoot) return -1;
     const job = this.autoJob(t);
     if (!job) return -1;
     const held = this.heldItem();
@@ -1876,7 +2043,15 @@ export class GameClient {
       bedroll: built.some((b) => BUILDINGS[b.kind]?.spawn && b.owner === this.you),
       day: this.info().day,
     });
-    return [main, starter].filter((q): q is Quest => q !== null);
+    const secret = secretQuest({
+      flags: this.flags,
+      notes: this.notes,
+      carrying: this.carrying(),
+      rescue: this.rescue,
+      treasures: this.treasureMarks().length,
+    });
+    // Two cards at most, so they stay clear of the action button: secrets wait for the first night.
+    return [main, starter ?? secret].filter((q): q is Quest => q !== null);
   }
 
   async close(): Promise<void> {

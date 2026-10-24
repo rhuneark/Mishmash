@@ -7,6 +7,7 @@ import { hash01, rng } from './rng';
 import { NODE, NODES } from './content/nodes';
 import { MOTHER_SPOT, POIS, TOWER_VINES, SPAWN, type PoiDef } from './content/pois';
 import { cargoCode } from './content/notes';
+import { SECRETS, TREASURES, type SecretDef } from './content/secrets';
 import {
   CLASSIC,
   climateGen,
@@ -102,6 +103,10 @@ export interface Island {
   spawn: { x: number; z: number };
   /** Where the Mother Bloom grows. */
   mother: { x: number; z: number };
+  /** 1 for nodes under a secret site (secrets.ts): never there. */
+  hidden: Uint8Array;
+  /** Where each treasure map's X is (treasure_1 is [0]). */
+  treasures: { x: number; z: number }[];
 }
 
 /** Extra terrain for the non-classic styles, in the classic layout's coordinates. */
@@ -223,7 +228,8 @@ function islandHeight(
 export function generateIsland(seed: number, parts: IslandParts = CLASSIC): Island {
   const spec: IslandSpec = { seed, ...parts };
   const turned = parts.turn !== 0 || parts.mirror;
-  const pois = layoutPois(parts, POIS);
+  // A copy: the secret sites are added to it later (the classic layout is POIS itself).
+  const pois = layoutPois(parts, POIS).slice();
   const poiById: Record<string, PoiDef> = Object.fromEntries(pois.map((p) => [p.id, p]));
   const cg = climateGen(parts.climate);
   const tg = terrainGen(parts.terrain, seed);
@@ -430,7 +436,7 @@ export function generateIsland(seed: number, parts: IslandParts = CLASSIC): Isla
     }
   }
 
-  return {
+  const island: Island = {
     seed,
     heights,
     biomes,
@@ -450,7 +456,189 @@ export function generateIsland(seed: number, parts: IslandParts = CLASSIC): Isla
     poiById,
     spawn,
     mother: place(parts, MOTHER_SPOT.x, MOTHER_SPOT.z),
+    hidden: new Uint8Array(count),
+    treasures: [],
   };
+  placeSecrets(island);
+  return island;
+}
+
+/** Eight headings: (cos, sin) of k quarter-of-a-right-angle turns, exact on every engine. */
+const HEADINGS: [number, number][] = [
+  [1, 0],
+  [Math.SQRT1_2, Math.SQRT1_2],
+  [0, 1],
+  [-Math.SQRT1_2, Math.SQRT1_2],
+  [-1, 0],
+  [-Math.SQRT1_2, -Math.SQRT1_2],
+  [0, -1],
+  [Math.SQRT1_2, -Math.SQRT1_2],
+];
+
+/**
+ * Puts the secret sites (content/secrets.ts) and the treasure spots on a generated island.
+ * Nothing about the island moves: the sites stand on the ground as it is, and the trees
+ * and rocks under them are hidden. Integer hashes only, like the rest of generation.
+ */
+function placeSecrets(island: Island): void {
+  const seed = island.seed;
+  const taken: { x: number; z: number; r: number }[] = island.pois.map((p) => ({
+    x: p.x,
+    z: p.z,
+    r: p.flat + 30,
+  }));
+  taken.push({ x: island.spawn.x, z: island.spawn.z, r: 120 });
+  const free = (x: number, z: number, r: number) =>
+    taken.every((t) => dist(t.x, t.z, x, z) > t.r + r) &&
+    island.pools.every((p) => dist(p.x, p.z, x, z) > p.r + r + 4) &&
+    island.snapjaws.every((sj) => dist(sj.x, sj.z, x, z) > r + 8);
+  const pick = (salt: number, test: (x: number, z: number, k: number) => boolean) => {
+    for (let k = 0; k < 4000; k++) {
+      const x = (hash01(k, salt, seed + 901) - 0.5) * 820;
+      const z = (hash01(k, salt, seed + 902) - 0.5) * 820;
+      if (test(x, z, k)) return { x, z, k };
+    }
+    return null;
+  };
+  const h = (x: number, z: number) => heightAt(island, x, z);
+  const b = (x: number, z: number) => biomeAt(island, x, z);
+  const inland = (x: number, z: number) => {
+    const v = b(x, z);
+    return v === BIOME.meadow || v === BIOME.forest || v === BIOME.jungle || v === BIOME.highland;
+  };
+
+  let bunker: { x: number; z: number } | null = null;
+  for (const def of SECRETS) {
+    let at: { x: number; z: number; head: number } | null = null;
+    if (def.place === 'bunker') {
+      const got = pick(1, (x, z) => {
+        if (!inland(x, z) || !free(x, z, 10)) return false;
+        const c = h(x, z);
+        if (c < 2.5 || c > 18) return false;
+        let lo = c;
+        let hi = c;
+        for (const [dx, dz] of [
+          [-6, -6],
+          [6, -6],
+          [-6, 6],
+          [6, 6],
+        ] as const) {
+          const v = h(x + dx, z + dz);
+          lo = Math.min(lo, v);
+          hi = Math.max(hi, v);
+        }
+        return hi - lo < 2.2;
+      });
+      if (got) {
+        at = { x: got.x, z: got.z, head: Math.floor(hash01(got.k, 7, seed + 903) * 8) };
+        bunker = at;
+      }
+    } else if (def.place === 'wreck') {
+      let head = 0;
+      const got = pick(2, (x, z) => {
+        if (b(x, z) !== BIOME.beach || !free(x, z, 14)) return false;
+        const c = h(x, z);
+        if (c < 0.15 || c > 1.4) return false;
+        // Lie along the shore: land on the +z side, the sea behind.
+        const len = Math.sqrt(x * x + z * z) || 1;
+        const lx = -x / len;
+        const lz = -z / len;
+        let best = -2;
+        for (let k = 0; k < 8; k++) {
+          const [cc, ss] = HEADINGS[k] as [number, number];
+          const dot = -ss * lx + cc * lz;
+          if (dot > best) {
+            best = dot;
+            head = k;
+          }
+        }
+        const [cc, ss] = HEADINGS[head] as [number, number];
+        const sea = h(x + ss * 14, z - cc * 14);
+        const land = h(x - ss * 9, z + cc * 9);
+        const bow = h(x + cc * 10, z + ss * 10);
+        const stern = h(x - cc * 10, z - ss * 10);
+        return sea < -0.4 && land > 0.3 && bow > -1.5 && bow < 2.5 && stern > -1.5 && stern < 2.5;
+      });
+      if (got) at = { x: got.x, z: got.z, head };
+    } else if (def.place === 'marker' && def.corner && bunker) {
+      const [sx, sz] = def.corner;
+      const home = bunker;
+      const got = pick(3 + SECRETS.indexOf(def), (x, z) => {
+        const mx = Math.abs(x) * sx;
+        const mz = Math.abs(z) * sz;
+        if (Math.abs(x) < 50 || Math.abs(z) < 50) return false;
+        if (!inland(mx, mz) || !free(mx, mz, 3) || dist(mx, mz, home.x, home.z) < 60) return false;
+        const c = h(mx, mz);
+        return c > 1.5 && c < 26;
+      });
+      if (got) at = { x: Math.abs(got.x) * sx, z: Math.abs(got.z) * sz, head: 0 };
+    }
+    if (!at) continue;
+    addSite(island, def, at.x, at.z, at.head);
+    taken.push({ x: at.x, z: at.z, r: def.flat + 30 });
+  }
+
+  for (let n = 0; n < TREASURES; n++) {
+    const got = pick(20 + n, (x, z) => {
+      const v = b(x, z);
+      if (v !== BIOME.beach && v !== BIOME.meadow) return false;
+      const c = h(x, z);
+      if (c < 0.4 || c > 12 || !free(x, z, 3)) return false;
+      if (hitColliderList(island.colliders, x, z, 2)) return false;
+      return island.treasures.every((t) => dist(t.x, t.z, x, z) > 70);
+    });
+    if (!got) continue;
+    island.treasures.push({ x: got.x, z: got.z });
+    taken.push({ x: got.x, z: got.z, r: 4 });
+    hideNodes(island, got.x, got.z, 1.6);
+  }
+}
+
+function addSite(island: Island, def: SecretDef, x: number, z: number, head: number): void {
+  const [c, s] = HEADINGS[head] as [number, number];
+  const turn = (dx: number, dz: number) => ({ dx: dx * c - dz * s, dz: dx * s + dz * c });
+  const rot = (head * Math.PI) / 4;
+  const poi: PoiDef = {
+    id: def.id,
+    name: def.name,
+    x,
+    z,
+    flat: def.flat,
+    secret: true,
+    rot,
+    icon: def.icon,
+    boxes: def.boxes.map((bx) => ({ ...bx, ...turn(bx.dx, bx.dz), rot })),
+    spots: def.spots.map((sp) => ({ ...sp, ...turn(sp.dx, sp.dz) })),
+  };
+  island.pois.push(poi);
+  island.poiById[poi.id] = poi;
+  for (const bx of poi.boxes) {
+    const col: Collider = {
+      x: x + bx.dx,
+      z: z + bx.dz,
+      hw: bx.w / 2,
+      hd: bx.d / 2,
+      c,
+      s,
+      h: bx.h,
+      poi: poi.id,
+    };
+    island.colliders.push(col);
+    forNodesNear(island, col.x, col.z, bx.w / 2 + bx.d / 2 + 2, (id) => {
+      const r = (NODES[island.nodeType[id] as number]?.radius ?? 0) + 0.8;
+      if (hitColliderList([col], island.nodeX[id] as number, island.nodeZ[id] as number, r))
+        island.hidden[id] = 1;
+    });
+  }
+  for (const sp of poi.spots) hideNodes(island, x + sp.dx, z + sp.dz, 1.2);
+}
+
+function hideNodes(island: Island, x: number, z: number, r: number): void {
+  forNodesNear(island, x, z, r + 1, (id) => {
+    const nr = NODES[island.nodeType[id] as number]?.radius ?? 0;
+    if (dist(island.nodeX[id] as number, island.nodeZ[id] as number, x, z) < r + nr)
+      island.hidden[id] = 1;
+  });
 }
 
 /** Node type for a scatter cell in this biome (-1 for none). */

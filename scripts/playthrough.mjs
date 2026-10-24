@@ -269,7 +269,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     `${tag} game: picking up a branch gave no wood`,
   );
 
-  // Craft a campfire and tools in the bag.
+  // Craft tools in the bag; buildings come from build mode.
   await give(page, [
     ['wood', 30],
     ['stone', 20],
@@ -282,7 +282,11 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     .getByRole('button', { name: /Craft$/ })
     .first()
     .click();
-  for (const name of ['Campfire', 'Stone axe', 'Bedroll']) {
+  check(
+    (await page.locator('.recipe', { hasText: 'Campfire' }).count()) === 0,
+    `${tag} craft: buildings are still crafted`,
+  );
+  for (const name of ['Stone axe', 'Bandage']) {
     await page
       .locator('.recipe', { hasText: name })
       .first()
@@ -295,15 +299,23 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.keyboard.press('Escape');
   await until(
     page,
-    () => window.__game.client.count('campfire') === 1,
-    `${tag} game: campfire not crafted`,
+    () => window.__game.client.count('axe_stone') === 1,
+    `${tag} game: stone axe not crafted`,
   );
 
-  // Place it in front of you.
+  // Build a campfire: pick it in build mode, and it's paid for straight from the bag.
   await teleport(page, 12, 272);
-  await hold(page, 'campfire', 2);
-  await until(page, () => window.__game.client.ghost !== null, `${tag} game: no build preview`);
-  // Islands differ per seed: step around until the preview shows a free spot.
+  await page.getByRole('button', { name: 'Build mode' }).click();
+  await page.locator('.build-panel').waitFor();
+  await page.locator('.build-panel .build-title').hover();
+  await page.locator('.build-bar').getByRole('tab', { name: 'Camp' }).click();
+  await page.locator('.build-bar').getByRole('button', { name: 'Campfire' }).click();
+  check(
+    (await page.locator('.build-cost').textContent()).includes('/5'),
+    `${tag} build: the campfire's cost isn't shown`,
+  );
+  const wood0 = await game(page, () => window.__game.client.count('wood'));
+  // Islands differ per seed: step around until the piece has a free spot.
   for (const [x, z] of [
     [12, 272],
     [20, 280],
@@ -313,15 +325,26 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     [-24, 270],
   ]) {
     await teleport(page, x, z);
+    await game(page, () => {
+      const c = window.__game.client;
+      c.setBuildCursor({ x: c.x, z: c.z - 3 });
+    });
     await page.waitForTimeout(400);
-    if (!(await game(page, () => window.__game.client.ghost?.problem))) break;
+    if (await game(page, () => !!window.__game.client.ghost && !window.__game.client.ghost.problem))
+      break;
   }
   await pressUse(page);
   await until(
     page,
     () => [...window.__game.client.buildings.values()].some((b) => b.kind === 'campfire'),
-    `${tag} game: campfire not placed`,
+    `${tag} game: campfire not built`,
   );
+  check(
+    wood0 - (await game(page, () => window.__game.client.count('wood'))) === 5,
+    `${tag} build: the campfire didn't take 5 wood`,
+  );
+  await page.getByRole('button', { name: 'Leave build mode' }).first().click();
+  await page.locator('.build-panel').waitFor({ state: 'detached' });
   // Quests under the minimap: the way off, and the first night with the campfire ticked.
   await page.locator('.quest', { hasText: 'Survivors of MX207' }).waitFor();
   await page
@@ -340,6 +363,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.locator('.build-panel').waitFor();
   // The mouse would aim the piece: park it on the build panel.
   await page.locator('.build-panel .build-title').hover();
+  await page.locator('.build-bar').getByRole('tab', { name: 'Walls' }).click();
   await page.locator('.build-bar').getByRole('button', { name: 'Wooden wall' }).click();
   const before = await game(page, () => window.__game.client.buildings.size);
   const placePiece = async (piece, dx, dz, rot) => {
@@ -405,7 +429,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await noSideScroll('build mode');
   await shot('6b-build');
   // Take one wall down again.
-  await page.locator('.build-bar').getByRole('button', { name: 'Take down' }).click();
+  await page.locator('.build-bar').getByRole('tab', { name: 'Take down' }).click();
   const wall = walls[0];
   await game(page, ([x, z]) => window.__game.client.setBuildCursor({ x, z }), [wall.x, wall.z]);
   await until(
@@ -705,6 +729,144 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     () => ![...window.__game.client.drops.values()].some((d) => d.kind === 'pod'),
     `${tag} events: couldn't empty the pod`,
   );
+
+  // A bow shoots the Husk it's aimed at, and counts its arrows.
+  await game(page, () => clearInterval(window.__calm));
+  await openGround(page);
+  await give(page, [
+    ['bow', 1],
+    ['arrow', 6],
+  ]);
+  await page.waitForTimeout(400);
+  await hold(page, 'bow', 0);
+  const husk = await game(page, async () => {
+    const { spawnMob } = await import('/src/game/sim/mobs.ts');
+    const c = window.__game.client;
+    const m = spawnMob(c.link.sim, 'husk', c.x, c.z - 9, {});
+    m.target = c.you;
+    return m.id;
+  });
+  await until(
+    page,
+    () => window.__game.client.actionLabel().text.startsWith('Shoot'),
+    `${tag} bow: no Shoot on the action button`,
+  );
+  check(
+    (await page.locator('.hotbar .slot-ammo').first().textContent()) === '6',
+    `${tag} bow: the arrows left aren't on the slot`,
+  );
+  await pressUse(page);
+  await until(
+    page,
+    (id) => {
+      const m = window.__game.client.link.sim.mobs.get(id);
+      return !m || m.hp < 60;
+    },
+    `${tag} bow: the arrow didn't hit`,
+    10000,
+    husk,
+  );
+  check(
+    (await game(page, () => window.__game.client.count('arrow'))) === 5,
+    `${tag} bow: no arrow used`,
+  );
+  await shot('9f-bow');
+  await game(page, () => {
+    const sim = window.__game.client.link.sim;
+    window.__calm = setInterval(() => sim.mobs.clear(), 100);
+  });
+
+  // Farming: a garden plot from build mode, a seed planted, watered from the can.
+  await openGround(page);
+  await give(page, [
+    ['seed_corn', 2],
+    ['watering_can', 1],
+  ]);
+  await game(page, () => {
+    const c = window.__game.client;
+    c.link.sim.handle(c.you, { type: 'build', kind: 'garden_plot', x: c.x, z: c.z - 2, rot: 0 });
+    c.ry = Math.PI;
+  });
+  await until(
+    page,
+    () => window.__game.client.actionLabel().text === 'Plant corn seeds',
+    `${tag} farm: the plot doesn't offer to plant`,
+  );
+  await pressUse(page);
+  await until(
+    page,
+    () =>
+      [...window.__game.client.buildings.values()].some((b) => b.kind === 'garden_plot' && b.crop),
+    `${tag} farm: nothing planted`,
+  );
+  await hold(page, 'watering_can', 1);
+  await until(
+    page,
+    () => window.__game.client.actionLabel().text === 'Water corn',
+    `${tag} farm: the can doesn't offer to water`,
+  );
+  await pressUse(page);
+  await until(
+    page,
+    () =>
+      [...window.__game.client.buildings.values()].some(
+        (b) => b.kind === 'garden_plot' && b.crop && b.crop[2],
+      ),
+    `${tag} farm: the plot isn't wet`,
+  );
+  await shot('9g-farm');
+
+  // Island animals: hold a goat's favourite food and it eats from your hand.
+  await game(page, () => clearInterval(window.__calm));
+  await openGround(page);
+  await give(page, [['berries', 6]]);
+  await page.waitForTimeout(400);
+  await hold(page, 'berries', 2);
+  await game(page, async () => {
+    const { spawnMob } = await import('/src/game/sim/mobs.ts');
+    const c = window.__game.client;
+    spawnMob(c.link.sim, 'goat', c.x, c.z - 1.6, { roamer: false });
+    c.ry = Math.PI;
+  });
+  await until(
+    page,
+    () => window.__game.client.actionLabel().text === 'Feed berries to the goat',
+    `${tag} animals: can't feed the goat`,
+  );
+  await pressUse(page);
+  await page.getByText(/eats from your hand/).waitFor();
+  await game(page, () => {
+    const sim = window.__game.client.link.sim;
+    window.__calm = setInterval(() => sim.mobs.clear(), 100);
+  });
+
+  // Secrets: the Verdance bunker's sign puts the survey markers on the map.
+  await game(page, () => {
+    const c = window.__game.client;
+    const b = c.island.poiById['bunker'];
+    const s = b.spots.find((s) => s.id === 'bunker_sign');
+    const sim = c.link.sim;
+    const p = sim.players.get(c.you);
+    p.x = b.x + s.dx * 1.6;
+    p.z = b.z + s.dz * 1.6;
+    p.lastPos = sim.time;
+    c.x = p.x;
+    c.z = p.z;
+  });
+  await until(
+    page,
+    () => window.__game.client.target?.id === 'bunker_sign',
+    `${tag} secrets: the bunker sign isn't in reach`,
+  );
+  await pressUse(page);
+  await page.getByText('Verdance shelter sign').waitFor();
+  await page.keyboard.press('Escape');
+  await until(
+    page,
+    () => window.__game.client.flags.has('seen:marker_a'),
+    `${tag} secrets: the markers aren't on the map`,
+  );
+  await shot('9h-bunker');
 
   // The pause menu: solo play waits while it's open.
   await page.getByRole('button', { name: 'Menu' }).click();
@@ -1016,35 +1178,39 @@ for (const [width, height] of VIEWPORTS) {
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
       `${tag} ${where}: sideways scroll`,
     );
-  const totalVotes = async () =>
-    Number((await page.getByText(/votes? so far/).textContent()).match(/\d+/)[0]);
-
   // Intro on first launch.
   await page.goto(URL);
   await page.getByText('A game the players build.').waitFor();
   await noSideScroll('intro');
   await shot('1-intro');
-  const voteNext = page.getByRole('button', { name: "Vote on what's next" });
-  const box = await voteNext.boundingBox();
+  const suggestNext = page.getByRole('button', { name: 'Suggest an idea' });
+  const box = await suggestNext.boundingBox();
   check(box && box.y + box.height <= height, `${tag} intro: buttons below the fold`);
   check((await page.locator('.tabbar').count()) === 0, `${tag} hub: a tab bar`);
-  await voteNext.click();
+  await suggestNext.click();
 
-  // One vote per person: the local stand-in seeds 14 vote entries from 13 voters
-  // (one voted twice), so 13 count. Voting adds one; moving it adds none.
-  await page.getByText(/votes? so far/).waitFor();
-  const before = await totalVotes();
-  check(before === 13, `${tag} vote: a second vote by one person was counted (${before})`);
-  await page.getByText('Round 1 is closed').waitFor();
-  await page.getByRole('button', { name: /Tame animals/ }).click();
-  await page.getByRole('button', { name: /Tame animals.*Your vote/ }).waitFor();
-  check((await totalVotes()) === before + 1, `${tag} vote: total did not go up by one`);
-  await page.getByRole('button', { name: /Bows & ranged/ }).click();
-  await page.getByRole('button', { name: /Bows & ranged.*Your vote/ }).waitFor();
-  check((await totalVotes()) === before + 1, `${tag} change vote: total changed`);
-  check((await page.locator('.option.picked').count()) === 1, `${tag} vote: not exactly one pick`);
-  await noSideScroll('vote');
-  await shot('2-vote');
+  // The suggestions box: what got built, a topic, a line of text, your own list.
+  await page.getByText('You asked, we built it').waitFor();
+  check(
+    (await page.getByText('Bows and ranged weapons').count()) === 1,
+    `${tag} suggest: the built list misses the bows`,
+  );
+  check((await page.getByText(/votes? so far/).count()) === 0, `${tag} suggest: a vote count`);
+  await page.getByRole('radio', { name: /Creatures/ }).click();
+  const send = page.getByRole('button', { name: '💡 Send it' });
+  check(await send.isDisabled(), `${tag} suggest: Send works with nothing written`);
+  await page.getByLabel('Your suggestion').fill('Sharks around the reef that knock you off rafts');
+  await send.click();
+  await page.getByText('Your idea is in the box').waitFor();
+  await page.locator('.my-suggestions li', { hasText: 'Sharks around the reef' }).waitFor();
+  await noSideScroll('suggest');
+  await shot('2-suggest');
+  await page
+    .getByRole('button', { name: 'Take back: Sharks around the reef that knock you off rafts' })
+    .click();
+  await page
+    .locator('.my-suggestions li', { hasText: 'Sharks around the reef' })
+    .waitFor({ state: 'detached' });
 
   // Back on the title: no tab bar, no Town Square, and a player has no Dev area.
   await page.getByRole('button', { name: '‹ Back' }).click();
@@ -1057,9 +1223,13 @@ for (const [width, height] of VIEWPORTS) {
     (await page.getByRole('button', { name: /chat/i }).count()) === 0,
     `${tag} hub: the global chat is still there`,
   );
-  // Vote for updates opens the vote again; a reload skips the intro.
-  await page.getByRole('button', { name: /Vote for updates/ }).click();
-  await page.getByText('Round 1 is closed').waitFor();
+  check(
+    (await page.getByRole('button', { name: /Vote for updates/ }).count()) === 0,
+    `${tag} hub: the vote is still there`,
+  );
+  // Suggest an update opens the box again; a reload skips the intro.
+  await page.getByRole('button', { name: /Suggest an update/ }).click();
+  await page.getByText('You asked, we built it').waitFor();
   await page.getByRole('button', { name: '‹ Back' }).click();
   await page.waitForTimeout(400); // the mock writes appStorage after ~100 ms
   await page.reload();
@@ -1101,10 +1271,29 @@ for (const [width, height] of VIEWPORTS) {
   await shot('3b-title');
 
   // Dev area (owner only; ?owner plays the owner in the local preview), from a title
-  // button that counts open reports. The seeded spam was hidden by 3 reports, Bram's
-  // message has one open report. Delete the spam, keep Bram's, then both are resolved.
+  // button that counts new suggestions (3 seeded) and open reports (2).
   await page.goto(`${URL}?owner`);
-  await page.getByRole('button', { name: '🛠️ Dev · 2 to check' }).click();
+  await page.getByRole('button', { name: '🛠️ Dev · 5 to check' }).click();
+  // Suggestions first: star one, mark one done, delete one.
+  const nova = page.locator('.idea', { hasText: 'Boats so we can sail' });
+  const pip = page.locator('.idea', { hasText: 'A cave under the mountain' });
+  const bramIdea = page.locator('.idea', { hasText: 'second floor on our base' });
+  await nova.waitFor();
+  check((await nova.getByText('New').count()) === 1, `${tag} dev: a new suggestion isn't marked`);
+  await nova.getByRole('button', { name: '☆ Star' }).click();
+  await pip.getByRole('button', { name: '✓ Done' }).click();
+  await pip.waitFor({ state: 'detached' });
+  await bramIdea.getByRole('button', { name: 'Delete' }).click();
+  await bramIdea.waitFor({ state: 'detached' });
+  await page.getByRole('tab', { name: '⭐ Starred' }).click();
+  await nova.waitFor();
+  await page.getByRole('tab', { name: '✓ Done' }).click();
+  await pip.waitFor();
+  await noSideScroll('dev');
+  await shot('4-dev');
+  // Reports: the seeded spam was hidden by 3 reports, Bram's message has one open
+  // report. Delete the spam, keep Bram's, then both are resolved.
+  await page.getByRole('tab', { name: '🚩 Reports' }).click();
   const spamCard = page.locator('.flag', { hasText: 'FREE GOLD click my profile' });
   const bramCard = page.locator('.flag', { hasText: 'a roguelike where every run' });
   await spamCard.waitFor();
@@ -1116,8 +1305,6 @@ for (const [width, height] of VIEWPORTS) {
     (await spamCard.getByText('rundot ugc approve').count()) === 1,
     `${tag} dev: no restore command for a hidden message`,
   );
-  await noSideScroll('dev');
-  await shot('4-dev');
   await spamCard.getByRole('button', { name: 'Delete message' }).click();
   await spamCard.waitFor({ state: 'detached' });
   await bramCard.getByRole('button', { name: 'Keep' }).click();

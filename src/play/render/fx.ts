@@ -32,6 +32,20 @@ interface Ring {
   pulse: boolean;
 }
 
+interface Shot {
+  mesh: THREE.Mesh;
+  fx: number;
+  fy: number;
+  fz: number;
+  tx: number;
+  ty: number;
+  tz: number;
+  t: number;
+  /** Seconds in the air. */
+  span: number;
+  fire: boolean;
+}
+
 interface Bomb {
   mesh: THREE.Mesh;
   fx: number;
@@ -58,6 +72,7 @@ export class Fx {
   private readonly parts: Particle[] = [];
   private readonly rings: Ring[] = [];
   private readonly bombs: Bomb[] = [];
+  private readonly shots: Shot[] = [];
   readonly texts: FloatText[] = [];
   /** Particle count scale (graphics quality). */
   density = 1;
@@ -65,6 +80,19 @@ export class Fx {
   private readonly ringGeo = new THREE.RingGeometry(0.85, 1, 28).rotateX(-Math.PI / 2);
   private readonly bombGeo = new THREE.IcosahedronGeometry(0.15, 0);
   private readonly bombMat = new THREE.MeshBasicMaterial({ color: 0x9adf4a });
+  /** What flies: arrow, fire arrow, bolt, stone (protocol SHOTS). */
+  private readonly shotGeo = [
+    new THREE.BoxGeometry(0.035, 0.035, 0.75),
+    new THREE.BoxGeometry(0.035, 0.035, 0.75),
+    new THREE.BoxGeometry(0.06, 0.06, 0.45),
+    new THREE.IcosahedronGeometry(0.07, 0),
+  ];
+  private readonly shotMat = [
+    new THREE.MeshBasicMaterial({ color: 0x8a6a42 }),
+    new THREE.MeshBasicMaterial({ color: 0xffb04a }),
+    new THREE.MeshBasicMaterial({ color: 0x6d737a }),
+    new THREE.MeshBasicMaterial({ color: 0x8a8c90 }),
+  ];
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -156,6 +184,37 @@ export class Fx {
     this.bombs.push({ mesh, fx, fy, fz, tx, ty, tz, t: 0 });
   }
 
+  /** An arrow, bolt or stone flying in a shallow arc at `speed` m/s. */
+  shoot(
+    fx: number,
+    fy: number,
+    fz: number,
+    tx: number,
+    ty: number,
+    tz: number,
+    speed: number,
+    look: number,
+  ): void {
+    const k = Math.max(0, Math.min(3, look));
+    const mesh = new THREE.Mesh(this.shotGeo[k], this.shotMat[k]);
+    mesh.position.set(fx, fy, fz);
+    mesh.lookAt(tx, ty, tz);
+    this.scene.add(mesh);
+    const d = Math.hypot(tx - fx, tz - fz);
+    this.shots.push({
+      mesh,
+      fx,
+      fy,
+      fz,
+      tx,
+      ty,
+      tz,
+      t: 0,
+      span: Math.max(0.05, d / speed),
+      fire: k === 1,
+    });
+  }
+
   text(x: number, y: number, z: number, text: string, color: string): void {
     this.texts.push({ x, y, z, text, color, life: 1 });
     if (this.texts.length > 24) this.texts.shift();
@@ -236,6 +295,52 @@ export class Fx {
         size: 0.6,
         glow: true,
       });
+    }
+    for (let i = this.shots.length - 1; i >= 0; i--) {
+      const sh = this.shots[i] as Shot;
+      sh.t += dt / sh.span;
+      if (sh.t >= 1) {
+        this.scene.remove(sh.mesh);
+        this.shots.splice(i, 1);
+        this.burst(
+          sh.tx,
+          sh.ty,
+          sh.tz,
+          sh.fire ? 8 : 4,
+          sh.fire ? FX_COLORS.fire : FX_COLORS.dust,
+          {
+            speed: 1.5,
+            up: 1.5,
+            life: 0.4,
+            size: 0.6,
+            glow: sh.fire,
+          },
+        );
+        continue;
+      }
+      const t = sh.t;
+      const arc = Math.sin(t * Math.PI) * Math.min(1.2, sh.span * 1.5);
+      const x = sh.fx + (sh.tx - sh.fx) * t;
+      const y = sh.fy + (sh.ty - sh.fy) * t + arc;
+      const z = sh.fz + (sh.tz - sh.fz) * t;
+      // Nose along the flight: a little up at first, a little down at the end.
+      const slope = Math.cos(t * Math.PI) * Math.min(1.2, sh.span * 1.5) * Math.PI;
+      const ahead = Math.hypot(sh.tx - sh.fx, sh.tz - sh.fz) || 1;
+      sh.mesh.position.set(x, y, z);
+      sh.mesh.lookAt(
+        x + (sh.tx - sh.fx) / ahead,
+        y + (sh.ty - sh.fy + slope) / ahead,
+        z + (sh.tz - sh.fz) / ahead,
+      );
+      if (sh.fire)
+        this.burst(x, y, z, 1, FX_COLORS.fire, {
+          speed: 0.2,
+          up: 0.2,
+          grav: 0,
+          life: 0.25,
+          size: 0.5,
+          glow: true,
+        });
     }
     for (let i = this.texts.length - 1; i >= 0; i--) {
       const t = this.texts[i] as FloatText;

@@ -280,6 +280,8 @@ export function Game(props: {
         const at = view.groundAt(m.x, m.y);
         if (at) client.setBuildCursor(at);
       }
+      // A bow in hand aims at the mouse.
+      client.setAim(m && client.heldItem()?.ranged ? view.groundAt(m.x, m.y) : null);
       view.update(dt);
       view.render();
       fogAcc += dt;

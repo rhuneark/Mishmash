@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { POI_BY_ID, type PoiDef, type Spot } from '../../game/content/pois';
+import { SECRETS } from '../../game/content/secrets';
 import type { IslandParts } from '../../game/islands';
 import { WALL_HEIGHT } from '../../game/content/buildings';
 import { MAT, box, cone, cyl, disc, dodeca, ico, mesh, sphere, torus } from './geo';
@@ -666,6 +667,11 @@ function spotModel(spot: Spot): SpotView {
       group.add(light);
       h = halo(0xff8060, 0.7);
       break;
+    case 'generator':
+      light = mesh([sphere(0.07, 5, 4, 0xff3030, { y: 1.05, z: -0.72 })], MAT.glow);
+      group.add(light);
+      h = halo(0xffd080, 0.7);
+      break;
     case 'antenna':
       group.add(
         mesh([
@@ -928,6 +934,114 @@ function poiStructure(poi: PoiDef): THREE.Group {
       );
       break;
     }
+    case 'bunker': {
+      const CONCRETE = 0x8d8f86;
+      g.add(
+        mesh([
+          // Sunk into the hill, on a foundation that reaches below any slope.
+          box(7, 3.2, 5, CONCRETE, { y: 0.9, z: -1 }),
+          box(7.3, 3, 5.3, 0x6f716a, { y: -1.9, z: -1 }),
+          box(7.4, 0.35, 5.4, 0x7a7c74, { y: 2.6, z: -1 }),
+          // Earth and moss over the roof.
+          ico(2.2, 1, 0x5b6b3a, { x: -1.2, y: 2.75, z: -2.4, sx: 1.2, sy: 0.3, sz: 0.65 }),
+          ico(1.2, 1, 0x6b7b44, { x: 2.1, y: 2.75, z: -1.8, sy: 0.32 }),
+          // Door frame, hazard stripes, the Verdance leaf.
+          box(2.5, 2.6, 0.3, 0x55574f, { x: 0.4, y: 1.2, z: 1.55 }),
+          box(1.7, 2.1, 0.1, 0x111214, { x: 0.4, y: 1.05, z: 1.62 }),
+          ...[0, 1, 2, 3, 4].map((k) =>
+            box(0.42, 0.22, 0.06, k % 2 ? 0x1b1a1a : 0xf2c14e, {
+              x: -0.44 + k * 0.42,
+              y: 2.38,
+              z: 1.72,
+            }),
+          ),
+          box(1.2, 0.5, 0.06, 0x2f8a4a, { x: -2.4, y: 1.9, z: 1.53 }),
+          cone(0.22, 0.4, 4, 0x9fe86a, { x: -2.4, y: 1.95, z: 1.58, rx: Math.PI / 2 }),
+          // Air vents, grown over.
+          box(0.8, 0.5, 0.8, 0x6d737a, { x: -2.6, y: 2.9, z: -2.6 }),
+          cyl(0.08, 0.12, 1.4, 4, 0x3f8a35, { x: -2.3, y: 2.6, z: -2.2, rz: 0.8 }),
+          // Generator.
+          box(1.8, 1.1, 1.3, 0x4f6a4a, { x: 5.2, y: 0.55, z: 0.6 }),
+          box(1.9, 0.12, 1.4, 0x3a4a36, { x: 5.2, y: 1.15, z: 0.6 }),
+          cyl(0.1, 0.1, 1.1, 5, 0x3a3a3a, { x: 5.8, y: 1.6, z: 0.2 }),
+          cyl(0.16, 0.16, 0.12, 6, 0xd0453b, { x: 4.7, y: 1.25, z: 0.9 }),
+          box(0.1, 0.1, 1.4, 0x222222, { x: 3.4, y: 0.06, z: 1.0, ry: 0.4 }),
+        ]),
+      );
+      // The door swings open (view.ts) once the code is in.
+      const door = new THREE.Group();
+      door.position.set(-0.4, 0, 1.68);
+      door.add(
+        mesh([
+          box(1.6, 2.0, 0.12, 0x6d737a, { x: 0.8, y: 1.05 }),
+          box(1.3, 0.12, 0.05, 0x55595e, { x: 0.8, y: 1.5, z: 0.08 }),
+          box(1.3, 0.12, 0.05, 0x55595e, { x: 0.8, y: 0.6, z: 0.08 }),
+          cyl(0.18, 0.18, 0.06, 8, 0x8a8c90, { x: 0.8, y: 1.05, z: 0.09, rx: Math.PI / 2 }),
+        ]),
+      );
+      door.name = 'door';
+      g.add(door);
+      break;
+    }
+    case 'wreck': {
+      const HULL = 0x7a3a2a;
+      const RUST = 0x9a5a32;
+      const hull = new THREE.Group();
+      hull.add(
+        mesh([
+          box(17, 4.2, 5.4, HULL, { x: -1.5, y: 1.1 }),
+          box(17, 0.5, 5.6, 0x2a2a2e, { x: -1.5, y: -0.8 }),
+          box(17.2, 0.3, 5.6, 0xd8d0c0, { x: -1.5, y: 3.25 }),
+          // The bow, pointed.
+          cone(2.75, 4.5, 4, HULL, {
+            x: 9.2,
+            y: 1.1,
+            rz: -Math.PI / 2,
+            rx: Math.PI / 4,
+            sy: 1,
+            sz: 0.75,
+          }),
+          // The bridge and funnel.
+          box(4.5, 5, 4.4, 0xe8e2d4, { x: -6, y: 5.6 }),
+          ...[-1, 0, 1].map((k) =>
+            box(0.9, 0.6, 0.05, 0x1c2a33, { x: -6 + k * 1.3, y: 7, z: 2.22 }),
+          ),
+          box(4.9, 0.3, 4.8, 0x5a5a5a, { x: -6, y: 8.2 }),
+          cyl(0.7, 0.8, 3, 7, 0x3a3a3a, { x: -7.2, y: 9.6 }),
+          box(1.5, 0.35, 0.05, 0xd0453b, { x: -7.2, y: 10.2, z: 0.75 }),
+          // Rust runs, the breach in her side, the name on the bow.
+          ...[-8, -4, 1, 5].map((x) => box(0.5, 2.2, 0.05, RUST, { x, y: 1.6, z: 2.72 })),
+          box(2.8, 2, 0.08, 0x141414, { x: 0, y: 0.8, z: 2.7 }),
+          box(1.6, 0.4, 0.05, 0xf2f0e8, { x: 7.6, y: 2.4, z: 2.4, ry: -0.5 }),
+          // A mast fallen across the deck.
+          cyl(0.12, 0.15, 9, 5, 0x6b5a4a, { x: 2, y: 3.6, z: -0.5, rz: 1.35, ry: 0.4 }),
+        ]),
+      );
+      // Water in the breach while the tide is in (view.ts).
+      const flood = mesh([box(2.6, 1.3, 0.1, 0x2e6f8a, { x: 0, y: 0.45, z: 2.76 })]);
+      flood.name = 'flood';
+      hull.add(flood);
+      // Aground: listing to seaward and down by the stern.
+      hull.rotation.set(0.14, 0, 0.05);
+      hull.position.y = -0.6;
+      g.add(hull);
+      break;
+    }
+    case 'marker_a':
+    case 'marker_b':
+    case 'marker_c':
+    case 'marker_d':
+      g.add(
+        mesh([
+          box(0.5, 1.3, 0.5, 0x9a9c94, { y: 0.45 }),
+          box(0.6, 0.12, 0.6, 0x7a7c74, { y: 1.12 }),
+          box(0.34, 0.24, 0.03, 0xc9a24a, { y: 0.85, z: 0.26 }),
+          box(0.24, 0.04, 0.035, 0x6b5a2a, { y: 0.88, z: 0.27 }),
+          box(0.24, 0.04, 0.035, 0x6b5a2a, { y: 0.81, z: 0.27 }),
+          cyl(0.03, 0.03, 0.9, 4, 0x3f8a35, { x: 0.22, y: 0.5, z: 0.24, rz: 0.4 }),
+        ]),
+      );
+      break;
     default: {
       const t = b[0];
       if (t)
@@ -957,6 +1071,19 @@ function poiStructure(poi: PoiDef): THREE.Group {
   return g;
 }
 
+const SECRET_BY_ID: Record<string, PoiDef> = Object.fromEntries(
+  SECRETS.map((d) => [d.id, { ...d, x: 0, z: 0 }]),
+);
+
+/** A treasure map's X: two sticks crossed on a little mound of sand. */
+export function treasureMark(): THREE.Object3D {
+  return mesh([
+    sphere(0.7, 7, 3, 0xd8c890, { y: -0.18, sy: 0.4 }),
+    box(1.3, 0.1, 0.14, 0x6b4a2a, { y: 0.12, ry: 0.78 }),
+    box(1.3, 0.1, 0.14, 0x6b4a2a, { y: 0.16, ry: -0.78 }),
+  ]);
+}
+
 export interface PoiView {
   poi: PoiDef;
   group: THREE.Group;
@@ -973,11 +1100,16 @@ export function buildPois(
   heightAt: (x: number, z: number) => number,
 ): PoiView[] {
   return pois.map((poi) => {
-    const classic = POI_BY_ID[poi.id] ?? poi;
+    const classic = POI_BY_ID[poi.id] ?? SECRET_BY_ID[poi.id] ?? poi;
     const group = poiStructure(classic);
     group.position.set(poi.x, heightAt(poi.x, poi.z), poi.z);
-    group.rotation.y = (-parts.turn * Math.PI) / 2;
-    if (parts.mirror) group.scale.x = -1;
+    // Secret sites are placed on the finished island: only their own turn applies.
+    if (poi.secret) {
+      group.rotation.y = -(poi.rot ?? 0);
+    } else {
+      group.rotation.y = (-parts.turn * Math.PI) / 2;
+      if (parts.mirror) group.scale.x = -1;
+    }
     const spots = classic.spots.map((spot, i) => {
       const v = spotModel(spot);
       const at = poi.spots[i] ?? spot;

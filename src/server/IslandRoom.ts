@@ -125,6 +125,7 @@ const CLIENT_TYPES = new Set([
   'pos',
   'use',
   'throw',
+  'shoot',
   'eat',
   'equip',
   'craft',

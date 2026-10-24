@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { BIOME, biomeAt, generateIsland, forNodesNear, type Island } from '../world';
 import { ITEMS } from '../content/items';
+import { MONSTERS } from '../content/monsters';
+import { noteText } from '../content/notes';
+import { GENERATOR_SAP, bunkerCode, hullNumber, wreckCode } from '../content/secrets';
 import { NODE } from '../content/nodes';
 import { POI_BY_ID, SPAWN, MOTHER_SPOT, RESCUE_SECONDS } from '../content/pois';
 import { rng } from '../rng';
@@ -9,7 +12,7 @@ import { runDirector, spawnMob } from './mobs';
 import { placementProblem, snapToGrid } from './place';
 import { POD_FALL, POD_LOOT, compass, pickEvent, rollLoot } from './events';
 import { bestSlot, count, emptyInv, weaponScore } from './inventory';
-import { DAY, START_TIME } from './time';
+import { DAY, START_TIME, lowTide } from './time';
 import { newSave, parseIslandSave } from './types';
 import type { S2C } from './protocol';
 import { DEFAULT_RULES, type WorldRules } from '../rules';
@@ -1069,7 +1072,17 @@ describe('weather', () => {
   it('rain waters plots without a roof and fills collectors faster', () => {
     const h = harness();
     h.sim.join('a', 'Ann');
-    const plot = { id: 900, kind: 'garden_plot', x: 10, z: 200, rot: 0, hp: 100, owner: 'a', v: 0, acc: 0 };
+    const plot = {
+      id: 900,
+      kind: 'garden_plot',
+      x: 10,
+      z: 200,
+      rot: 0,
+      hp: 100,
+      owner: 'a',
+      v: 0,
+      acc: 0,
+    };
     h.sim.buildings.set(plot.id, { ...plot, crop: { id: 'corn', grow: 0, wet: 0 } });
     const roofed = { ...plot, id: 901, x: 40 };
     h.sim.buildings.set(roofed.id, { ...roofed, crop: { id: 'corn', grow: 0, wet: 0 } });
@@ -1137,7 +1150,9 @@ describe('island animals', () => {
     for (let k = 0; k < 3; k++) runDirector(h.sim);
     expect(h.sim.mobs.has(m.id)).toBe(true);
     const save = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())))!;
-    expect(save.pets).toEqual([expect.objectContaining({ kind: 'goat', name: 'Mango', mode: 'stay' })]);
+    expect(save.pets).toEqual([
+      expect.objectContaining({ kind: 'goat', name: 'Mango', mode: 'stay' }),
+    ]);
     const h2 = harness();
     const sim2 = new IslandSim(island, save, () => {}, rng(1));
     expect([...sim2.mobs.values()].find((x) => x.tame)?.tame?.name).toBe('Mango');
@@ -1155,5 +1170,210 @@ describe('island animals', () => {
     const goat = withAnimal('goat');
     goat.h.sim.handle('a', { type: 'use', kind: 'mob', id: goat.m.id });
     expect(goat.m.st).toBe('flee');
+  });
+});
+
+describe('ranged weapons', () => {
+  /** An open beach: nothing in the way for 14 m east. */
+  function openBeach(): { x: number; z: number } {
+    for (let z = -300; z < 300; z += 6)
+      for (let x = -400; x < 400; x += 6) {
+        if (biomeAt(island, x, z) !== BIOME.beach || biomeAt(island, x + 14, z) !== BIOME.beach)
+          continue;
+        let near = false;
+        forNodesNear(island, x + 7, z, 9, () => {
+          near = true;
+        });
+        if (!near) return { x, z };
+      }
+    throw new Error('no open beach');
+  }
+
+  function archer(weapon = 'bow', ammo = 'arrow', n = 5) {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const at = openBeach();
+    p.x = at.x;
+    p.z = at.z;
+    h.sim.give(p, weapon, 1);
+    if (n) h.sim.give(p, ammo, n);
+    p.held = p.inv.findIndex((s) => s?.id === weapon);
+    return { h, p };
+  }
+
+  it('shoots the first creature on the line, and the arrow hits when it gets there', () => {
+    const { h, p } = archer();
+    const m = spawnMob(h.sim, 'husk', p.x + 9, p.z, { roamer: true });
+    const hp = m.hp;
+    h.sim.handle('a', { type: 'shoot', x: p.x + 20, z: p.z + 0.2 });
+    expect(count(p.inv, 'arrow')).toBe(4);
+    expect(h.all.some((x) => x.type === 'fx' && x.k === 'shot')).toBe(true);
+    // Still in the air.
+    expect(m.hp).toBe(hp);
+    h.run(0.5);
+    expect(m.hp).toBe(hp - (ITEMS['bow']?.ranged?.damage ?? 0));
+    expect(m.target).toBe('a');
+    // Too soon for another.
+    h.sim.handle('a', { type: 'shoot', x: m.x, z: m.z });
+    expect(count(p.inv, 'arrow')).toBe(4);
+  });
+
+  it('fire arrows set things burning; tame animals are never hit', () => {
+    const { h, p } = archer('bow', 'fire_arrow', 2);
+    const pet = spawnMob(h.sim, 'goat', p.x + 4, p.z, { roamer: false });
+    pet.tame = { owner: 'a', name: 'Mango', mode: 'stay', next: 0 };
+    const m = spawnMob(h.sim, 'husk', p.x + 10, p.z, { roamer: true });
+    h.sim.handle('a', { type: 'shoot', x: m.x, z: m.z });
+    h.run(0.6);
+    expect(pet.hp).toBe(MONSTERS.goat.hp);
+    expect(m.burnUntil).toBeGreaterThan(h.sim.time);
+  });
+
+  it('needs ammo, and trees stop shots', () => {
+    const { h, p } = archer('crossbow', 'bolt', 0);
+    const m = spawnMob(h.sim, 'husk', p.x + 8, p.z, { roamer: true });
+    h.sim.handle('a', { type: 'shoot', x: m.x, z: m.z });
+    expect(h.toasts('a').some((t) => t.includes('No crossbow bolts'))).toBe(true);
+    // A tree between you and it takes the bolt.
+    const tree = nearestNode(NODE.palm, p.x, p.z);
+    const tx = island.nodeX[tree] as number;
+    const tz = island.nodeZ[tree] as number;
+    p.x = tx - 3;
+    p.z = tz;
+    m.x = tx + 3;
+    m.z = tz;
+    h.sim.give(p, 'bolt', 1);
+    const hp = m.hp;
+    h.sim.handle('a', { type: 'shoot', x: m.x, z: m.z });
+    expect(count(p.inv, 'bolt')).toBe(0);
+    h.run(0.5);
+    expect(m.hp).toBe(hp);
+  });
+
+  it('crafts arrows from feathers and a slingshot shoots stones', () => {
+    const { h, p } = archer('slingshot', 'stone', 3);
+    h.sim.give(p, 'wood', 2);
+    h.sim.give(p, 'feather', 2);
+    h.sim.handle('a', { type: 'craft', recipe: 'arrow' });
+    expect(count(p.inv, 'arrow')).toBe(5);
+    const m = spawnMob(h.sim, 'boar', p.x + 6, p.z, { roamer: true });
+    h.sim.handle('a', { type: 'shoot', x: m.x, z: m.z });
+    h.run(0.4);
+    expect(m.hp).toBe(MONSTERS.boar.hp - (ITEMS['slingshot']?.ranged?.damage ?? 0));
+    expect(count(p.inv, 'stone')).toBeLessThan(3);
+  });
+});
+
+describe('secrets', () => {
+  function at(h: ReturnType<typeof harness>, spotId: string) {
+    const p = h.sim.players.get('a')!;
+    const s = h.sim.spots.get(spotId)!;
+    p.x = s.x;
+    p.z = s.z;
+    return p;
+  }
+  const hour = (hh: number) => START_TIME - (START_TIME % DAY) + DAY * 2 + (hh / 24) * DAY;
+
+  it('opens the bunker: fuel the generator, then the code from the survey markers', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    let p = at(h, 'bunker_door');
+    h.sim.handle('a', { type: 'code', code: bunkerCode(island.seed) });
+    expect(h.sim.flags.has('bunker_open')).toBe(false);
+    expect(h.toasts('a').some((t) => t.includes('keypad is dead'))).toBe(true);
+    // Its spots inside aren't there yet.
+    p = at(h, 'bunker_vault');
+    h.sim.handle('a', { type: 'use', kind: 'spot', id: 'bunker_vault' });
+    expect(count(p.inv, 'seed_corn')).toBe(0);
+    p = at(h, 'bunker_gen');
+    h.sim.give(p, 'sap', GENERATOR_SAP);
+    h.sim.handle('a', { type: 'use', kind: 'spot', id: 'bunker_gen' });
+    expect(h.sim.flags.has('bunker_power')).toBe(true);
+    expect(count(p.inv, 'sap')).toBe(0);
+    at(h, 'bunker_door');
+    h.sim.handle('a', { type: 'code', code: '0000' === bunkerCode(island.seed) ? '1111' : '0000' });
+    expect(h.sim.flags.has('bunker_open')).toBe(false);
+    h.sim.handle('a', { type: 'code', code: bunkerCode(island.seed) });
+    expect(h.sim.flags.has('bunker_open')).toBe(true);
+    p = at(h, 'bunker_locker');
+    h.run(1);
+    h.sim.handle('a', { type: 'use', kind: 'spot', id: 'bunker_locker' });
+    expect(count(p.inv, 'shovel')).toBe(1);
+    expect(h.sim.notes.has('treasure_2')).toBe(true);
+    // The markers' plates carry the code.
+    expect(noteText('marker', island.seed, 2)).toContain(
+      `DIGIT 3 OF 4 = ${bunkerCode(island.seed)[2]}`,
+    );
+    expect(noteText('marker', island.seed, 2)).toContain('SURVEY POINT C');
+  });
+
+  it("opens the wreck's safe at low tide with the hull number backwards", () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    h.sim.time = hour(12);
+    let p = at(h, 'wreck_hold');
+    h.sim.handle('a', { type: 'use', kind: 'spot', id: 'wreck_hold' });
+    expect(count(p.inv, 'scrap')).toBe(0);
+    expect(h.toasts('a').some((t) => t.includes('flooded'))).toBe(true);
+    h.sim.time = hour(5);
+    h.run(1);
+    h.sim.handle('a', { type: 'use', kind: 'spot', id: 'wreck_hold' });
+    expect(count(p.inv, 'bottle')).toBe(1);
+    p = at(h, 'wreck_safe');
+    expect(noteText('hullplate', island.seed)).toContain(hullNumber(island.seed));
+    h.run(1);
+    h.sim.handle('a', {
+      type: 'code',
+      code: hullNumber(island.seed) === wreckCode(island.seed) ? 'x' : hullNumber(island.seed),
+    });
+    expect(h.sim.flags.has('wreck_open')).toBe(false);
+    h.sim.handle('a', { type: 'code', code: wreckCode(island.seed) });
+    expect(h.sim.flags.has('wreck_open')).toBe(true);
+    expect(count(p.inv, 'crossbow')).toBe(1);
+    expect(h.sim.notes.has('treasure_1')).toBe(true);
+  });
+
+  it('reads a bottle for a treasure map and digs the chest up with a shovel', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    h.sim.give(p, 'bottle', 1);
+    const slot = p.inv.findIndex((s) => s?.id === 'bottle');
+    h.sim.handle('a', { type: 'eat', slot });
+    expect(h.sim.notes.has('treasure_3')).toBe(true);
+    expect(count(p.inv, 'bottle')).toBe(0);
+    const x = island.treasures[2]!;
+    p.x = x.x + 1;
+    p.z = x.z;
+    // No shovel, no chest.
+    h.sim.handle('a', { type: 'use', kind: 'dig', id: 3 });
+    expect(h.toasts('a').some((t) => t.includes('need a shovel'))).toBe(true);
+    h.sim.give(p, 'shovel', 1);
+    p.held = p.inv.findIndex((s) => s?.id === 'shovel');
+    for (let k = 0; k < 6 && !h.sim.flags.has('dug:3'); k++) {
+      h.run(1);
+      h.sim.handle('a', { type: 'use', kind: 'dig', id: 3 });
+    }
+    expect(h.sim.flags.has('dug:3')).toBe(true);
+    const chest = [...h.sim.drops.values()].find((d) => d.label === 'Buried chest');
+    expect(chest?.items.length).toBeGreaterThan(0);
+    // An X you haven't found can't be dug.
+    p.x = island.treasures[3]!.x;
+    p.z = island.treasures[3]!.z;
+    h.run(1);
+    h.sim.handle('a', { type: 'use', kind: 'dig', id: 4 });
+    expect(h.sim.flags.has('dug:4')).toBe(false);
+  });
+
+  it('keeps hidden nodes gone, and the tide on the island clock', () => {
+    const h = harness();
+    const hidden = island.hidden.findIndex((v) => v === 1);
+    expect(hidden).toBeGreaterThanOrEqual(0);
+    expect(h.sim.nodeGone(hidden)).toBe(true);
+    expect(lowTide(hour(5))).toBe(true);
+    expect(lowTide(hour(12))).toBe(false);
+    expect(lowTide(hour(17.5))).toBe(true);
+    expect(lowTide(hour(22))).toBe(false);
   });
 });

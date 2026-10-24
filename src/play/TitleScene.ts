@@ -73,7 +73,7 @@ export class TitleScene {
     this.terrain = new Terrain(island, this.scene);
     this.terrain.prime(fx, fz, 2);
     this.terrain.setWaterTint(1, false);
-    this.nodes = new NodeView(island, this.scene, () => false);
+    this.nodes = new NodeView(island, this.scene, (id) => island.hidden[id] === 1);
     this.nodes.update(fx, fz, 2, 0);
     this.ambient = new Ambient(island, this.scene);
     this.ambient.configure(Math.min(gfx.grass, 160), prefs.get().life);

@@ -2,7 +2,7 @@
 // drop in nodes.ts/monsters.ts) and it works everywhere: inventory, crafting,
 // hotbar and the server's checks.
 
-export type ToolKind = 'hand' | 'axe' | 'pick' | 'machete';
+export type ToolKind = 'hand' | 'axe' | 'pick' | 'machete' | 'shovel';
 
 export interface ItemDef {
   id: string;
@@ -28,8 +28,14 @@ export interface ItemDef {
   light?: number;
   /** Thrown: area damage and burning. */
   throwable?: { damage: number; radius: number; range: number; burn: number };
+  /** Shoots `ammo` (the first of them in your bag) along a line; `speed` in m/s. */
+  ranged?: { damage: number; range: number; cooldown: number; speed: number; ammo: string[] };
+  /** Ammunition: extra damage, and burning, on top of the weapon's. */
+  ammo?: { damage: number; burn?: number };
   /** Holds water for garden plots: `d` is how many waterings are left (0 = empty). */
   can?: boolean;
+  /** Read it (the action button): a message in a bottle. */
+  reads?: boolean;
   quest?: boolean;
 }
 
@@ -397,6 +403,16 @@ const list: ItemDef[] = [
     desc: 'Cuts through Bloom vines. Your best blade.',
   },
   {
+    id: 'shovel',
+    name: 'Shovel',
+    icon: '⛏️',
+    stack: 1,
+    durability: 60,
+    tool: { kind: 'shovel', power: 20 },
+    weapon: { damage: 11, reach: 2.2, cooldown: 0.75 },
+    desc: 'Digs up what treasure maps mark with an X.',
+  },
+  {
     id: 'club',
     name: 'Wooden club',
     icon: '🏏',
@@ -432,6 +448,66 @@ const list: ItemDef[] = [
     stack: 5,
     throwable: { damage: 35, radius: 3.5, range: 12, burn: 6 },
     desc: 'Sap and cloth. Throw it at the Bloom and watch it burn.',
+  },
+  {
+    id: 'bottle',
+    name: 'Message in a bottle',
+    icon: '🍾',
+    stack: 5,
+    reads: true,
+    desc: 'Washed up on a beach. Something is rolled up inside.',
+  },
+  // Ranged weapons and what they shoot
+  {
+    id: 'slingshot',
+    name: 'Slingshot',
+    icon: '🪃',
+    stack: 1,
+    durability: 150,
+    ranged: { damage: 7, range: 16, cooldown: 0.6, speed: 30, ammo: ['stone'] },
+    desc: 'Flings stones. Quick, quiet and cheap.',
+  },
+  {
+    id: 'bow',
+    name: 'Bow',
+    icon: '🏹',
+    stack: 1,
+    durability: 200,
+    ranged: { damage: 15, range: 22, cooldown: 0.85, speed: 36, ammo: ['arrow', 'fire_arrow'] },
+    desc: 'Shoots arrows. Hunt from afar, or thin a horde before it reaches you.',
+  },
+  {
+    id: 'crossbow',
+    name: 'Crossbow',
+    icon: '🎯',
+    stack: 1,
+    durability: 250,
+    ranged: { damage: 32, range: 28, cooldown: 1.6, speed: 50, ammo: ['bolt'] },
+    desc: 'Slow to wind, but a bolt hits like a Thornmaul.',
+  },
+  {
+    id: 'arrow',
+    name: 'Arrow',
+    icon: '➶',
+    stack: 40,
+    ammo: { damage: 0 },
+    desc: 'For the bow. Feathers from island fowl make the best ones.',
+  },
+  {
+    id: 'fire_arrow',
+    name: 'Fire arrow',
+    icon: '🔥',
+    stack: 20,
+    ammo: { damage: 4, burn: 6 },
+    desc: 'Dipped in sap. Sets what it hits burning. Bows shoot the first arrows in your bag.',
+  },
+  {
+    id: 'bolt',
+    name: 'Crossbow bolt',
+    icon: '📍',
+    stack: 30,
+    ammo: { damage: 0 },
+    desc: 'Short, heavy and tipped with scrap.',
   },
   // Buildings
   {
@@ -568,7 +644,7 @@ const list: ItemDef[] = [
     name: 'Animal hide',
     icon: '🟤',
     stack: 20,
-    desc: 'Scrape it into leather straps (cloth) or string a bow with it.',
+    desc: 'Scrape it into leather straps (cloth), or use it for a slingshot or a crossbow.',
   },
   {
     id: 'feather',

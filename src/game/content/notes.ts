@@ -10,6 +10,7 @@
 
 import { turnDirections, type IslandParts } from '../islands';
 import { bloomOrdinal } from '../rules';
+import { bunkerCode, hullNumber } from './secrets';
 
 export interface NoteDef {
   id: string;
@@ -215,6 +216,96 @@ const list: NoteDef[] = [
   },
 ];
 
+// Secrets (secrets.ts): the bunker, the survey markers, the shipwreck, treasure maps.
+list.push(
+  {
+    id: 'bunkersign',
+    title: 'Verdance shelter sign',
+    text:
+      'VERDANCE BIOTECH · EMERGENCY SHELTER B\n\n' +
+      'Door power from the generator. Diesel, or anything that burns hot. (Field note in marker: ' +
+      '"three jars of the green sap run it for a week.")\n\n' +
+      'Access code: one digit on each survey marker, A to D, around the island. Staff, memorise ' +
+      'your marker.',
+    reveals: ['marker_a', 'marker_b', 'marker_c', 'marker_d'],
+  },
+  {
+    id: 'marker',
+    title: 'Survey marker',
+    text:
+      'A concrete post with a brass plate, green with age:\n\n' +
+      '"VERDANCE BIOTECH · SURVEY POINT {letter}\nSHELTER B ACCESS · DIGIT {pos} OF 4 = {digit}"',
+  },
+  {
+    id: 'shelterlog',
+    title: 'Shelter terminal',
+    text:
+      'SHELTER B · LAST ENTRY\n\n' +
+      'The roots came in through the air vents on the ninth night. Ravi went up to seal them and ' +
+      'did not come back down. We are leaving for the station at dawn.\n\n' +
+      'The seed vault stays sealed for whoever comes next. Plant it. Fence it. The Bloom eats ' +
+      'everything else on this island, but it leaves a watered field alone.\n\n' +
+      'Supply cache coordinates are on the survey map in the locker.',
+  },
+  {
+    id: 'wrecklog',
+    title: 'Log of the Marisol',
+    text:
+      'MV Marisol, freighter. Ran aground on the reef with every instrument dead. The radio only ' +
+      'hisses. Crew is going ashore to find whoever runs that relay on the peak.\n\n' +
+      'The hold floods at high water. Low water from four to eight, morning and evening; the hold ' +
+      'is dry then.\n\n' +
+      "The owners' idea of security: the safe opens to the hull number, backwards. — Capt. Ferrer",
+  },
+  {
+    id: 'hullplate',
+    title: "The Marisol's bow",
+    text: 'Painted on the bow in tall white letters, flaking in the salt:\n\n"MARISOL · HULL No. {hull}"',
+  },
+  {
+    id: 'treasure_1',
+    title: "Captain Ferrer's map",
+    text:
+      'A chart of the island in pencil, with an X and a note: "The crew\'s wages. Buried where ' +
+      'the owners will never look."\n\nThe X is marked on your map. Bring a shovel.',
+  },
+  {
+    id: 'treasure_2',
+    title: 'Verdance survey map',
+    text:
+      'A survey map from the shelter locker. One spot is circled in red: "SUPPLY CACHE (BURIED)".' +
+      '\n\nThe X is marked on your map. Bring a shovel.',
+  },
+  {
+    id: 'treasure_3',
+    title: 'Message in a bottle',
+    text:
+      '"If you find this, we didn\'t make it off. We buried what we had left. Use it."\n\n' +
+      'A little map is drawn on the back. The X is marked on your map. Bring a shovel.',
+  },
+  {
+    id: 'treasure_4',
+    title: 'Message in a bottle',
+    text:
+      '"Day 60. Hid the good stuff from the others. Sorry, Jules." A map, drawn with charcoal.' +
+      '\n\nThe X is marked on your map. Bring a shovel.',
+  },
+  {
+    id: 'treasure_5',
+    title: 'Message in a bottle',
+    text:
+      'A child\'s drawing of the island: a tree, a rock, a big X. "Pirate treasure!!" it says ' +
+      'in crayon.\n\nThe X is marked on your map. Bring a shovel.',
+  },
+  {
+    id: 'bottle_letter',
+    title: 'Message in a bottle',
+    text:
+      '"To whoever is out there: the lights in the marsh are not fireflies. Keep a fire lit. ' +
+      'Count the nights. And if you see a plane, wave."',
+  },
+);
+
 export const NOTES: Record<string, NoteDef> = Object.fromEntries(list.map((n) => [n.id, n]));
 
 /** Research pages Husks drop, in order (their ids are also what the journal stores). */
@@ -246,9 +337,13 @@ export function noteText(noteId: string, seed: number, digit?: number, world?: N
   if (!note) return '';
   let text = note.text;
   if (digit !== undefined) {
-    const code = cargoCode(seed);
-    text = text.replace('{pos}', String(digit + 1)).replace('{digit}', code[digit] ?? '?');
+    const code = noteId === 'marker' ? bunkerCode(seed) : cargoCode(seed);
+    text = text
+      .replace('{pos}', String(digit + 1))
+      .replace('{digit}', code[digit] ?? '?')
+      .replace('{letter}', 'ABCD'[digit] ?? '?');
   }
+  if (noteId === 'hullplate') text = text.replace('{hull}', hullNumber(seed));
   if (!world) return text;
   const nth = bloomOrdinal(world.bloomEvery);
   return turnDirections(text, world.parts)

@@ -257,9 +257,29 @@ export function HowTo({ pc, bloomEvery }: { pc: boolean; bloomEvery: number }) {
         With <b>Auto tool</b> on (Settings › Gameplay) you grab the right axe, pickaxe or blade for
         the job and switch back afterwards; <b>Auto weapon</b> does the same in a fight.
       </li>
+      <li>Pick what you hold from the hotbar{pc ? ' (1–6 or the mouse wheel)' : ''}.</li>
       <li>
-        Pick what you hold from the hotbar{pc ? ' (1–6 or the mouse wheel)' : ''}. Hold a building
-        to place it; 🔄 turns it.
+        🔨 opens build mode{pc ? ' (V)' : ''}: pick a piece from the tabs (walls, floors, roofs,
+        furniture, farming, fire and light) and put it down. It's paid for straight from your bag;
+        taking a piece down gives half back.
+      </li>
+      <li>
+        Hold a bow, crossbow or slingshot and the big button shoots the nearest monster
+        {pc ? ', or wherever the mouse points' : ''}. Arrows need feathers from island birds (or
+        fiber); stones fly from a slingshot.
+      </li>
+      <li>
+        Farm: build a garden plot, plant seeds from suitcases and crates, and keep it watered with a
+        watering can (or let the rain do it). Cook meals in a cooking pot next to a lit campfire:
+        they fill you up and heal you.
+      </li>
+      <li>
+        Island animals roam by day. Hunt them for meat and hides, or hold their favourite food and
+        feed them a few times: they'll trust you, follow you, and give eggs or milk.
+      </li>
+      <li>
+        The weather turns: rain waters crops and fills collectors, storms throw lightning (stay
+        under a roof), and in fog the Bloom only sees you up close.
       </li>
       <li>
         🎒 opens the quick bag and craft panel{pc ? ' (Tab)' : ''}: it stays open while you move and
@@ -280,6 +300,10 @@ export function HowTo({ pc, bloomEvery }: { pc: boolean; bloomEvery: number }) {
       <li>
         Monster parts make better gear at the Mashbench. Husks sometimes carry pages of Dr.
         Kessler's research.
+      </li>
+      <li>
+        The island hides secrets: a sealed Verdance bunker, a stranded freighter whose hold only
+        drains at low tide, and treasure maps (some in bottles on the beach). Bring a shovel.
       </li>
       <li>
         Find the three parts of the emergency radio and call for rescue. The journal says where to

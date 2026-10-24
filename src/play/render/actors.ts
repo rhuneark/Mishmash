@@ -658,8 +658,7 @@ export class Actor {
         if (p['l0']) p['l0'].rotation.x = f;
         if (p['l1']) p['l1'].rotation.x = -f;
         if (p['torso']) p['torso'].position.y = 0.32 + (moving ? Math.abs(s) * 0.04 : 0);
-        if (p['head'])
-          p['head'].rotation.x = !moving && Math.sin(this.t * 2.3) > 0.7 ? 0.9 : 0;
+        if (p['head']) p['head'].rotation.x = !moving && Math.sin(this.t * 2.3) > 0.7 ? 0.9 : 0;
         break;
       }
       case 'crab': {

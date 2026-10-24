@@ -12,7 +12,8 @@ export interface Slot {
   d?: number;
 }
 
-export type UseKind = 'node' | 'mob' | 'build' | 'spot' | 'drop' | 'pool';
+/** `dig`: the X of treasure map `id` (1-based). */
+export type UseKind = 'node' | 'mob' | 'build' | 'spot' | 'drop' | 'pool' | 'dig';
 
 export type C2S =
   | { type: 'hello'; name: string }
@@ -20,6 +21,8 @@ export type C2S =
   | { type: 'pos'; x: number; z: number; ry: number; mv: number }
   | { type: 'use'; kind: UseKind; id: number | string }
   | { type: 'throw'; slot: number; x: number; z: number }
+  /** Shoots the held bow, crossbow or slingshot toward (x, z). */
+  | { type: 'shoot'; x: number; z: number }
   | { type: 'eat'; slot: number }
   | { type: 'equip'; slot: number }
   | { type: 'craft'; recipe: string }
@@ -187,8 +190,13 @@ export type FxKind =
   | 'land'
   /** A lightning strike (storms). */
   | 'lightning'
-  /** An arrow, bolt or stone flying from `by` to (x, z); `n`: its speed. */
+  /** A shovel bites into the sand. */
+  | 'dig'
+  /** An arrow, bolt or stone flying from `by` to (x, z); `n`: its speed, `r`: SHOTS index. */
   | 'shot';
+
+/** What a 'shot' fx shows flying (its `r`). */
+export const SHOTS = ['arrow', 'fire_arrow', 'bolt', 'stone'] as const;
 
 export type S2C =
   | { type: 'welcome'; you: string; part: number; parts: number; data: string }

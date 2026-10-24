@@ -39,6 +39,22 @@ const list: Recipe[] = [
   { id: 'torch', out: 'torch', n: 1, station: 'hand', needs: { wood: 1, fiber: 2 } },
   { id: 'bandage', out: 'bandage', n: 1, station: 'hand', needs: { cloth: 1, fiber: 2 } },
   { id: 'seed_berry', out: 'seed_berry', n: 2, station: 'hand', needs: { berries: 4 } },
+  {
+    id: 'slingshot',
+    out: 'slingshot',
+    n: 1,
+    station: 'hand',
+    needs: { wood: 2, rope: 1, hide: 1 },
+  },
+  { id: 'arrow', out: 'arrow', n: 5, station: 'hand', needs: { wood: 1, stone: 1, feather: 2 } },
+  {
+    id: 'arrow_fiber',
+    out: 'arrow',
+    n: 2,
+    station: 'hand',
+    needs: { wood: 1, stone: 1, fiber: 2 },
+  },
+  { id: 'fire_arrow', out: 'fire_arrow', n: 3, station: 'hand', needs: { arrow: 3, sap: 1 } },
   // At a campfire
   { id: 'crab_cooked', out: 'crab_cooked', n: 1, station: 'fire', needs: { crab_raw: 1 } },
   { id: 'skewer', out: 'skewer', n: 1, station: 'fire', needs: { mushroom: 2, wood: 1 } },
@@ -111,6 +127,16 @@ const list: Recipe[] = [
     needs: { scrap: 4, wood: 1, rope: 1, cloth: 1 },
   },
   { id: 'firebomb', out: 'firebomb', n: 2, station: 'bench', needs: { sap: 2, cloth: 1 } },
+  { id: 'shovel', out: 'shovel', n: 1, station: 'bench', needs: { scrap: 2, wood: 2, rope: 1 } },
+  { id: 'bow', out: 'bow', n: 1, station: 'bench', needs: { wood: 4, rope: 2 } },
+  {
+    id: 'crossbow',
+    out: 'crossbow',
+    n: 1,
+    station: 'bench',
+    needs: { scrap: 4, wood: 3, rope: 2, hide: 1 },
+  },
+  { id: 'bolt', out: 'bolt', n: 4, station: 'bench', needs: { scrap: 1, wood: 1 } },
   { id: 'medkit', out: 'medkit', n: 1, station: 'bench', needs: { bandage: 1, sap: 2 } },
   // At a Mashbench: monster parts
   {

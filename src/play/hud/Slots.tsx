@@ -82,6 +82,11 @@ export function SlotButton(props: {
 }) {
   const { client, slotRef, slot } = props;
   const name = slot ? ITEMS[slot.id]?.name : undefined;
+  // A bow shows how many arrows it has left.
+  const shoots = slot ? ITEMS[slot.id]?.ranged?.ammo : undefined;
+  const ammo = shoots
+    ? (client.me?.inv ?? []).reduce((n, s) => n + (s && shoots.includes(s.id) ? s.n : 0), 0)
+    : null;
   return (
     <button
       className={`slot${props.className ? ` ${props.className}` : ''}`}
@@ -100,6 +105,7 @@ export function SlotButton(props: {
       }}
     >
       <SlotView slot={slot} />
+      {ammo !== null && <span className={`slot-ammo${ammo ? '' : ' out'}`}>{ammo}</span>}
       {props.children}
     </button>
   );

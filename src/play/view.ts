@@ -8,7 +8,7 @@ import { MONSTERS } from '../game/content/monsters';
 import { NODE } from '../game/content/nodes';
 import { POD_FALL } from '../game/sim/events';
 import { MOB_STATE } from '../game/sim/protocol';
-import { NIGHT_END, NIGHT_START, daylight } from '../game/sim/time';
+import { NIGHT_END, NIGHT_START, daylight, lowTide } from '../game/sim/time';
 import { colorFor } from '../game/sim/types';
 import { BIOME, biomeAt, forNodesNear, heightAt, type Island } from '../game/world';
 import type { Sound, Sfx } from './audio';
@@ -37,6 +37,7 @@ import {
   buildPois,
   buildingModel,
   helicopter,
+  treasureMark,
   type BuildingView,
   type PoiView,
 } from './render/structures';
@@ -169,6 +170,8 @@ export class View {
   private readonly builds = new Map<number, { view: BuildingView; kind: string }>();
   private readonly dropMeshes = new Map<number, DropView>();
   private readonly pois: PoiView[];
+  /** Treasure X marks on the ground (map number → model). */
+  private readonly marks = new Map<number, THREE.Object3D>();
   private readonly heli: { group: THREE.Group; rotor: THREE.Object3D };
   private heliY = 60;
   private ghost: { kind: string; group: THREE.Group } | null = null;
@@ -654,7 +657,12 @@ export class View {
         this.scene.add(line);
         this.bolts.push({ line, life: 0.3 });
         this.flash = 1;
-        this.fx.burst(x, y + 0.3, z, 14, FX_COLORS.spark, { speed: 4, up: 3, glow: true, life: 0.5 });
+        this.fx.burst(x, y + 0.3, z, 14, FX_COLORS.spark, {
+          speed: 4,
+          up: 3,
+          glow: true,
+          life: 0.5,
+        });
         this.fx.ring(x, y, z, 3, 0xeef4ff, 0.5, { grow: true });
         const d = this.dist(x, z);
         this.sound.play('crack', d / 3);
@@ -681,6 +689,32 @@ export class View {
         if (d < 30) buzz('heavy');
         this.ambient.scare(x, z, 45);
         this.sound.play('boom', d / 3);
+        break;
+      }
+      case 'dig':
+        this.fx.burst(x, y + 0.2, z, 12, FX_COLORS.sand, { speed: 2.5, up: 3.5, life: 0.7 });
+        this.sfx('dig', x, z);
+        if (mine) buzz('light');
+        break;
+      case 'shot': {
+        const from =
+          e.by === this.client.you
+            ? { x: this.client.x, z: this.client.z }
+            : this.client.others.get(e.by ?? '');
+        if (from) {
+          this.fx.shoot(
+            from.x,
+            this.y(from.x, from.z) + 1.3,
+            from.z,
+            x,
+            y + 0.9,
+            z,
+            e.n ?? 36,
+            e.r ?? 0,
+          );
+          this.sfx('shoot', from.x, from.z);
+          this.ambient.scare(from.x, from.z, 10);
+        }
         break;
       }
       case 'throw': {
@@ -997,6 +1031,7 @@ export class View {
     this.updateFalling(dt);
     this.updateDanger();
     this.updatePois(dt);
+    this.updateTreasure();
     this.updateGhost();
     this.updateGrid();
     this.updateRing();
@@ -1123,30 +1158,68 @@ export class View {
     this.danger = c.me?.alive ? Math.min(1, n / 3) : 0;
   }
 
+  /** The bunker door swings open; the wreck's breach floods with the tide. */
+  private updateSecret(p: PoiView, dt: number): void {
+    const c = this.client;
+    const door = p.group.getObjectByName('door');
+    if (door) {
+      const want = c.flags.has('bunker_open') ? -1.9 : 0;
+      door.rotation.y += (want - door.rotation.y) * Math.min(1, dt * 2);
+    }
+    const flood = p.group.getObjectByName('flood');
+    if (flood) flood.visible = !lowTide(c.time);
+  }
+
+  /** Treasure maps' X on the ground, until it's dug up. */
+  private updateTreasure(): void {
+    const want = new Set<number>();
+    for (const t of this.client.treasureMarks()) {
+      want.add(t.n);
+      if (this.marks.has(t.n)) continue;
+      const m = treasureMark();
+      m.position.set(t.x, this.y(t.x, t.z), t.z);
+      m.rotation.y = t.n;
+      this.scene.add(m);
+      this.marks.set(t.n, m);
+    }
+    for (const [n, m] of this.marks) {
+      if (want.has(n)) continue;
+      this.scene.remove(m);
+      this.marks.delete(n);
+    }
+  }
+
   private updatePois(dt: number): void {
     const c = this.client;
     for (const p of this.pois) {
       const near = Math.abs(p.poi.x - c.x) < 140 && Math.abs(p.poi.z - c.z) < 140;
       p.group.visible = near;
       if (!near) continue;
+      if (p.poi.secret) this.updateSecret(p, dt);
       for (const s of p.spots) {
         const spot = s.spot;
+        // Inside the bunker: there once the door is open.
+        s.group.visible = !spot.after || c.flags.has(spot.after);
         let gone = false;
         if (spot.kind === 'loot') gone = c.flags.has(`loot:${spot.id}`);
         if (spot.kind === 'antenna') gone = c.flags.has('antenna_taken');
         if (s.item) s.item.visible = !gone;
+        const open = spot.kind === 'lock' && c.flags.has(`${spot.lock ?? 'cargo'}_open`);
         if (s.halo) {
           const done =
             gone ||
-            (spot.kind === 'lock' && c.flags.has('cargo_open')) ||
+            open ||
+            (spot.kind === 'generator' && c.flags.has('bunker_power')) ||
             ((spot.kind === 'note' || spot.kind === 'tag') && c.notes.has(spot.id));
           s.halo.visible = !done || spot.kind === 'beacon';
           s.halo.scale.setScalar(1 + Math.sin(this.t * 3) * 0.08);
         }
         if (s.light) {
           if (spot.kind === 'lock')
+            (s.light.material as THREE.MeshBasicMaterial).color.setHex(open ? 0x40ff60 : 0xff3030);
+          if (spot.kind === 'generator')
             (s.light.material as THREE.MeshBasicMaterial).color.setHex(
-              c.flags.has('cargo_open') ? 0x40ff60 : 0xff3030,
+              c.flags.has('bunker_power') ? 0x40ff60 : 0xff3030,
             );
           if (spot.kind === 'beacon')
             s.light.visible = c.rescue.phase === 'calling' ? Math.sin(this.t * 8) > 0 : true;
@@ -1408,7 +1481,8 @@ export class View {
       if (!m || m.dying > 0) continue;
       const p = project(m.x, this.y(m.x, m.z) + 1.4, m.z);
       const icon = MONSTERS[m.kind].animal?.icon ?? '';
-      if (p) this.labels.add(p.x, p.y, `${icon} ${pet.name}${pet.ready ? ' ✨' : ''}`, 'tag-name pet');
+      if (p)
+        this.labels.add(p.x, p.y, `${icon} ${pet.name}${pet.ready ? ' ✨' : ''}`, 'tag-name pet');
     }
     for (const m of c.mobs.values()) {
       if (m.dying > 0 || m.hp >= 100 || !MONSTERS[m.kind].hostile || m.kind === 'mother') continue;

@@ -1,5 +1,6 @@
 // Authority-side state and the island save format.
 
+import { parsePerks, type Perks } from '../skills';
 import { BUILDINGS, slotsOf } from '../content/buildings';
 import { CROP_BY_ID } from '../content/crops';
 import { MONSTERS, type MonsterKind } from '../content/monsters';
@@ -38,6 +39,10 @@ export interface SimPlayer {
   torchAcc: number;
   /** Sim time of their last chat line. */
   lastSay: number;
+  /** Experience (skills.ts: the level follows from it). */
+  xp: number;
+  /** Skill ranks learned. */
+  perks: Perks;
 }
 
 export interface Building {
@@ -153,6 +158,9 @@ export interface PlayerSave {
   deaths: number;
   crafted: number;
   escaped: boolean;
+  /** Missing in saves from before levels: 0 XP, no perks. */
+  xp?: number;
+  perks?: Perks;
 }
 
 export interface IslandSave {
@@ -298,6 +306,11 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
         crafted: Math.floor(num(pv['crafted'], 0)),
         escaped: pv['escaped'] === true,
       };
+      const xp = Math.max(0, Math.floor(num(pv['xp'], 0)));
+      if (xp > 0) {
+        (save.players[pid] as PlayerSave).xp = xp;
+        (save.players[pid] as PlayerSave).perks = parsePerks(pv['perks'], xp);
+      }
     }
   }
   if (Array.isArray(d['flags']))

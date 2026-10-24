@@ -5,6 +5,7 @@
 import {
   BUILDINGS,
   CAMPFIRE_FUEL_MAX,
+  costFor,
   CAMPFIRE_FUEL_PER_WOOD,
   CAMPFIRE_FUEL_START,
   POT_FIRE_RANGE,
@@ -58,6 +59,7 @@ import { parseWeather, runWeather, type WeatherState } from './weather';
 import { burrowAll, damageMob, runDirector, spawnMob, updateMobs } from './mobs';
 import { MONSTERS, PET_NAMES } from '../content/monsters';
 import { BUILD_REACH, placementProblem } from './place';
+import { PERK_STEP, XP, cantLearn, levelFor, rankOf, type PerkId } from '../skills';
 import {
   MOB_KINDS,
   MOB_STATE,
@@ -201,6 +203,8 @@ export class IslandSim {
         escaped: p.escaped,
         torchAcc: 0,
         lastSay: -99,
+        xp: p.xp ?? 0,
+        perks: { ...(p.perks ?? {}) },
       });
     }
     for (const f of save.flags) this.flags.add(f);
@@ -329,6 +333,8 @@ export class IslandSim {
         escaped: false,
         torchAcc: 0,
         lastSay: -99,
+        xp: 0,
+        perks: {},
       };
       this.players.set(id, p);
     } else if (name) {
@@ -430,6 +436,7 @@ export class IslandSim {
         deaths: p.deaths,
         crafted: p.crafted,
         escaped: p.escaped,
+        ...(p.xp ? { xp: p.xp, perks: { ...p.perks } } : {}),
       };
     }
     return {
@@ -502,8 +509,14 @@ export class IslandSim {
           this.dirty(p);
         }
         return;
-      case 'craft':
-        return this.onCraft(p, msg.recipe);
+      case 'craft': {
+        // Several at once (the craft menu's ×5): each one checked like a single craft.
+        const n = Math.min(20, Math.max(1, Math.floor(Number(msg.n) || 1)));
+        for (let k = 0; k < n; k++) if (!this.onCraft(p, msg.recipe, k === n - 1)) break;
+        return;
+      }
+      case 'learn':
+        return this.onLearn(p, msg.perk);
       case 'place':
         return this.onPlace(p, msg.slot, msg.x, msg.z, msg.rot);
       case 'build':
@@ -624,7 +637,11 @@ export class IslandSim {
       this.fx('deny', nx, nz, p.id);
       return;
     }
-    if (usedTool && wear(p.inv, p.held)) this.toast(p.id, `Your ${held?.name ?? 'tool'} broke.`);
+    if (usedTool && this.wearHeld(p)) this.toast(p.id, `Your ${held?.name ?? 'tool'} broke.`);
+    if (usedTool && def.tool === 'axe')
+      power *= 1 + PERK_STEP.lumberjack * this.rank(p, 'lumberjack');
+    if (usedTool && (def.tool === 'pick' || type === NODE.scrap))
+      power *= 1 + PERK_STEP.miner * this.rank(p, 'miner');
     const state = this.nodes.get(id) ?? { hp: def.hp, until: 0 };
     state.hp -= (power * this.rules.blockDamage) / 100;
     const fxKind = def.tool === 'axe' ? 'chop' : def.tool === 'pick' ? 'mine' : 'gather';
@@ -640,11 +657,24 @@ export class IslandSim {
     this.broadcast({ type: 'node', id, hp: 0, gone: 1 });
     // What you get shows as "+3 Wood" over your head (the client sees the bag change).
     if (type === NODE.luggage) {
-      for (let k = 0; k < 2; k++) {
+      // Scavenger: one more find.
+      const finds = 2 + this.rank(p, 'scavenger');
+      for (let k = 0; k < finds; k++) {
         const pick = pickWeighted(LUGGAGE_LOOT, hash01(id, k, this.seed + 77));
         this.give(p, pick.item, yieldOf(pick.n, this.rules.yield));
       }
+      this.gainXp(p, XP.luggage);
     } else {
+      this.gainXp(p, def.tool === 'hand' ? XP.pick : XP.fell);
+      // Forager: sometimes one more from bushes, branches and stones; Scavenger from wreckage.
+      const first = def.drops[0];
+      const extra =
+        def.tool === 'hand'
+          ? PERK_STEP.forager * this.rank(p, 'forager')
+          : type === NODE.scrap
+            ? 0.5 * this.rank(p, 'scavenger')
+            : 0;
+      if (first && extra > 0 && this.random() < extra) this.give(p, first.item, 1);
       for (const drop of def.drops) {
         const chance = drop.chance ?? 1;
         if (chance < 1 && this.random() >= chance) continue;
@@ -676,8 +706,8 @@ export class IslandSim {
     if (!this.cooldownOk(p, weapon?.cooldown ?? 0.6)) return;
     const dmg = weapon?.damage ?? HAND_DAMAGE;
     this.fx('swing', p.x, p.z, p.id);
-    if (weapon && wear(p.inv, p.held)) this.toast(p.id, `Your ${held?.name ?? 'weapon'} broke.`);
-    damageMob(this, m, dmg, p.id, weapon?.burn ?? 0);
+    if (weapon && this.wearHeld(p)) this.toast(p.id, `Your ${held?.name ?? 'weapon'} broke.`);
+    damageMob(this, m, this.hitDamage(p, m, dmg, false), p.id, weapon?.burn ?? 0);
     this.dirty(p);
   }
 
@@ -701,7 +731,9 @@ export class IslandSim {
       const fed = m.fed && m.fed.by === p.id ? m.fed.n + 1 : 1;
       m.fed = { by: p.id, n: fed };
       this.fx('eat', m.x, m.z, p.id);
-      if (fed >= animal.feeds) {
+      // Animal friend: they trust you one feeding sooner.
+      const feeds = Math.max(1, animal.feeds - this.rank(p, 'animal_friend'));
+      if (fed >= feeds) {
         const name = PET_NAMES[m.id % PET_NAMES.length] as string;
         m.tame = {
           owner: p.id,
@@ -714,9 +746,10 @@ export class IslandSim {
         m.st = 'idle';
         this.fx('heal', m.x, m.z, p.id);
         this.toast(p.id, `${animal.icon} The ${animal.noun} trusts you now. Meet ${name}!`);
+        this.gainXp(p, XP.tame);
         this.petsChanged();
       } else {
-        this.toast(p.id, `The ${animal.noun} eats from your hand (${fed}/${animal.feeds}).`);
+        this.toast(p.id, `The ${animal.noun} eats from your hand (${fed}/${feeds}).`);
       }
       this.dirty(p);
       return;
@@ -728,7 +761,7 @@ export class IslandSim {
     }
     const gives = animal.gives;
     if (gives && this.time >= tame.next) {
-      tame.next = this.time + gives.every;
+      tame.next = this.time + gives.every * (this.rank(p, 'animal_friend') ? 0.5 : 1);
       this.give(p, gives.item, 1);
       this.toast(
         p.id,
@@ -825,6 +858,7 @@ export class IslandSim {
         if (fresh) {
           this.broadcastProgress();
           this.fx('pickup', s.x, s.z, p.id);
+          this.gainXp(p, XP.note);
         }
         return;
       }
@@ -865,6 +899,7 @@ export class IslandSim {
         }
         remove(p.inv, 'sap', GENERATOR_SAP);
         this.flags.add('bunker_power');
+        this.gainXp(p, XP.secret);
         this.fx('unlock', s.x, s.z, p.id);
         this.broadcast({
           type: 'toast',
@@ -885,6 +920,7 @@ export class IslandSim {
           return;
         }
         this.flags.add('antenna_taken');
+        this.gainXp(p, XP.secret);
         this.give(p, 'antenna', 1);
         this.broadcast({
           type: 'toast',
@@ -982,6 +1018,7 @@ export class IslandSim {
       seed.n -= 1;
       if (seed.n <= 0) p.inv[p.inv.indexOf(seed)] = null;
       b.crop = { id: def.id, grow: 0, wet: this.rainingOn(b.x, b.z) ? WET_SECONDS : 0 };
+      this.gainXp(p, XP.plant);
       this.fx('gather', b.x, b.z, p.id);
       this.broadcast({ type: 'build', b: this.net(b) });
       this.dirty(p);
@@ -990,7 +1027,10 @@ export class IslandSim {
     const def = CROP_BY_ID[crop.id];
     if (!def) return;
     if (crop.grow >= 1) {
-      this.give(p, def.out, yieldOf(this.between(def.yield), this.rules.yield));
+      // Green thumb 2: one more from every harvest.
+      const more = this.rank(p, 'green_thumb') >= 2 ? 1 : 0;
+      this.give(p, def.out, yieldOf(this.between(def.yield), this.rules.yield) + more);
+      this.gainXp(p, XP.harvest);
       const seeds = this.between(def.seeds);
       if (seeds > 0) this.give(p, def.seed, seeds);
       if (def.regrows) crop.grow = 0.5;
@@ -1157,8 +1197,7 @@ export class IslandSim {
     const ammoId = ammo.id;
     const extra = ITEMS[ammoId]?.ammo;
     remove(p.inv, ammoId, 1);
-    if (wear(p.inv, p.held))
-      this.toast(p.id, `Your ${ITEMS[held?.id ?? '']?.name ?? 'bow'} broke.`);
+    if (this.wearHeld(p)) this.toast(p.id, `Your ${ITEMS[held?.id ?? '']?.name ?? 'bow'} broke.`);
     const look = SHOTS.indexOf(ammoId as (typeof SHOTS)[number]);
     this.fx('shot', p.x + dx * far, p.z + dz * far, p.id, bow.speed, Math.max(0, look));
     if (hit) {
@@ -1166,7 +1205,7 @@ export class IslandSim {
         mob: hit.id,
         at: this.time + far / bow.speed,
         by: p.id,
-        dmg: bow.damage + (extra?.damage ?? 0),
+        dmg: this.hitDamage(p, hit, bow.damage + (extra?.damage ?? 0), true),
         burn: extra?.burn ?? 0,
       });
     }
@@ -1210,7 +1249,12 @@ export class IslandSim {
     }
     if (def.heal) {
       // Meals heal over time; medicine also clears poison.
-      p.heals.push({ perSec: def.heal.hp / def.heal.seconds, until: this.time + def.heal.seconds });
+      // Field medic: more from every bandage, medicine and meal.
+      const medic = 1 + PERK_STEP.field_medic * this.rank(p, 'field_medic');
+      p.heals.push({
+        perSec: (def.heal.hp * medic) / def.heal.seconds,
+        until: this.time + def.heal.seconds,
+      });
       if (!def.food) p.poisonUntil = 0;
       this.fx('heal', p.x, p.z, p.id);
     }
@@ -1238,9 +1282,9 @@ export class IslandSim {
     return false;
   }
 
-  private onCraft(p: SimPlayer, recipeId: string): void {
+  private onCraft(p: SimPlayer, recipeId: string, last = true): boolean {
     const r = RECIPES[recipeId];
-    if (!p.alive || !r) return;
+    if (!p.alive || !r) return false;
     if (r.station !== 'hand' && !this.stationNear(p.x, p.z, r.station)) {
       this.toast(
         p.id,
@@ -1252,18 +1296,21 @@ export class IslandSim {
               ? 'Stand by a cooking pot with a lit campfire next to it.'
               : 'Stand next to a workbench.',
       );
-      return;
+      return false;
     }
     const from = this.rules.craftFromChests ? [p.inv, ...this.chests()] : [p.inv];
     if (!removeFrom(from, r.needs)) {
       this.toast(p.id, 'Not enough materials.');
-      return;
+      return false;
     }
     if (from.length > 1) this.chestsChanged();
     this.give(p, r.out, r.n);
     p.crafted++;
-    this.fx('craft', p.x, p.z, p.id);
-    this.toast(p.id, `Crafted ${r.n > 1 ? `${r.n} ` : ''}${ITEMS[r.out]?.name ?? r.out}`);
+    this.gainXp(p, r.station === 'bench' || r.station === 'mash' ? XP.craftBench : XP.craft);
+    if (last) {
+      this.fx('craft', p.x, p.z, p.id);
+      this.toast(p.id, `Crafted ${r.n > 1 ? `${r.n} ` : ''}${ITEMS[r.out]?.name ?? r.out}`);
+    }
     if (r.out === 'radio') {
       this.broadcast({
         type: 'toast',
@@ -1273,6 +1320,59 @@ export class IslandSim {
       this.broadcastProgress();
     }
     this.dirty(p);
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Levels and skills (skills.ts).
+
+  /** XP for something a player did; a new level brings a skill point. */
+  gainXp(p: SimPlayer, n: number): void {
+    if (n <= 0) return;
+    const before = levelFor(p.xp);
+    p.xp += n;
+    const after = levelFor(p.xp);
+    if (after > before) {
+      this.fx('levelup', p.x, p.z, p.id, after);
+      this.toast(p.id, `⭐ Level ${after}! A skill point to spend: 🎒 › Skills.`);
+    }
+    this.dirty(p);
+  }
+
+  private onLearn(p: SimPlayer, perk: unknown): void {
+    const id = String(perk) as PerkId;
+    const why = cantLearn(p.perks, p.xp, id);
+    if (why) {
+      this.toast(p.id, why);
+      return;
+    }
+    p.perks[id] = rankOf(p.perks, id) + 1;
+    this.fx('craft', p.x, p.z, p.id);
+    this.dirty(p);
+  }
+
+  /** A perk's rank for a player (0 when they don't have it). */
+  rank(p: SimPlayer | undefined, id: PerkId): number {
+    return p ? rankOf(p.perks, id) : 0;
+  }
+
+  /** Wears the held tool or weapon (Tinkerer: sometimes it doesn't); true if it broke. */
+  private wearHeld(p: SimPlayer): boolean {
+    if (this.random() < PERK_STEP.tinkerer * this.rank(p, 'tinkerer')) return false;
+    return wear(p.inv, p.held);
+  }
+
+  /** Damage a player's blow or shot does to a monster, with their perks. */
+  private hitDamage(p: SimPlayer, m: Mob, base: number, ranged: boolean): number {
+    let dmg = base;
+    dmg *=
+      1 +
+      (ranged
+        ? PERK_STEP.marksman * this.rank(p, 'marksman')
+        : PERK_STEP.brawler * this.rank(p, 'brawler'));
+    const max = MONSTERS[m.kind].hp;
+    if (m.hp < max / 2 && this.rank(p, 'executioner')) dmg *= 1 + PERK_STEP.executioner;
+    return Math.round(dmg * 10) / 10;
   }
 
   /** Why a building can't go here, or null if it can. */
@@ -1310,7 +1410,8 @@ export class IslandSim {
       if (slot.n <= 0) p.inv[made] = null;
     } else {
       const from = this.rules.craftFromChests ? [p.inv, ...this.chests()] : [p.inv];
-      if (!removeFrom(from, def.cost)) {
+      const cost = costFor(kind, PERK_STEP.carpenter * this.rank(p, 'carpenter'));
+      if (!removeFrom(from, cost)) {
         this.toast(p.id, `Not enough materials for the ${def.name.toLowerCase()}.`);
         this.fx('deny', x, z, p.id);
         return;
@@ -1345,7 +1446,10 @@ export class IslandSim {
       x,
       z,
       rot: Math.floor(rot) & 3,
-      hp: BUILDINGS[kind]?.hp ?? 100,
+      // Sturdy build: tougher pieces.
+      hp: Math.round(
+        (BUILDINGS[kind]?.hp ?? 100) * (1 + PERK_STEP.sturdy * this.rank(p, 'sturdy')),
+      ),
       owner: p.id,
       v: kind === 'campfire' ? CAMPFIRE_FUEL_START : 0,
       acc: 0,
@@ -1356,6 +1460,7 @@ export class IslandSim {
     this.buildings.set(b.id, b);
     this.broadcast({ type: 'build', b: this.net(b) });
     this.fx('build', x, z, p.id);
+    this.gainXp(p, XP.build);
     this.dirty(p);
   }
 
@@ -1440,6 +1545,7 @@ export class IslandSim {
       return;
     }
     this.flags.add(flag);
+    this.gainXp(p, XP.secret);
     const got = (spot.loot ?? []).map((l) => {
       this.give(p, l.item, l.n);
       return `${l.n} ${ITEMS[l.item]?.name ?? l.item}`;
@@ -1460,6 +1566,7 @@ export class IslandSim {
   /** A note found somewhere other than a spot (a treasure map): shared, and shown to the finder. */
   private findNote(p: SimPlayer, id: string): void {
     if (!NOTES[id]) return;
+    if (!this.notes.has(id)) this.gainXp(p, XP.note);
     this.notes.add(id);
     this.send(p.id, { type: 'event', e: 'note', id });
   }
@@ -1489,7 +1596,7 @@ export class IslandSim {
       return;
     }
     if (!this.cooldownOk(p, held.weapon?.cooldown ?? 0.75)) return;
-    if (wear(p.inv, p.held)) this.toast(p.id, 'Your shovel broke.');
+    if (this.wearHeld(p)) this.toast(p.id, 'Your shovel broke.');
     const left = (this.digs.get(n) ?? DIG_HP) - held.tool.power;
     this.fx('dig', at.x, at.z, p.id);
     if (left > 0) {
@@ -1499,6 +1606,7 @@ export class IslandSim {
     }
     this.digs.delete(n);
     this.flags.add(`dug:${n}`);
+    this.gainXp(p, XP.secret);
     this.makeBag(
       at.x,
       at.z,
@@ -1567,7 +1675,11 @@ export class IslandSim {
   /** `bloom`: the Bloom did it (the difficulty rule scales it). */
   hurtPlayer(p: SimPlayer, dmg: number, x: number, z: number, bloom = true): void {
     if (!p.alive || p.escaped) return;
-    if (bloom) dmg = (dmg * this.rules.difficulty) / 100;
+    if (bloom) {
+      dmg = (dmg * this.rules.difficulty) / 100;
+      // Thick skin.
+      dmg *= 1 - PERK_STEP.thick_skin * this.rank(p, 'thick_skin');
+    }
     p.hp -= dmg;
     this.fx('hit', p.x, p.z, p.id, Math.round(dmg));
     void x;
@@ -1673,6 +1785,7 @@ export class IslandSim {
     const page = PAGES.find((id) => !this.notes.has(id));
     if (!page) return;
     this.notes.add(page);
+    this.gainXp(p, XP.page);
     const n = PAGES.indexOf(page) + 1;
     this.send(p.id, { type: 'event', e: 'note', id: page });
     this.broadcast({
@@ -1758,6 +1871,12 @@ export class IslandSim {
     if (crossed(NIGHT_END) && now.phase < 0.5) {
       this.broadcast({ type: 'event', e: 'dawn', text: `Dawn. Day ${now.day}.` });
       burrowAll(this);
+      // Everyone who made it through the night (a Bloom night counts for more).
+      const bloomed = dayInfo(this.time - 30, this.rules.bloomEvery).bloom;
+      for (const id of this.online) {
+        const q = this.players.get(id);
+        if (q?.alive && !q.escaped) this.gainXp(q, bloomed ? XP.bloomDawn : XP.dawn);
+      }
     }
   }
 
@@ -1781,10 +1900,12 @@ export class IslandSim {
       if (!p || !p.alive || p.escaped) continue;
       const before = `${Math.round(p.hp)}|${Math.round(p.food)}|${Math.round(p.water)}`;
       const hunger = hungerScale(this.rules.hunger);
-      p.food = Math.max(0, p.food - FOOD_DECAY * hunger * dt);
+      // Iron stomach: slower hunger and thirst.
+      const stomach = 1 - PERK_STEP.iron_stomach * this.rank(p, 'iron_stomach');
+      p.food = Math.max(0, p.food - FOOD_DECAY * hunger * stomach * dt);
       // Out in the rain you drink as you go.
       const rain = this.rainingOn(p.x, p.z) ? 0.5 : 1;
-      p.water = Math.max(0, p.water - WATER_DECAY * hunger * rain * dt);
+      p.water = Math.max(0, p.water - WATER_DECAY * hunger * rain * stomach * dt);
       if (p.food <= 0) p.hp -= STARVE * dt;
       if (p.water <= 0) p.hp -= STARVE * dt;
       const poisoned = this.time < p.poisonUntil;
@@ -1849,7 +1970,10 @@ export class IslandSim {
     const before = cropNet(crop).join();
     const def = CROP_BY_ID[crop.id];
     if (this.rainingOn(b.x, b.z)) crop.wet = WET_SECONDS;
-    if (def && crop.grow < 1 && crop.wet > 0) crop.grow = Math.min(1, crop.grow + dt / def.grow);
+    // Green thumb: the planter's crops grow faster.
+    const thumb = 1 + PERK_STEP.green_thumb * this.rank(this.players.get(b.owner), 'green_thumb');
+    if (def && crop.grow < 1 && crop.wet > 0)
+      crop.grow = Math.min(1, crop.grow + (dt * thumb) / def.grow);
     crop.wet = Math.max(0, crop.wet - dt);
     if (cropNet(crop).join() !== before) this.broadcast({ type: 'build', b: this.net(b) });
   }
@@ -2041,6 +2165,8 @@ export class IslandSim {
       kills: p.kills,
       crafted: p.crafted,
       deaths: p.deaths,
+      xp: p.xp,
+      perks: p.perks,
     };
     const key = JSON.stringify(me);
     if (this.lastMe.get(p.id) === key) return;

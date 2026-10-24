@@ -530,6 +530,14 @@ export function slotsOf(kind: string): number {
   return BUILDINGS[kind]?.slots ?? 0;
 }
 
+/** A piece's cost with a discount (Carpenter: 0.15 a rank); never below one of each. */
+export function costFor(kind: string, discount = 0): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [id, n] of Object.entries(BUILDINGS[kind]?.cost ?? {}))
+    out[id] = Math.max(1, Math.round(n * (1 - discount)));
+  return out;
+}
+
 /** What taking a piece down gives back: half of each material (a single part comes back). */
 export function refundOf(kind: string): Record<string, number> {
   const out: Record<string, number> = {};

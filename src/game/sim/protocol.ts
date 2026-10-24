@@ -4,6 +4,7 @@
 import type { IslandParts } from '../islands';
 import type { WorldRules } from '../rules';
 import type { WeatherKind } from './weather';
+import type { Perks } from '../skills';
 
 export interface Slot {
   id: string;
@@ -25,7 +26,10 @@ export type C2S =
   | { type: 'shoot'; x: number; z: number }
   | { type: 'eat'; slot: number }
   | { type: 'equip'; slot: number }
-  | { type: 'craft'; recipe: string }
+  /** `n`: how many (1–20), each checked like one craft. */
+  | { type: 'craft'; recipe: string; n?: number }
+  /** Spend a skill point on a perk (skills.ts). */
+  | { type: 'learn'; perk: string }
   | { type: 'place'; slot: number; x: number; z: number; rot: number }
   /** Build mode: put a piece down, paid for from the bag (buildings.ts `cost`). */
   | { type: 'build'; kind: string; x: number; z: number; rot: number }
@@ -121,6 +125,8 @@ export interface MeNet {
   kills: number;
   crafted: number;
   deaths: number;
+  xp: number;
+  perks: Perks;
 }
 
 export interface RescueNet {
@@ -192,6 +198,8 @@ export type FxKind =
   | 'lightning'
   /** A shovel bites into the sand. */
   | 'dig'
+  /** A new level (`n`: the level). */
+  | 'levelup'
   /** An arrow, bolt or stone flying from `by` to (x, z); `n`: its speed, `r`: SHOTS index. */
   | 'shot';
 

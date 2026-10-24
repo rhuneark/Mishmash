@@ -10,6 +10,7 @@ import {
   STATION_RANGE,
   slotsOf,
   type BuildCat,
+  costFor,
 } from '../game/content/buildings';
 import { ITEMS, type ItemDef, type ToolKind } from '../game/content/items';
 import { MONSTERS, type MonsterKind } from '../game/content/monsters';
@@ -56,6 +57,7 @@ import {
 import { MONSTER_RADIUS } from '../game/sim/sim';
 import { dayInfo, lowTide, type DayInfo } from '../game/sim/time';
 import { GENERATOR_SAP } from '../game/content/secrets';
+import { PERK_STEP, levelFor, pointsFor, spent, xpForLevel, type PerkId } from '../game/skills';
 import { WEATHER_KINDS, type WeatherKind } from '../game/sim/weather';
 import { footprint, pushOutOfBox } from '../game/sim/types';
 import { DEEP, HALF, forNodesNear, heightAt, poolNear, type Island } from '../game/world';
@@ -197,6 +199,8 @@ export type ClientFx =
   | { type: 'node'; id: number; gone: boolean; fell: boolean }
   /** Items that just landed in your bag (picked up, crafted, taken). */
   | { type: 'gain'; id: string; n: number }
+  /** XP earned (a popup over your head). */
+  | { type: 'xp'; n: number }
   | { type: 'swing'; id: string }
   | { type: 'build'; b: BuildingNet; fresh: boolean }
   | { type: 'unbuild'; id: number }
@@ -434,6 +438,12 @@ export class GameClient {
         const before = this.me;
         if (before && msg.me.hp < before.hp - 0.5 && msg.me.alive) this.hurtFlash = 1;
         if (before?.alive && msg.me.alive) this.gains(before.inv, msg.me.inv);
+        if (before && msg.me.xp > before.xp) this.emit({ type: 'xp', n: msg.me.xp - before.xp });
+        if (before && levelFor(msg.me.xp) > levelFor(before.xp))
+          this.showBanner(
+            `⭐ Level ${levelFor(msg.me.xp)}! Spend your skill point in 🎒 › Skills.`,
+            'info',
+          );
         this.me = msg.me;
         break;
       }
@@ -757,7 +767,9 @@ export class GameClient {
       speed = (sprint ? RUN : WALK) * len;
       if (heightAt(island, this.x, this.z) < 0.05) speed *= 0.6;
       if (sprint) {
-        this.stamina = Math.max(0, this.stamina - STAMINA_DRAIN * dt);
+        // Runner: breath lasts longer.
+        const runner = 1 + PERK_STEP.runner * (this.me?.perks.runner ?? 0);
+        this.stamina = Math.max(0, this.stamina - (STAMINA_DRAIN / runner) * dt);
         if (this.stamina === 0) this.tired = true;
       }
       this.mv = sprint ? 2 : 1;
@@ -1112,16 +1124,20 @@ export class GameClient {
     return n;
   }
 
+  /** What a piece costs you (Carpenter makes it cheaper). */
+  costOf(kind: string): Record<string, number> {
+    return costFor(kind, PERK_STEP.carpenter * (this.me?.perks.carpenter ?? 0));
+  }
+
   /** A made piece in the bag, or everything its cost asks for. */
   canBuild(kind: string): boolean {
     if (this.madeCount(kind) > 0) return true;
-    const cost = BUILDINGS[kind]?.cost ?? {};
-    return Object.entries(cost).every(([id, n]) => this.craftCount(id) >= n);
+    return Object.entries(this.costOf(kind)).every(([id, n]) => this.craftCount(id) >= n);
   }
 
   /** What a piece still needs, in words. */
   missingFor(kind: string): string {
-    const need = Object.entries(BUILDINGS[kind]?.cost ?? {})
+    const need = Object.entries(this.costOf(kind))
       .filter(([id, n]) => this.craftCount(id) < n)
       .map(([id, n]) => `${n - this.craftCount(id)} ${ITEMS[id]?.name.toLowerCase() ?? id}`);
     return need.length ? `Needs ${need.join(', ')} more.` : '';
@@ -1781,8 +1797,26 @@ export class GameClient {
     this.send({ type: 'eat', slot });
   }
 
-  craft(recipe: string): void {
-    this.send({ type: 'craft', recipe });
+  craft(recipe: string, n = 1): void {
+    this.send({ type: 'craft', recipe, ...(n > 1 ? { n } : {}) });
+  }
+
+  /** Spends a skill point (the authority checks it). */
+  learn(perk: PerkId): void {
+    this.send({ type: 'learn', perk });
+  }
+
+  /** Your level, XP and skill points (skills.ts). */
+  progress(): { level: number; xp: number; from: number; to: number; points: number } {
+    const xp = this.me?.xp ?? 0;
+    const level = levelFor(xp);
+    return {
+      level,
+      xp,
+      from: xpForLevel(level),
+      to: xpForLevel(level + 1),
+      points: pointsFor(level) - spent(this.me?.perks ?? {}),
+    };
   }
 
   moveSlot(from: number, to: number): void {

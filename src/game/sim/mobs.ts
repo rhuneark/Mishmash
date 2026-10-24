@@ -9,6 +9,7 @@ import { monsterScale, spawnsPerSecond, speedFor, wildlifeScale } from '../rules
 import { BIOME, biomeAt, heightAt, hitCollider } from '../world';
 import type { IslandSim } from './sim';
 import { DAY } from './time';
+import { PERK_STEP, XP } from '../skills';
 import { BASE_CLEAR } from './place';
 import { circleHitsBox, footprint, type Mob, type SimPlayer } from './types';
 
@@ -103,6 +104,7 @@ function killMob(sim: IslandSim, m: Mob): void {
     return;
   }
   const killer = m.lastHitBy ? sim.players.get(m.lastHitBy) : undefined;
+  if (killer) sim.gainXp(killer, XP.kill[m.kind] ?? 5);
   if (m.kind === 'snapjaw' && m.spot >= 0) {
     sim.snapDeadUntil.set(m.spot, sim.time + DAY);
     sim.snapMob.delete(m.spot);
@@ -618,11 +620,21 @@ function walker(sim: IslandSim, m: Mob, dt: number, night: boolean): void {
   // Fog hides you: they notice you closer (not on a Bloom night).
   const fog = sim.weather.kind === 'fog' && !m.enraged ? 0.6 : 1;
   const aggro = (night || m.enraged ? def.aggroNight : def.aggroDay) * (m.enraged ? 1.5 : 1) * fog;
+  // Night owl: noticed closer at night.
+  const owl = (p: SimPlayer) =>
+    night && !m.enraged ? 1 - PERK_STEP.night_owl * sim.rank(p, 'night_owl') : 1;
   const sees = (p: SimPlayer) =>
     m.enraged || !sim.hidden(p) || dist(p.x, p.z, m.x, m.z) < STEALTH_RANGE;
   let target = alivePlayer(sim, m.target);
   if (target && (dist(target.x, target.z, m.x, m.z) > aggro * 1.6 || !sees(target))) target = null;
-  if (!target) target = nearestPlayer(sim, m.x, m.z, aggro, sees);
+  if (!target)
+    target = nearestPlayer(
+      sim,
+      m.x,
+      m.z,
+      aggro,
+      (p) => sees(p) && dist(p.x, p.z, m.x, m.z) <= aggro * owl(p),
+    );
   m.target = target?.id ?? null;
 
   // Fire: the taken keep out of the light (and back out of it).

@@ -475,7 +475,7 @@ function BuildPanel({
       )}
       {def && (
         <div className="build-cost" aria-label="Cost">
-          {Object.entries(def.cost).map(([id, n]) => {
+          {Object.entries(client.costOf(piece as string)).map(([id, n]) => {
             const have = client.craftCount(id);
             return (
               <span key={id} className={`build-need${have >= n ? '' : ' short'}`}>

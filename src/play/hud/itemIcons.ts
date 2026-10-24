@@ -860,3 +860,8 @@ export function itemIconUrl(id: string): string {
   }
   return url;
 }
+
+/** A gold star: XP popups and the level badge. */
+export const STAR_ICON = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path d="M24 4 L29.5 17.5 L44 18.5 L33 28 L36.5 42.5 L24 34.5 L11.5 42.5 L15 28 L4 18.5 L18.5 17.5 Z" fill="#ffd34a" ${O}/><path d="M24 11 L27.5 20 L20.5 20 Z" fill="#fff3b0"/></svg>`,
+)}`;

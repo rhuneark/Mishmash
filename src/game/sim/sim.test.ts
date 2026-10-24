@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BIOME, biomeAt, generateIsland, forNodesNear, type Island } from '../world';
 import { ITEMS } from '../content/items';
 import { MONSTERS } from '../content/monsters';
+import { BUILDINGS } from '../content/buildings';
 import { noteText } from '../content/notes';
 import { GENERATOR_SAP, bunkerCode, hullNumber, wreckCode } from '../content/secrets';
 import { NODE } from '../content/nodes';
@@ -1459,5 +1460,61 @@ describe('building anywhere, flush, and a base the Bloom keeps out of', () => {
       if (m.kind === 'snapjaw' || m.kind === 'mother') continue;
       expect(h.sim.baseAt(m.x, m.z, BASE_CLEAR - 0.5)).toBe(false);
     }
+  });
+});
+
+describe('levels and skills on the island', () => {
+  it('earns XP for crafting and learns a perk with the point', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    h.sim.give(p, 'fiber', 30);
+    h.sim.handle('a', { type: 'craft', recipe: 'rope', n: 5 });
+    expect(count(p.inv, 'rope')).toBe(5);
+    expect(p.xp).toBe(15);
+    h.sim.handle('a', { type: 'learn', perk: 'carpenter' });
+    expect(p.perks.carpenter).toBeUndefined();
+    h.sim.gainXp(p, 200);
+    expect(h.toasts('a').some((t) => t.includes('Level 2'))).toBe(true);
+    h.sim.handle('a', { type: 'learn', perk: 'carpenter' });
+    expect(p.perks.carpenter).toBe(1);
+    // Saved and loaded.
+    const save = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())))!;
+    expect(save.players['a']?.perks).toEqual({ carpenter: 1 });
+    expect(save.players['a']?.xp).toBe(p.xp);
+  });
+
+  it('applies perks: tougher skin, cheaper building, a heavier swing', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    h.sim.hurtPlayer(p, 20, p.x, p.z);
+    const plain = 100 - p.hp;
+    p.hp = 100;
+    p.perks = { thick_skin: 3 };
+    h.sim.hurtPlayer(p, 20, p.x, p.z);
+    expect(100 - p.hp).toBeCloseTo(plain * (1 - 0.24), 3);
+    // Carpenter 2: a wooden wall costs less wood.
+    p.perks = { carpenter: 2 };
+    h.sim.give(p, 'wood', 10);
+    h.sim.give(p, 'rope', 5);
+    const wood = count(p.inv, 'wood');
+    const at = [...Array(40).keys()]
+      .map((k) => ({
+        x: Math.round(p.x) + 4 + (k % 8) * 2,
+        z: Math.round(p.z) + 4 + Math.floor(k / 8) * 2 + 0,
+      }))
+      .find((s) => !h.sim.placeProblem('wall_wood', s.x + 1, s.z, 0))!;
+    h.sim.handle('a', { type: 'build', kind: 'wall_wood', x: at.x + 1, z: at.z, rot: 0 });
+    const cost = BUILDINGS['wall_wood']?.cost['wood'] ?? 0;
+    expect(wood - count(p.inv, 'wood')).toBe(Math.max(1, Math.round(cost * 0.7)));
+    // Brawler 3: 30% more from a blow.
+    p.perks = { brawler: 3 };
+    const m = spawnMob(h.sim, 'husk', p.x + 1, p.z, { roamer: true });
+    h.run(1);
+    m.x = p.x + 1;
+    m.z = p.z;
+    h.sim.handle('a', { type: 'use', kind: 'mob', id: m.id });
+    expect(MONSTERS.husk.hp - m.hp).toBeCloseTo(5 * 1.3, 3);
   });
 });

@@ -13,7 +13,7 @@ import { circleHitsBox, colorFor, footprint } from '../game/sim/types';
 import { BIOME, biomeAt, forNodesNear, heightAt, type Island } from '../game/world';
 import type { Sound, Sfx } from './audio';
 import { RUN, type ChatLine, type ClientFx, type GameClient, type MoveInput } from './client';
-import { itemIconUrl } from './hud/itemIcons';
+import { STAR_ICON, itemIconUrl } from './hud/itemIcons';
 import { buzz } from './prefs';
 import { Actor, setBlobShadows } from './render/actors';
 import { Ambient } from './render/ambient';
@@ -449,6 +449,13 @@ export class View {
         if (this.popups.length > 6) this.popups.shift();
         return;
       }
+      case 'xp': {
+        const last = this.popups[this.popups.length - 1];
+        const y = last && last.life > 1.2 ? last.y + 0.9 : 2.5;
+        this.popups.push({ y, text: `+${e.n} XP`, icon: STAR_ICON, life: 1.4 });
+        if (this.popups.length > 6) this.popups.shift();
+        return;
+      }
       case 'swing': {
         const a = e.id === this.client.you ? this.me : this.others.get(e.id);
         if (a) a.swing = 1;
@@ -674,6 +681,17 @@ export class View {
           life: 0.6,
         });
         this.sfx('pickup', x, z);
+        break;
+      case 'levelup':
+        this.fx.burst(x, y + 1.2, z, 30, FX_COLORS.gold, {
+          speed: 3,
+          up: 5,
+          glow: true,
+          life: 1.2,
+        });
+        this.fx.ring(x, y, z, 2.5, 0xffd34a, 0.9, { grow: true });
+        this.sfx('unlock', x, z);
+        if (mine) buzz('success');
         break;
       case 'lightning': {
         const line = lightningBolt(x, y, z, Math.floor(x * 31 + z * 17));

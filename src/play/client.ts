@@ -454,7 +454,14 @@ export class GameClient {
         return;
       case 'me': {
         const before = this.me;
-        if (before && msg.me.hp < before.hp - 0.5 && msg.me.alive) this.hurtFlash = 1;
+        if (before && msg.me.hp < before.hp - 0.5 && msg.me.alive) {
+          this.hurtFlash = 1;
+          // Build mode stands you still: something biting you takes you out of it.
+          if (this.build && this.hostileNear(4)) {
+            this.toggleBuild(false);
+            this.toast('Under attack! Out of build mode.');
+          }
+        }
         if (before?.alive && msg.me.alive) this.gains(before.inv, msg.me.inv);
         if (before && msg.me.xp > before.xp) this.emit({ type: 'xp', n: msg.me.xp - before.xp });
         if (before && levelFor(msg.me.xp) > levelFor(before.xp))
@@ -1117,6 +1124,14 @@ export class GameClient {
     const stack = this.removeStack();
     if (!stack.length) return null;
     return stack[this.removePick % stack.length] ?? null;
+  }
+
+  /** A hostile monster this close to you. */
+  private hostileNear(r: number): boolean {
+    for (const m of this.mobs.values())
+      if (MONSTERS[m.kind]?.hostile && m.dying <= 0 && Math.hypot(m.x - this.x, m.z - this.z) <= r)
+        return true;
+    return false;
   }
 
   /** Take-down: points at this piece (a tap or the mouse on it). False if out of reach. */

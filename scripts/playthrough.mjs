@@ -370,6 +370,12 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await menu.waitFor({ state: 'detached' });
   check((await page.locator('.level-badge').count()) === 1, `${tag} hud: no level badge`);
 
+  // Nothing roams while we build (build mode stands you still, and a bite takes you out of it).
+  await game(page, () => {
+    const sim = window.__game.client.link.sim;
+    window.__calmBuild = setInterval(() => sim.mobs.clear(), 100);
+  });
+
   // Build a campfire: pick it in build mode, and it's paid for straight from the bag.
   await teleport(page, 12, 272);
   await page.getByRole('button', { name: 'Build mode' }).click();
@@ -742,6 +748,8 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   }
   await page.getByRole('button', { name: 'Leave build mode' }).first().click();
   await page.locator('.build-panel').waitFor({ state: 'detached' });
+
+  await game(page, () => clearInterval(window.__calmBuild));
 
   // Night falls; a Husk comes. Fight it with a machete.
   await give(page, [['machete', 1]]);

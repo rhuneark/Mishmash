@@ -323,7 +323,8 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   **Build mode is its own mode** (v1.20, the user: "in build mode you can't select anything to
   trash because it just moves you"): the survivor stands still (`client.update` turns the stick
   and keys into `panBuild`), the stick, 🎒 and 🏃 go away, and the camera looks at
-  `client.buildLook` (≤ `BUILD_RANGE` − 4 from you). On a touch screen (Game.tsx): **tap** the
+  `client.buildLook` (≤ `BUILD_RANGE` − 4 from you); a bite from a monster within 4 m takes you
+  out of build mode ("Under attack!"). On a touch screen (Game.tsx): **tap** the
   island to put the piece there, or in take-down to pick the piece under the finger
   (`view.pickBuilding`: a raycast on the built pieces, nearest first, so a tap on a wall picks
   the wall, not the ground behind it; `client.pickPiece`); **drag the piece** (a touch within

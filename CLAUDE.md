@@ -285,7 +285,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   is open; sideways they sit left of the minimap), journal (objectives, notes, cargo code so far,
   Kessler pages, tips), map, bag + crafting sheet, storage box, keypad, pause menu, death and
   win screens. Floating joystick on the left half (touch only: a mouse clicks the island
-  through it).
+  through it; gone in build mode).
 - **Pause menu** (`hud/Menu.tsx`, ☰ or Esc; `client.menuPage`: main / settings / friends /
   howto / island): Resume, Settings, Journal, Map, Play with friends (room code), This island,
   How to play, Save and quit. Solo play pauses while it's open (`link.pause`, also when the app is in the background).
@@ -320,8 +320,18 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   `BuildingDef.cost` from the bag (and from storage with the craft-from-storage rule).
   Taking a piece down gives `refundOf` back (half of each material, a single part comes back).
   The camera pulls back and a grid shows on the ground around the piece (`view.updateGrid`).
-  The piece follows the mouse on PC (`view.groundAt` raycast, re-aimed every frame) or a
-  finger dragged on the island (aimed 56 px above it), **anywhere on the grid you can see**:
+  **Build mode is its own mode** (v1.20, the user: "in build mode you can't select anything to
+  trash because it just moves you"): the survivor stands still (`client.update` turns the stick
+  and keys into `panBuild`), the stick, 🎒 and 🏃 go away, and the camera looks at
+  `client.buildLook` (≤ `BUILD_RANGE` − 4 from you). On a touch screen (Game.tsx): **tap** the
+  island to put the piece there, or in take-down to pick the piece under the finger
+  (`view.pickBuilding`: a raycast on the built pieces, nearest first, so a tap on a wall picks
+  the wall, not the ground behind it; `client.pickPiece`); **drag the piece** (a touch within
+  1.6 m of the ghost) to move it; **drag anywhere else** to look around (the ground under the
+  finger stays under it). On PC the piece follows the mouse (`view.groundAt`, re-aimed every
+  frame; in take-down the piece under the mouse, picked again only when it changes so the wheel
+  can step down the stack) and WASD looks around. The picked piece gets a red box
+  (`doomBox`). Pieces go **anywhere on the grid you can see**:
   within `BUILD_RANGE` 22 m of you (`setBuildCursor`; the authority allows `BUILD_REACH` 24,
   the take-down 25; the user asked for v1.19: "place things anywhere inside the grid, not just
   what's around the character"). ⟲ ⟳ / R / the wheel turn it (quarter turns), ▦ Snap (G) and the grid
@@ -336,15 +346,17 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   neighbour's, so benches, chests and furniture sit flush against walls and each other.
   **Layers** (`BuildingDef.layer`): floors (`floor`, need flatter ground, 1.2 m) and rugs
   (`rug`) lie under things and roofs (`roof`, at `WALL_HEIGHT` 2.6 m) over them; a piece only
-  collides with pieces of its own layer. **Roofs** (v1.19 rework; the user: "you can't remove
-  the roof"): touching roof tiles join into one roof (view.ts `roofState`: neighbour masks
-  `ROOF_N/E/S/W`, `roofGeometry` draws eaves only on open edges); the whole roof you stand under
-  lifts away (every tile joined to the one over you); in build mode roofs are see-through
-  ghosts while placing roofs or taking down (`ROOF_GHOST`) and hidden while placing anything
-  else. Place = the action button, click or Space; the take-down tool demolishes the piece
-  under the cursor (`removeTarget`, red ring): of the pieces stacked there (`removeStack`: roof,
-  then things, rug, floor) it takes the top one; ⟳ / R / the wheel pick the next one down and
-  the panel says "N of M here". Esc / V / ✕ leaves.
+  collides with pieces of its own layer. **Roofs**: touching roof tiles join into one roof
+  (view.ts `roofState`: neighbour masks `ROOF_N/E/S/W`, `roofGeometry` draws eaves only on open
+  edges). **The roof switch** (🏠 on the build panel, T on PC; `client.roofView`, v1.20, the
+  user's spec): **Auto** (and always outside build mode): the whole roof over you, and in build
+  mode the one over the cursor, fades to 10% (`ROOF_FADE`, casts no shadow) and the take-down
+  tool skips roofs; **On**: every roof solid, and the take-down tool picks the roof first;
+  **Off**: no roofs drawn, so you reach what's under them. Place = the action button, click or
+  Space; the take-down tool demolishes the piece under the cursor (`removeTarget`, red ring and
+  box): of the pieces stacked there (`removeStack`: roof (with On), then things, rug, floor) it
+  takes the top one; ⟳ / R / the wheel pick the next one and the panel says "N of M here".
+  Esc / V / ✕ leaves.
   Outside build mode a held legacy placeable still shows the ghost in front of you.
   **Pieces**: campfire, workbench, Mashbench, storage box, bedroll, torch post, heart lantern;
   wooden/short/window/scrap walls, door, gate, posts, fences and fence gate, stone walls and
@@ -478,7 +490,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   up to 3 keys or mouse buttons (`Mouse0`… and `WheelUp/Down`); one key never does two things
   (`bind` moves it); saved per player in appStorage under `mishmash_keys` (`parseBindings`
   repairs it). Defaults: WASD/arrows, Shift sprint, Space/E/left click action, F eat, Q drop,
-  R turn, V build mode, G snap, Tab/I/B survivor menu, C crafting, L skills, J journal,
+  R turn, V build mode, G snap, T roofs (build mode), Tab/I/B survivor menu, C crafting, L skills, J journal,
   M map, H hide/show the HUD, Enter chat (co-op), 1–6 hotbar, wheel cycles the hotbar (turns the piece in build
   mode), = and - move the camera (saved as the camera setting). Esc is fixed (opens and closes
   the menu, steps back a menu page). Key hints show on devices with a mouse
@@ -658,7 +670,9 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # pictures, the small bag window: drag and drop, Mashbench, research page,
                             # auto tool, a supply pod, the bag window's place, isometric and
                             # top-down walking, quests, build mode (grid, corner, post, turn,
-                            # snap, take down, a post 10+ m away, a roof off a floor), pause menu, This island (change the spawn
+                            # snap, take down, a post 10+ m away, a roof off a floor with
+                            # roofs On; touch: no stick, a tap picks the roof (On) or the
+                            # floor (Off), a drag looks around and the survivor stays), pause menu, This island (change the spawn
                             # rate), a bow shot, planting and watering, feeding a goat, the
                             # bunker sign, HUD settings, settings, rebinding a key, landscape,
                             # save/continue, replace confirm), hub settings and local co-op on
@@ -718,8 +732,10 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   updated: + farming, cooking, animals, taming, weather, archery, treasure, puzzles, secrets,
   voting retired) and v1.19.0 (2026-10-24, the user's list: build anywhere on the grid you can
   see, flush snapping, roofs that join and come down again, no Bloom spawning in bases, the
-  survivor menu with crafting by category, player levels and a skill tree) are private builds
-  until the user asks to publish them.
+  survivor menu with crafting by category, player levels and a skill tree) and v1.20.0 (build
+  mode as its own mode for phones: the survivor stands still, tap / drag the piece / drag to
+  look around; the roof switch Auto / On / Off) are private builds until the user asks to
+  publish them.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

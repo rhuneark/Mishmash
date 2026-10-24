@@ -187,32 +187,72 @@ export function Game(props: {
     });
   }, [settings, touch, map]);
 
-  // Build mode: the mouse, or a finger on the island, moves the piece.
+  // Build mode on a touch screen (the survivor stands still, there's no stick): tap the
+  // island to put the piece there (or pick what to take down), drag the piece to move it,
+  // drag anywhere else to look around. The mouse aims every frame (the frame loop).
   useEffect(() => {
     const el = canvas.current;
     if (!el || !ready) return;
-    let finger: number | null = null;
-    const aim = (e: PointerEvent) => {
+    let finger: {
+      id: number;
+      x0: number;
+      y0: number;
+      x: number;
+      y: number;
+      /** Dragging the piece: where it sits from the ground under the finger. */
+      grab: { x: number; z: number } | null;
+      moved: boolean;
+    } | null = null;
+    const tap = (x: number, y: number) => {
       const view = viewRef.current;
       if (!view || !client.build) return;
-      const p = toLocal(e.clientX, e.clientY);
-      // A finger would hide the piece: aim a little above it.
-      const at = view.groundAt(p.x, p.y - (e.pointerType === 'mouse' ? 0 : 56));
+      if (client.build.piece === 'remove') {
+        const id = view.pickBuilding(x, y);
+        if (id !== null && client.pickPiece(id)) return;
+      }
+      const at = view.groundAt(x, y);
       if (at) client.setBuildCursor(at);
     };
     const down = (e: PointerEvent) => {
-      if (!client.build) return;
-      if (e.pointerType !== 'mouse') finger = e.pointerId;
-      aim(e);
+      if (e.pointerType === 'mouse' || !client.build || finger) return;
+      const view = viewRef.current;
+      if (!view) return;
+      const p = toLocal(e.clientX, e.clientY);
+      const at = view.groundAt(p.x, p.y);
+      const cur = client.ghost;
+      const grab =
+        at && cur && client.build.piece !== 'remove' && Math.hypot(at.x - cur.x, at.z - cur.z) < 1.6
+          ? { x: cur.x - at.x, z: cur.z - at.z }
+          : null;
+      finger = { id: e.pointerId, x0: p.x, y0: p.y, x: p.x, y: p.y, grab, moved: false };
+      el.setPointerCapture?.(e.pointerId);
     };
     const move = (e: PointerEvent) => {
       if (e.pointerType === 'mouse') {
         mouseAt.current = toLocal(e.clientX, e.clientY);
-        if (client.build) aim(e);
-      } else if (e.pointerId === finger) aim(e);
+        return;
+      }
+      const view = viewRef.current;
+      if (!finger || e.pointerId !== finger.id || !view || !client.build) return;
+      const p = toLocal(e.clientX, e.clientY);
+      if (!finger.moved && Math.hypot(p.x - finger.x0, p.y - finger.y0) < 10) return;
+      finger.moved = true;
+      if (finger.grab) {
+        const at = view.groundAt(p.x, p.y);
+        if (at) client.setBuildCursor({ x: at.x + finger.grab.x, z: at.z + finger.grab.z });
+      } else {
+        // The ground under the finger stays under it.
+        const a = view.groundAt(finger.x, finger.y);
+        const b = view.groundAt(p.x, p.y);
+        if (a && b) client.panBuild(a.x - b.x, a.z - b.z);
+      }
+      finger.x = p.x;
+      finger.y = p.y;
     };
     const up = (e: PointerEvent) => {
-      if (e.pointerId === finger) finger = null;
+      if (!finger || e.pointerId !== finger.id) return;
+      if (!finger.moved && e.type === 'pointerup') tap(finger.x0, finger.y0);
+      finger = null;
     };
     const leave = () => {
       mouseAt.current = null;
@@ -221,11 +261,13 @@ export function Game(props: {
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerleave', leave);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
     return () => {
       el.removeEventListener('pointerdown', down);
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerleave', leave);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
     };
   }, [client, ready]);
 
@@ -268,6 +310,7 @@ export function Game(props: {
     let fogSave = 0;
     let fpsAcc = 0;
     let frames = 0;
+    let hover: number | null = null;
     map.fog.reveal(client.x, client.z);
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -275,11 +318,16 @@ export function Game(props: {
       last = now;
       // The stick and keys are screen directions; the island turns with the camera.
       client.update(dt, view.toWorld(input.move()), input.useHeld);
-      // The piece stays under the mouse while you walk.
+      // Build mode: the piece stays under the mouse; taking down, the piece the mouse is on
+      // (picked again only when it moves to another, so the wheel can step down the stack).
       const m = mouseAt.current;
       if (client.build && m) {
-        const at = view.groundAt(m.x, m.y);
-        if (at) client.setBuildCursor(at);
+        const id = client.build.piece === 'remove' ? view.pickBuilding(m.x, m.y) : null;
+        if (id === null || (id !== hover && !client.pickPiece(id))) {
+          const at = view.groundAt(m.x, m.y);
+          if (at) client.setBuildCursor(at);
+        }
+        hover = id;
       }
       // A bow in hand aims at the mouse.
       client.setAim(m && client.heldItem()?.ranged ? view.groundAt(m.x, m.y) : null);
@@ -339,6 +387,7 @@ export function Game(props: {
     input.on('turn', () => client.turnGhost());
     input.on('build', () => client.toggleBuild());
     input.on('snap', () => prefs.set({ buildSnap: !prefs.get().buildSnap }));
+    input.on('roofs', () => client.build && client.setRoofView());
     input.on('hud', () => prefs.set({ hudOn: !prefs.get().hudOn }));
     input.on('chat', () => !client.panel && client.toggleChat(true));
     // The survivor menu's tabs (or, by the setting, the small window by your survivor).

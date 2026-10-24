@@ -561,7 +561,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     await pressUntil(page, hasFar, far);
     check(await game(page, hasFar, far), `${tag} build: nothing placed ${far} away`);
   }
-  // Roofs come down again: the take-down tool picks the roof over a floor first.
+  // Roofs come down again: with 🏠 On the take-down tool picks the roof over a floor first.
   const cell = await game(page, () => {
     const c = window.__game.client;
     const sim = c.link.sim;
@@ -604,6 +604,13 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     );
     await page.locator('.build-bar').getByRole('tab', { name: 'Take down' }).click();
     await game(page, ([x, z]) => window.__game.client.setBuildCursor({ x, z }), cell);
+    // Auto: roofs fade under the cursor and don't come down; 🏠 On: they do.
+    check(
+      (await game(page, () => window.__game.client.removeStack().length)) === 1,
+      `${tag} build: roofs auto still offers the roof`,
+    );
+    await page.getByRole('button', { name: 'Roofs: auto' }).click();
+    await page.getByRole('button', { name: 'Roofs: on' }).waitFor();
     await until(
       page,
       () => {
@@ -635,6 +642,103 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     );
     const left = await game(page, stacked, cell);
     check(left === 'floor_wood', `${tag} build: the roof didn't come down (${left})`);
+
+    // Build mode on a touch screen: no stick, the survivor stands still; a drag on the
+    // island looks around, a tap picks the piece under the finger (the roof with 🏠 On,
+    // what's under it with 🏠 Off).
+    check(
+      (await page.locator('.joy-zone').count()) === 0,
+      `${tag} build: the stick is still there`,
+    );
+    await give(page, [
+      ['fiber', 20],
+      ['wood', 20],
+    ]);
+    await game(
+      page,
+      ([x, z]) => {
+        const c = window.__game.client;
+        c.link.sim.handle(c.you, { type: 'build', kind: 'roof_thatch', x, z, rot: 0 });
+        c.panBuild(x - c.x - c.buildLook.x, z - c.z - c.buildLook.z);
+      },
+      cell,
+    );
+    await page.waitForTimeout(1800);
+    const cdp = await page.context().newCDPSession(page);
+    const finger = (type, x, y) =>
+      cdp.send('Input.dispatchTouchEvent', {
+        type,
+        touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }],
+      });
+    // Where a spot on the island is on screen, and whether the island is what's there.
+    const onScreen = (p) =>
+      game(
+        page,
+        ([x, up, z]) => {
+          const view = window.__view;
+          const cam = view.camera;
+          const y = view.y(x, z) + up;
+          const mul = (e, v) =>
+            [0, 1, 2, 3].map(
+              (r) => e[r] * v[0] + e[4 + r] * v[1] + e[8 + r] * v[2] + e[12 + r] * v[3],
+            );
+          const q = mul(
+            cam.projectionMatrix.elements,
+            mul(cam.matrixWorldInverse.elements, [x, y, z, 1]),
+          );
+          const sx = ((q[0] / q[3] + 1) / 2) * innerWidth;
+          const sy = ((1 - q[1] / q[3]) / 2) * innerHeight;
+          return [sx, sy, document.elementFromPoint(sx, sy)?.tagName === 'CANVAS'];
+        },
+        p,
+      );
+    const tapAt = async ([x, y]) => {
+      await finger('touchStart', x, y);
+      await page.waitForTimeout(60);
+      await finger('touchEnd', x, y);
+      await page.waitForTimeout(500);
+    };
+    const picked = () => {
+      const c = window.__game.client;
+      const id = c.build?.remove;
+      return id !== null && id !== undefined ? c.buildings.get(id)?.kind : null;
+    };
+    const roofSpot = await onScreen([cell[0], 2.9, cell[1]]);
+    check(roofSpot[2], `${tag} build: the roof is under the HUD (${roofSpot})`);
+    await tapAt(roofSpot);
+    const gotRoof = await game(page, picked);
+    check(gotRoof === 'roof_thatch', `${tag} build: a tap with roofs on picked ${gotRoof}`);
+    await page.getByRole('button', { name: 'Roofs: on' }).click();
+    await page.getByRole('button', { name: 'Roofs: off' }).waitFor();
+    const floorSpot = await onScreen([cell[0], 0.05, cell[1]]);
+    await tapAt(floorSpot);
+    const gotFloor = await game(page, picked);
+    check(gotFloor === 'floor_wood', `${tag} build: a tap with roofs off picked ${gotFloor}`);
+    await shot('6c-roofs-off');
+    await page.getByRole('button', { name: 'Roofs: off' }).click();
+    await page.getByRole('button', { name: 'Roofs: auto' }).waitFor();
+    // A drag looks around; the survivor stays put.
+    const stood = await game(page, () => [window.__game.client.x, window.__game.client.z]);
+    const look0 = await game(page, () => ({ ...window.__game.client.buildLook }));
+    const [fx, fy] = floorSpot;
+    await finger('touchStart', fx, fy);
+    for (let k = 1; k <= 10; k++) {
+      await finger('touchMove', fx - k * 8, fy + k * 6);
+      await page.waitForTimeout(40);
+    }
+    await finger('touchEnd', fx - 80, fy + 60);
+    await page.waitForTimeout(400);
+    const look1 = await game(page, () => ({ ...window.__game.client.buildLook }));
+    const stood1 = await game(page, () => [window.__game.client.x, window.__game.client.z]);
+    check(
+      Math.hypot(look1.x - look0.x, look1.z - look0.z) > 1,
+      `${tag} build: a drag didn't look around`,
+    );
+    check(
+      Math.hypot(stood1[0] - stood[0], stood1[1] - stood[1]) < 0.01,
+      `${tag} build: the survivor moved in build mode`,
+    );
+    await cdp.detach();
   }
   await page.getByRole('button', { name: 'Leave build mode' }).first().click();
   await page.locator('.build-panel').waitFor({ state: 'detached' });

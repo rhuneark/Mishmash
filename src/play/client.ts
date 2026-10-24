@@ -84,6 +84,9 @@ const LOOT_NAMES: Record<string, string> = {
   wreck_hold: "the ship's hold",
 };
 const GHOST_AHEAD = 2.6;
+/** Build mode: how fast the stick or keys move the camera (m/s), and how far it may go. */
+const BUILD_PAN_SPEED = 14;
+const BUILD_LOOK_MAX = BUILD_RANGE - 4;
 /** Pieces go down this far from you at most (the authority allows 7 m). */
 /** Pieces come down this far from you (the authority allows 5.2 m). */
 
@@ -100,6 +103,14 @@ export interface BuildMode {
   /** The building the remove tool points at. */
   remove: number | null;
 }
+/**
+ * Roofs in build mode: 'on' draws them solid and the take-down tool picks them; 'off' hides
+ * them so you reach what's under; 'auto' (and always outside build mode) fades the roof
+ * you're under, or the cursor is under, to a faint outline.
+ */
+export type RoofView = 'auto' | 'on' | 'off';
+export const ROOF_VIEWS: RoofView[] = ['auto', 'on', 'off'];
+
 /** A piece in the build menu: made ones in the bag are used first, else its materials. */
 export interface BuildPiece {
   kind: string;
@@ -278,6 +289,10 @@ export class GameClient {
   build: BuildMode | null = null;
   /** What build mode last put down (it opens on that again). */
   private lastPiece = 'campfire';
+  /** Build mode: where the camera looks, from you (the survivor stands still). */
+  buildLook = { x: 0, z: 0 };
+  /** Build mode's roof switch. */
+  roofView: RoofView = 'auto';
   /** Snap to the grid and its cell size (Settings, set by Game). */
   buildPrefs = { snap: true, grid: 2 };
 
@@ -762,6 +777,12 @@ export class GameClient {
     if (this.phase !== 'ready' || !island) return;
     this.smoothOthers(dt);
     const alive = !!this.me?.alive && !this.me.escaped;
+    // Build mode stands you still: the stick and keys look around instead.
+    if (this.build) {
+      if (input.x !== 0 || input.z !== 0)
+        this.panBuild(input.x * BUILD_PAN_SPEED * dt, input.z * BUILD_PAN_SPEED * dt);
+      input = { x: 0, z: 0, sprint: false };
+    }
     const moving = alive && !this.panelBlocksMove() && (input.x !== 0 || input.z !== 0);
     let speed = 0;
     if (moving) {
@@ -1066,14 +1087,17 @@ export class GameClient {
   /**
    * The pieces under the take-down cursor, topmost first (roofs, then walls and furniture,
    * then rugs and floors): what you see from above is what comes down. ⟳ steps through them.
+   * Roofs only with the roof switch on.
    */
   removeStack(): number[] {
     if (!this.build) return [];
     const at = this.buildPoint('wall_wood');
     if (Math.hypot(at.x - this.x, at.z - this.z) > BUILD_REACH) return [];
     const order = { roof: 0, undefined: 1, rug: 2, floor: 3 } as Record<string, number>;
+    const roofs = this.roofView === 'on';
     const under: { id: number; rank: number; d: number }[] = [];
     for (const b of this.buildings.values()) {
+      if (!roofs && BUILDINGS[b.kind]?.layer === 'roof') continue;
       const box = footprint(b.kind, b.x, b.z, b.rot);
       const dx = Math.max(box.minX - at.x, 0, at.x - box.maxX);
       const dz = Math.max(box.minZ - at.z, 0, at.z - box.maxZ);
@@ -1093,6 +1117,46 @@ export class GameClient {
     const stack = this.removeStack();
     if (!stack.length) return null;
     return stack[this.removePick % stack.length] ?? null;
+  }
+
+  /** Take-down: points at this piece (a tap or the mouse on it). False if out of reach. */
+  pickPiece(id: number): boolean {
+    const b = this.buildings.get(id);
+    if (!this.build || this.build.piece !== 'remove' || !b) return false;
+    this.setBuildCursor({ x: b.x, z: b.z });
+    const i = this.removeStack().indexOf(id);
+    if (i < 0) return false;
+    this.removePick = i;
+    this.updateGhost();
+    this.touch();
+    return true;
+  }
+
+  /** Where build mode points on the island (the cursor, or in front of you). */
+  buildAt(): { x: number; z: number } | null {
+    return this.build ? this.buildPoint(this.ghost?.kind ?? 'wall_wood') : null;
+  }
+
+  /** Build mode: moves the camera (kept within reach of you). */
+  panBuild(dx: number, dz: number): void {
+    if (!this.build) return;
+    let x = this.buildLook.x + dx;
+    let z = this.buildLook.z + dz;
+    const d = Math.hypot(x, z);
+    if (d > BUILD_LOOK_MAX) {
+      x *= BUILD_LOOK_MAX / d;
+      z *= BUILD_LOOK_MAX / d;
+    }
+    this.buildLook = { x, z };
+  }
+
+  /** The roof switch: auto → on → off (or straight to one). */
+  setRoofView(v?: RoofView): void {
+    this.roofView =
+      v ?? (ROOF_VIEWS[(ROOF_VIEWS.indexOf(this.roofView) + 1) % ROOF_VIEWS.length] as RoofView);
+    this.removePick = 0;
+    this.updateGhost();
+    this.touch();
   }
 
   turnGhost(dir = 1): void {
@@ -1148,6 +1212,7 @@ export class GameClient {
 
   /** Build mode on or off. */
   toggleBuild(on = !this.build): void {
+    this.buildLook = { x: 0, z: 0 };
     if (!on) {
       this.build = null;
     } else {
@@ -1608,9 +1673,9 @@ export class GameClient {
         const b = this.build.remove !== null ? this.buildings.get(this.build.remove) : undefined;
         return b
           ? { text: `Take down ${BUILDINGS[b.kind]?.name ?? ''}`, kind: 'place' }
-          : { text: '', kind: 'none', blocked: 'Point at something you built.' };
+          : { text: '', kind: 'place', blocked: 'Pick something you built.' };
       }
-      if (!this.ghost) return { text: '', kind: 'none', blocked: 'Pick a piece to build.' };
+      if (!this.ghost) return { text: '', kind: 'place', blocked: 'Pick a piece to build.' };
     }
     if (this.ghost) {
       const name = BUILDINGS[this.ghost.kind]?.name ?? held?.name ?? '';

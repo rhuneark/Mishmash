@@ -12,7 +12,14 @@ import { NIGHT_END, NIGHT_START, daylight, lowTide } from '../game/sim/time';
 import { circleHitsBox, colorFor, footprint } from '../game/sim/types';
 import { BIOME, biomeAt, forNodesNear, heightAt, type Island } from '../game/world';
 import type { Sound, Sfx } from './audio';
-import { RUN, type ChatLine, type ClientFx, type GameClient, type MoveInput } from './client';
+import {
+  RUN,
+  type ChatLine,
+  type ClientFx,
+  type GameClient,
+  type MoveInput,
+  type RoofView,
+} from './client';
 import { STAR_ICON, itemIconUrl } from './hud/itemIcons';
 import { buzz } from './prefs';
 import { Actor, setBlobShadows } from './render/actors';
@@ -108,24 +115,22 @@ interface Label {
 /** DOM labels over the canvas (names, health bars, damage numbers). */
 /** Seconds a chat line shows over the speaker's head. */
 const BUBBLE_SECONDS = 6;
-/** Roof pieces this close to you hide (Zomboid-style cutaway). */
-/** See-through roofs in build mode, so you can aim at them and at what's below. */
-const ROOF_GHOST = new THREE.MeshLambertMaterial({
+/** The roof you're under (or building under): a faint outline, so you see inside. */
+const ROOF_FADE = new THREE.MeshLambertMaterial({
   vertexColors: true,
   flatShading: true,
   transparent: true,
-  opacity: 0.42,
+  opacity: 0.1,
   depthWrite: false,
 });
 
 interface RoofState {
   /** Which sides of each roof tile have a neighbour (ROOF_N…). */
   masks: Map<number, number>;
-  /** The roof over you: lifted away so you can see inside. */
-  over: Set<number>;
-  /** 'ghost': see-through (placing roofs, taking down); 'hidden': out of the way (building
-   * inside); 'normal' otherwise. */
-  mode: 'normal' | 'ghost' | 'hidden';
+  /** Roof tiles drawn faint: the whole roof over you (and over the build cursor). */
+  faded: Set<number>;
+  /** The roof switch ('auto' outside build mode). */
+  mode: RoofView;
 }
 
 class Labels {
@@ -211,6 +216,9 @@ export class View {
     depthWrite: false,
   });
   private readonly ring: THREE.Mesh;
+  /** A red box around the piece the take-down tool has picked. */
+  private readonly doomBox: THREE.BoxHelper;
+  private doomId: number | null = null;
   private readonly lights: THREE.PointLight[] = [];
   private readonly labels: Labels;
   private readonly focus = new THREE.Vector3();
@@ -316,6 +324,13 @@ export class View {
     );
     this.ring.renderOrder = 3;
     this.scene.add(this.ring);
+    this.doomBox = new THREE.BoxHelper(new THREE.Object3D(), 0xff5a5a);
+    const boxMat = this.doomBox.material as THREE.LineBasicMaterial;
+    boxMat.depthTest = false;
+    boxMat.transparent = true;
+    this.doomBox.renderOrder = 4;
+    this.doomBox.visible = false;
+    this.scene.add(this.doomBox);
     this.labels = new Labels(overlay);
     this.me = this.newPlayer(client.you);
     this.terrain.prime(client.x, client.z, this.terrainRadius);
@@ -1086,10 +1101,13 @@ export class View {
     const ease = 1 - Math.exp(-dt * 2.5);
     this.lead.x += ((c.speed > 0 ? Math.sin(c.ry) : 0) * 2.4 * run - this.lead.x) * ease;
     this.lead.z += ((c.speed > 0 ? Math.cos(c.ry) : 0) * 2.4 * run - this.lead.z) * ease;
+    // Build mode: the survivor stands still and the camera looks where you move it.
+    const lx = c.build ? c.x + c.buildLook.x : c.x;
+    const lz = c.build ? c.z + c.buildLook.z : c.z;
     const target = tmpVec.set(
-      c.x + this.lead.x - toCamX * rig.ahead,
-      this.y(c.x, c.z) + 0.8,
-      c.z + this.lead.z - toCamZ * rig.ahead,
+      lx + this.lead.x - toCamX * rig.ahead,
+      this.y(lx, lz) + 0.8,
+      lz + this.lead.z - toCamZ * rig.ahead,
     );
     this.focus.lerp(target, 1 - Math.exp(-dt * 8));
     const portrait = this.camera.aspect < 1;
@@ -1202,6 +1220,7 @@ export class View {
   private roofKey = '';
   private roofMasks = new Map<number, number>();
   private roofLinks = new Map<number, number[]>();
+  private roofFaded = new Set<number>();
 
   /** Roof tiles: who touches whom (for eaves and for lifting the roof you're under). */
   private roofState(): RoofState {
@@ -1232,27 +1251,29 @@ export class View {
         this.roofLinks.set(a.id, links);
       }
     }
-    const build = c.build;
-    const mode = build
-      ? build.piece === 'remove' || BUILDINGS[build.piece]?.layer === 'roof'
-        ? 'ghost'
-        : 'hidden'
-      : 'normal';
-    // The whole roof you stand under (every tile joined to the one above you) lifts away.
-    const over = new Set<number>();
-    if (mode === 'normal') {
-      const start = tiles.find((b) =>
-        circleHitsBox(c.x, c.z, 0.4, footprint(b.kind, b.x, b.z, b.rot)),
-      );
-      const queue = start ? [start.id] : [];
-      while (queue.length) {
-        const id = queue.pop() as number;
-        if (over.has(id)) continue;
-        over.add(id);
-        for (const n of this.roofLinks.get(id) ?? []) if (!over.has(n)) queue.push(n);
+    // Auto: the whole roof over you (and, building, over the cursor) fades; every tile
+    // joined to the one above you goes with it.
+    const mode: RoofView = c.build ? c.roofView : 'auto';
+    const faded = new Set<number>();
+    if (mode === 'auto') {
+      const spots = [{ x: c.x, z: c.z }];
+      const at = c.buildAt();
+      if (at) spots.push(at);
+      for (const p of spots) {
+        const start = tiles.find((b) =>
+          circleHitsBox(p.x, p.z, 0.4, footprint(b.kind, b.x, b.z, b.rot)),
+        );
+        const queue = start ? [start.id] : [];
+        while (queue.length) {
+          const id = queue.pop() as number;
+          if (faded.has(id)) continue;
+          faded.add(id);
+          for (const n of this.roofLinks.get(id) ?? []) if (!faded.has(n)) queue.push(n);
+        }
       }
     }
-    return { masks: this.roofMasks, over, mode };
+    this.roofFaded = faded;
+    return { masks: this.roofMasks, faded, mode };
   }
 
   private showRoof(roof: THREE.Mesh, id: number, net: { kind: string; rot: number }, s: RoofState) {
@@ -1263,9 +1284,12 @@ export class View {
     }
     // Shaped in world directions: undo the piece's own turn.
     roof.rotation.y = -net.rot * (Math.PI / 2);
-    roof.visible = s.mode === 'ghost' || (s.mode === 'normal' && !s.over.has(id));
-    const mat = s.mode === 'ghost' ? ROOF_GHOST : MAT.lit;
+    roof.visible = s.mode !== 'off';
+    const fade = s.faded.has(id);
+    const mat = fade ? ROOF_FADE : MAT.lit;
     if (roof.material !== mat) roof.material = mat;
+    // A faint roof doesn't darken the room under it.
+    roof.castShadow = !fade;
   }
 
   /** The bunker door swings open; the wreck's breach floods with the tide. */
@@ -1449,11 +1473,54 @@ export class View {
     return { x, z };
   }
 
+  /**
+   * The built piece under a spot on screen (px in the canvas): what you see there, nearest
+   * first, so a tap on a wall picks the wall and not the ground behind it. Roofs only count
+   * with the roof switch on.
+   */
+  pickBuilding(px: number, py: number): number | null {
+    if (!this.w || !this.h) return null;
+    tmpV2.set((px / this.w) * 2 - 1, -(py / this.h) * 2 + 1);
+    this.raycaster.setFromCamera(tmpV2, this.camera);
+    const roofs = this.client.roofView === 'on';
+    const shown = (o: THREE.Object3D | null): boolean => {
+      for (let p = o; p; p = p.parent) if (!p.visible) return false;
+      return true;
+    };
+    let best: number | null = null;
+    let bestD = Infinity;
+    for (const [id, b] of this.builds) {
+      const g = b.view.group;
+      if (!g.visible) continue;
+      for (const hit of this.raycaster.intersectObject(g, true)) {
+        if (hit.distance >= bestD) break;
+        if (!shown(hit.object)) continue;
+        if (hit.object === b.view.roof && (!roofs || this.roofFaded.has(id))) continue;
+        bestD = hit.distance;
+        best = id;
+        break;
+      }
+    }
+    return best;
+  }
+
   private updateRing(): void {
     const t = this.client.target;
     // The remove tool points at a piece: a red ring under it.
     const rm = this.client.build?.remove;
     const doomed = rm !== null && rm !== undefined ? this.client.buildings.get(rm) : undefined;
+    const doomView = doomed ? this.builds.get(rm as number)?.view : undefined;
+    if (doomView) {
+      if (this.doomId !== rm) {
+        this.doomId = rm as number;
+        // The roof mesh is shaped in world directions, so the box fits it too.
+        this.doomBox.setFromObject(doomView.group);
+      }
+      this.doomBox.visible = true;
+    } else {
+      this.doomId = null;
+      this.doomBox.visible = false;
+    }
     if (doomed) {
       this.ring.visible = true;
       this.ring.position.set(doomed.x, this.y(doomed.x, doomed.z) + 0.06, doomed.z);

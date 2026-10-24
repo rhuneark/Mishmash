@@ -11,7 +11,7 @@ import {
 import { HOTBAR } from '../../game/sim/inventory';
 import { clockLabel } from '../../game/sim/time';
 import type { WeatherKind } from '../../game/sim/weather';
-import type { GameClient } from '../client';
+import type { GameClient, RoofView } from '../client';
 import type { Input } from '../input';
 import type { Sound } from '../audio';
 import { toLocal } from '../screen';
@@ -209,7 +209,8 @@ export function Hud(props: HudProps) {
           {client.banner.text}
         </div>
       )}
-      <Joystick input={input} />
+      {/* Build mode stands the survivor still: the whole island takes taps and drags. */}
+      {!build && <Joystick input={input} />}
       <div className="hud-actions">
         <div className={`action-label${label.blocked ? ' blocked' : ''}`}>
           {!label.blocked && label.text && hint('use') ? (
@@ -247,27 +248,31 @@ export function Hud(props: HudProps) {
                 }
               />
             )}
-            <button
-              className={`round-btn big${client.quickOpen || panel === 'bag' || panel === 'craft' || panel === 'skills' ? ' on' : ''}`}
-              onClick={() => client.toggleBag('bag')}
-              aria-label="Bag and crafting"
-              title={withKey('Survivor, bag and crafting', hint('quick'))}
-            >
-              🎒
-              {client.progress().points > 0 && <span className="btn-dot" aria-hidden="true" />}
-            </button>
-            <button
-              className={`round-btn big${input.sprintToggle ? ' on' : ''}`}
-              onClick={() => {
-                input.sprintToggle = !input.sprintToggle;
-                client.touch();
-              }}
-              aria-label="Sprint"
-              title={withKey('Sprint', hint('sprint'))}
-            >
-              🏃
-              <span className="stamina" style={{ height: `${client.stamina}%` }} />
-            </button>
+            {!build && (
+              <button
+                className={`round-btn big${client.quickOpen || panel === 'bag' || panel === 'craft' || panel === 'skills' ? ' on' : ''}`}
+                onClick={() => client.toggleBag('bag')}
+                aria-label="Bag and crafting"
+                title={withKey('Survivor, bag and crafting', hint('quick'))}
+              >
+                🎒
+                {client.progress().points > 0 && <span className="btn-dot" aria-hidden="true" />}
+              </button>
+            )}
+            {!build && (
+              <button
+                className={`round-btn big${input.sprintToggle ? ' on' : ''}`}
+                onClick={() => {
+                  input.sprintToggle = !input.sprintToggle;
+                  client.touch();
+                }}
+                aria-label="Sprint"
+                title={withKey('Sprint', hint('sprint'))}
+              >
+                🏃
+                <span className="stamina" style={{ height: `${client.stamina}%` }} />
+              </button>
+            )}
           </div>
           <UseButton client={client} input={input} sound={sound} kind={label.kind} />
         </div>
@@ -471,10 +476,10 @@ function BuildPanel({
           ✕
         </button>
       </div>
-      <div className="build-piece">{def ? def.name : 'Take pieces down (half comes back)'}</div>
+      <div className="build-piece">{def ? def.name : 'Take down (half comes back)'}</div>
       {removing && stack.length > 1 && (
         <div className="build-desc">
-          {at + 1} of {stack.length} here: ⟳ picks the next one down.
+          {at + 1} of {stack.length} here: ⟳ picks the next one.
         </div>
       )}
       {def && (
@@ -494,13 +499,6 @@ function BuildPanel({
       <div className="build-tools">
         <button
           className="round-btn"
-          onClick={() => client.turnGhost(-1)}
-          aria-label={removing ? 'Piece above' : 'Turn left'}
-        >
-          ⟲
-        </button>
-        <button
-          className="round-btn"
           onClick={() => client.turnGhost(1)}
           aria-label={removing ? 'Piece below' : 'Turn right'}
           title={withKey(removing ? 'Next piece here' : 'Turn', hint('turn'))}
@@ -511,10 +509,19 @@ function BuildPanel({
           className={`pill-btn${s.buildSnap ? ' on' : ''}`}
           role="switch"
           aria-checked={s.buildSnap}
+          aria-label="Snap to the grid"
           onClick={() => prefs.set({ buildSnap: !s.buildSnap })}
           title={withKey('Snap to the grid', hint('snap'))}
         >
-          ▦ Snap
+          ▦
+        </button>
+        <button
+          className={`pill-btn roof-switch${client.roofView === 'auto' ? '' : ' on'}`}
+          onClick={() => client.setRoofView()}
+          aria-label={`Roofs: ${client.roofView}`}
+          title={withKey(ROOF_HELP[client.roofView], hint('roofs'))}
+        >
+          🏠 {ROOF_LABEL[client.roofView]}
         </button>
         <button
           className="pill-btn"
@@ -527,15 +534,23 @@ function BuildPanel({
       <div className="build-tip">
         {removing
           ? pc
-            ? 'Point at a piece and click to take it down; the wheel picks the one below.'
-            : 'Drag onto a piece, then tap the button to take it down.'
+            ? 'Click a piece to take it down; the wheel picks the next one. WASD looks around.'
+            : 'Tap a piece to pick it. Drag to look around.'
           : pc
-            ? 'Point anywhere on the island: the wheel turns it, click to place.'
-            : 'Drag anywhere on the island to move it, then tap the build button.'}
+            ? 'Point anywhere: the wheel turns it, click places it. WASD looks around.'
+            : 'Tap or drag it into place. Drag the island to look around.'}
+        {removing && client.roofView !== 'on' && ' Roofs: 🏠 On.'}
       </div>
     </div>
   );
 }
+
+const ROOF_LABEL: Record<RoofView, string> = { auto: 'Auto', on: 'On', off: 'Off' };
+const ROOF_HELP: Record<RoofView, string> = {
+  auto: 'Roofs: auto (the one over you fades)',
+  on: 'Roofs: on (solid; take-down picks them)',
+  off: 'Roofs: off (hidden; reach what is under them)',
+};
 
 /** Build mode's menu: a tab per kind of piece, each piece showing if you have what it takes. */
 function BuildBar({ client }: { client: GameClient }) {
@@ -616,6 +631,13 @@ function Joystick({ input }: { input: Input }) {
   const [stick, setStick] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
   const pointer = useRef<number | null>(null);
   const R = 46;
+  useEffect(
+    () => () => {
+      input.joy.x = 0;
+      input.joy.z = 0;
+    },
+    [input],
+  );
   const move = (e: ReactPointerEvent, base: { x: number; y: number }) => {
     const p = toLocal(e.clientX, e.clientY);
     let dx = p.x - base.x;

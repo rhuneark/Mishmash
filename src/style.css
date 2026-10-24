@@ -1094,6 +1094,15 @@ button:disabled {
   gap: 6px;
 }
 
+.build-tools {
+  gap: 5px;
+}
+
+.build-tools .pill-btn {
+  min-width: 44px;
+  padding: 0 8px;
+}
+
 .pill-btn {
   min-height: 44px;
   padding: 0 12px;

@@ -293,7 +293,8 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     .first()
     .click();
   check(
-    (await page.locator('.recipe', { hasText: 'Campfire' }).count()) === 0,
+    (await page.locator('.recipe-name', { hasText: /^(Campfire|Bedroll|Workbench)\b/ }).count()) ===
+      0,
     `${tag} craft: buildings are still crafted`,
   );
   for (const name of ['Stone axe', 'Bandage']) {
@@ -794,10 +795,18 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     ['seed_corn', 2],
     ['watering_can', 1],
   ]);
-  await game(page, () => {
+  const plot = await game(page, () => {
     const c = window.__game.client;
-    c.link.sim.handle(c.you, { type: 'build', kind: 'garden_plot', x: c.x, z: c.z - 2, rot: 0 });
-    c.ry = Math.PI;
+    const sim = c.link.sim;
+    sim.handle(c.you, { type: 'build', kind: 'garden_plot', x: c.x, z: c.z - 2, rot: 0 });
+    const b = [...sim.buildings.values()].find((b) => b.kind === 'garden_plot');
+    return b && [b.x, b.z];
+  });
+  check(!!plot, `${tag} farm: the garden plot wasn't built`);
+  // Right next to it, facing it, so nothing else is nearer.
+  if (plot) await teleport(page, plot[0], plot[1] + 1.3);
+  await game(page, () => {
+    window.__game.client.ry = Math.PI;
   });
   await until(
     page,

@@ -1200,17 +1200,13 @@ export class GameClient {
       const r = reach + (MONSTER_RADIUS[m.kind] ?? 0.5) + 0.5;
       const d = Math.hypot(m.x - x, m.z - z);
       if (d > r) continue;
-      const s = score(m.x, m.z) - (def.hostile ? 5 : 0);
+      const act = this.animalAction(m);
+      // Holding an animal's food (or its egg is ready): it beats the bushes around it.
+      const tend = act.verb.startsWith('Feed') || act.verb.startsWith('Collect');
+      const s = score(m.x, m.z) - (def.hostile ? 5 : tend ? 2 : 0);
       if (s < foeScore) {
         foeScore = s;
-        foe = {
-          kind: 'mob',
-          id: m.id,
-          x: m.x,
-          z: m.z,
-          ...this.animalAction(m),
-          hostile: def.hostile,
-        };
+        foe = { kind: 'mob', id: m.id, x: m.x, z: m.z, ...act, hostile: def.hostile };
       }
     }
     if (foe && (foe as Target).hostile) return foe;

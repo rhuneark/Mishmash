@@ -803,6 +803,8 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     page,
     () => /^Plant .*seeds$/.test(window.__game.client.actionLabel().text),
     `${tag} farm: the plot doesn't offer to plant`,
+    // New models compile slowly on the software renderer: frames stall for a while.
+    40000,
   );
   const planted = () =>
     [...window.__game.client.buildings.values()].some((b) => b.kind === 'garden_plot' && b.crop);
@@ -812,6 +814,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     page,
     () => window.__game.client.actionLabel().text.startsWith('Water '),
     `${tag} farm: the can doesn't offer to water`,
+    40000,
   );
   const wet = () =>
     [...window.__game.client.buildings.values()].some(

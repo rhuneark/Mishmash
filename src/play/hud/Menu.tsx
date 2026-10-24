@@ -395,6 +395,12 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
             set={(v) => set({ autoBack: v })}
           />
           <Toggle
+            label="Small bag window"
+            desc="🎒 opens a small bag and craft window by your survivor that stays open while you play, instead of the survivor menu."
+            on={s.bagWindow}
+            set={(v) => set({ bagWindow: v })}
+          />
+          <Toggle
             label="Build: snap to the grid"
             desc="Walls line up along the grid and meet at the corners. Off: put pieces anywhere."
             on={s.buildSnap}

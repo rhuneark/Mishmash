@@ -1,19 +1,15 @@
-// Sheets over the game: bag and crafting, storage boxes, the cargo keypad,
-// the journal and notes (the menu and settings are in Menu.tsx).
+// Sheets over the game: storage boxes, the keypads, the journal and notes (the survivor
+// menu is in Character.tsx, the pause menu and settings in Menu.tsx).
 
 import { useState, type ReactNode } from 'react';
-import { ITEMS } from '../../game/content/items';
 import { NOTES, PAGES, noteText } from '../../game/content/notes';
 import { bloomOrdinal } from '../../game/rules';
 import { POIS } from '../../game/content/pois';
 import { SECRETS, TREASURES, bunkerCode } from '../../game/content/secrets';
-import { STATION_NAMES, STATIONS, RECIPE_LIST } from '../../game/content/recipes';
 import { knownCode, objectives, tagsFound } from '../../game/objectives';
-import { HOTBAR, INV_SIZE } from '../../game/sim/inventory';
 import type { GameClient } from '../client';
 import { keyHint } from '../keys';
-import { RecipeRow, StationChips } from './Craft';
-import { ItemIcon, SlotButton, quickUse } from './Slots';
+import { SlotButton } from './Slots';
 
 function Sheet({
   title,
@@ -41,168 +37,6 @@ function Sheet({
         </div>
         <div className="sheet-body">{children}</div>
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Bag and crafting.
-
-export function BagSheet({
-  client,
-  onClose,
-  tab: start,
-  pc,
-}: {
-  client: GameClient;
-  onClose: () => void;
-  tab: 'bag' | 'craft';
-  pc: boolean;
-}) {
-  const [tab, setTab] = useState(start);
-  return (
-    <Sheet
-      onClose={onClose}
-      wide
-      title={
-        <div className="tabs">
-          <button className={`tab-btn${tab === 'bag' ? ' on' : ''}`} onClick={() => setTab('bag')}>
-            🎒 Bag
-          </button>
-          <button
-            className={`tab-btn${tab === 'craft' ? ' on' : ''}`}
-            onClick={() => setTab('craft')}
-          >
-            🔨 Craft
-          </button>
-        </div>
-      }
-    >
-      {tab === 'bag' ? <BagTab client={client} pc={pc} /> : <CraftTab client={client} />}
-    </Sheet>
-  );
-}
-
-function BagTab({ client, pc }: { client: GameClient; pc: boolean }) {
-  const me = client.me;
-  const [sel, setSel] = useState<number | null>(null);
-  if (!me) return null;
-  const slot = sel !== null ? (me.inv[sel] ?? null) : null;
-  const def = slot ? ITEMS[slot.id] : undefined;
-  const grid = (from: number, to: number) => (
-    <div className="slot-grid">
-      {Array.from({ length: to - from }, (_, k) => {
-        const i = from + k;
-        return (
-          <SlotButton
-            key={i}
-            client={client}
-            slotRef={{ area: 'inv', index: i }}
-            slot={me.inv[i] ?? null}
-            className={`${sel === i ? 'sel' : ''}${me.held === i ? ' held' : ''}`}
-            onTap={() => setSel(sel === i ? null : i)}
-            onContext={() => quickUse(client, i)}
-          />
-        );
-      })}
-    </div>
-  );
-  return (
-    <div className="bag">
-      <div className="label">Hotbar</div>
-      {grid(0, HOTBAR)}
-      <div className="label">Bag</div>
-      {grid(HOTBAR, INV_SIZE)}
-      {slot && def && sel !== null ? (
-        <div className="item-info">
-          <div className="item-head">
-            <ItemIcon id={def.id} className="item-icon" />
-            <div>
-              <div className="item-name">
-                {def.name}
-                {slot.n > 1 ? ` ×${slot.n}` : ''}
-              </div>
-              <div className="item-desc">{describe(def.id)}</div>
-            </div>
-          </div>
-          <div className="item-actions">
-            {(def.food || def.heal) && (
-              <button className="btn small primary" onClick={() => client.eat(sel)}>
-                {def.heal ? 'Use' : def.food && def.food.water > def.food.food ? 'Drink' : 'Eat'}
-              </button>
-            )}
-            {sel < HOTBAR ? (
-              <button
-                className="btn small"
-                onClick={() => client.select(sel)}
-                disabled={me.held === sel}
-              >
-                {me.held === sel ? 'In hand' : 'Hold'}
-              </button>
-            ) : (
-              <button className="btn small" onClick={() => quickUse(client, sel)}>
-                To hotbar
-              </button>
-            )}
-            {!def.quest && (
-              <button
-                className="btn small ghost"
-                onClick={() => {
-                  client.dropSlot(sel);
-                  setSel(null);
-                }}
-              >
-                Drop
-              </button>
-            )}
-          </div>
-        </div>
-      ) : (
-        <p className="muted small-text">
-          Drag items to move them between slots. Tap one to eat it, hold it or drop it.
-          {pc ? ' Right-click eats, holds or sends it to the hotbar.' : ''}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function describe(id: string): string {
-  const d = ITEMS[id];
-  if (!d) return '';
-  const bits: string[] = [d.desc];
-  if (d.weapon) bits.push(`Damage ${d.weapon.damage}.`);
-  if (d.food) bits.push(`+${d.food.food} food${d.food.water ? `, +${d.food.water} water` : ''}.`);
-  if (d.place) bits.push('Hold it to place it.');
-  return bits.join(' ');
-}
-
-function CraftTab({ client }: { client: GameClient }) {
-  const st = client.stations();
-  return (
-    <div className="craft">
-      <StationChips client={client} />
-      {STATIONS.map((g) => (
-        <div key={g} className="craft-group">
-          <div className="label">
-            {STATION_NAMES[g]}
-            {!st[g] && (
-              <span className="muted">
-                {' '}
-                ·{' '}
-                {g === 'fire'
-                  ? 'stand by a lit campfire'
-                  : g === 'mash'
-                    ? 'stand by a Mashbench (build one at a workbench)'
-                    : 'stand by a workbench'}
-              </span>
-            )}
-          </div>
-          {RECIPE_LIST.filter((r) => r.station === g).map((r) => (
-            <RecipeRow key={r.id} client={client} r={r} />
-          ))}
-        </div>
-      ))}
     </div>
   );
 }

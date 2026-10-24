@@ -21,6 +21,8 @@ export interface Settings {
   autoWeapon: boolean;
   /** Go back to what you held once the job is done. */
   autoBack: boolean;
+  /** 🎒 opens the survivor menu, or the small window by your survivor (plays on). */
+  bagWindow: boolean;
   /** Volumes, 0–100. */
   master: number;
   sfx: number;
@@ -69,6 +71,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoTool: true,
   autoWeapon: true,
   autoBack: true,
+  bagWindow: false,
   master: 80,
   sfx: 90,
   ambience: 70,
@@ -134,6 +137,7 @@ export function parseSettings(raw: unknown): Settings {
     autoTool: bool(o['autoTool'], d.autoTool),
     autoWeapon: bool(o['autoWeapon'], d.autoWeapon),
     autoBack: bool(o['autoBack'], d.autoBack),
+    bagWindow: bool(o['bagWindow'], d.bagWindow),
     master: num(o['master'], d.master, 0, 100),
     sfx: num(o['sfx'], d.sfx, 0, 100),
     ambience: num(o['ambience'], d.ambience, 0, 100),

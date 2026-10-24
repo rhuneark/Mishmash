@@ -19,7 +19,8 @@ import { keyHint, type Action, type Bindings } from '../keys';
 import type { Fog } from './map';
 import { FullMap, MiniMap } from './MapView';
 import { PauseMenu } from './Menu';
-import { BagSheet, JournalSheet, KeypadSheet, NoteSheet, StorageSheet } from './Panels';
+import { JournalSheet, KeypadSheet, NoteSheet, StorageSheet } from './Panels';
+import { CharacterMenu } from './Character';
 import { QuickWindow } from './QuickPanel';
 import { ChatBox, ChatLog } from './ChatBox';
 import { prefs, usePrefs } from '../prefs';
@@ -107,6 +108,7 @@ export function Hud(props: HudProps) {
             )}
           </div>
         )}
+        {showInfo && settings.stats && <LevelBadge client={client} />}
         {showInfo && settings.stats && (
           <div className="hud-stats">
             <Bar icon="❤️" value={me.hp} cls={`hp${me.poison > 0 ? ' poisoned' : ''}`} />
@@ -246,12 +248,13 @@ export function Hud(props: HudProps) {
               />
             )}
             <button
-              className={`round-btn big${client.quickOpen ? ' on' : ''}`}
-              onClick={() => client.toggleQuick()}
+              className={`round-btn big${client.quickOpen || panel === 'bag' || panel === 'craft' || panel === 'skills' ? ' on' : ''}`}
+              onClick={() => client.toggleBag('bag')}
               aria-label="Bag and crafting"
-              title={withKey('Quick bag and craft', hint('quick'))}
+              title={withKey('Survivor, bag and crafting', hint('quick'))}
             >
               🎒
+              {client.progress().points > 0 && <span className="btn-dot" aria-hidden="true" />}
             </button>
             <button
               className={`round-btn big${input.sprintToggle ? ' on' : ''}`}
@@ -275,8 +278,9 @@ export function Hud(props: HudProps) {
         <Hotbar client={client} hints={keys ? input.bindings : null} />
       )}
       <DragLayer />
-      {panel === 'bag' && <BagSheet client={client} onClose={close} tab="bag" pc={pc} />}
-      {panel === 'craft' && <BagSheet client={client} onClose={close} tab="craft" pc={pc} />}
+      {(panel === 'bag' || panel === 'craft' || panel === 'skills') && (
+        <CharacterMenu client={client} tab={panel} pc={pc} />
+      )}
       {panel === 'storage' && <StorageSheet client={client} onClose={close} />}
       {panel === 'keypad' && <KeypadSheet client={client} onClose={close} />}
       {panel === 'journal' && <JournalSheet client={client} onClose={close} />}
@@ -723,5 +727,25 @@ function WinScreen({
         </button>
       </div>
     </div>
+  );
+}
+
+/** Your level and how far to the next, by the bars; tap for the skill tree. */
+function LevelBadge({ client }: { client: GameClient }) {
+  const p = client.progress();
+  const span = Math.max(1, p.to - p.from);
+  const pct = p.to > p.from ? Math.min(100, ((p.xp - p.from) / span) * 100) : 100;
+  return (
+    <button
+      className={`level-badge${p.points > 0 ? ' points' : ''}`}
+      onClick={() => client.toggleBag('skills')}
+      aria-label={`Level ${p.level}${p.points > 0 ? `, ${p.points} skill points to spend` : ''}`}
+    >
+      <span className="level-num">⭐ {p.level}</span>
+      <span className="level-track">
+        <span style={{ width: `${pct}%` }} />
+      </span>
+      {p.points > 0 && <span className="level-plus">+{p.points}</span>}
+    </button>
   );
 }

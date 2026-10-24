@@ -177,7 +177,8 @@ export interface Target {
   lock?: 'cargo' | 'bunker' | 'wreck';
 }
 
-export type Panel = 'bag' | 'craft' | 'storage' | 'keypad' | 'journal' | 'map' | 'menu' | 'note';
+export type Panel =
+  'bag' | 'craft' | 'skills' | 'storage' | 'keypad' | 'journal' | 'map' | 'menu' | 'note';
 
 /** Pages of the pause menu. */
 export type MenuPage = 'main' | 'settings' | 'friends' | 'howto' | 'island';
@@ -285,6 +286,8 @@ export class GameClient {
   /** The quick bag/craft panel (doesn't stop you moving). */
   quickOpen = false;
   quickTab: 'bag' | 'craft' = 'bag';
+  /** Settings: 🎒 opens the small window by your survivor instead of the survivor menu. */
+  bagWindow = false;
   menuPage: MenuPage = 'main';
   /** The island's world rules (from the snapshot). */
   rules: WorldRules = DEFAULT_RULES;
@@ -1720,7 +1723,7 @@ export class GameClient {
         if (t.panel === 'storage') this.storageId = Number(t.id);
         if (t.panel === 'keypad') this.keypadLock = t.lock ?? 'cargo';
         // Crafting opens the quick panel, so you can keep an eye on things.
-        if (t.panel === 'craft') {
+        if (t.panel === 'craft' && this.bagWindow) {
           this.quickOpen = true;
           this.quickTab = 'craft';
           this.touch();
@@ -1799,6 +1802,37 @@ export class GameClient {
 
   craft(recipe: string, n = 1): void {
     this.send({ type: 'craft', recipe, ...(n > 1 ? { n } : {}) });
+  }
+
+  /** Melee damage with what you hold and your perks (the survivor card). */
+  meleeDamage(): number {
+    const base = this.heldItem()?.weapon?.damage ?? 5;
+    return Math.round(base * (1 + PERK_STEP.brawler * (this.me?.perks.brawler ?? 0)));
+  }
+
+  /** How many of a recipe you could make right now. */
+  craftMax(id: string): number {
+    const r = RECIPES[id];
+    if (!r || !this.stations()[r.station]) return 0;
+    let most = Infinity;
+    for (const [item, n] of Object.entries(r.needs))
+      most = Math.min(most, Math.floor(this.craftCount(item) / n));
+    return Number.isFinite(most) ? most : 0;
+  }
+
+  /** 🎒: the survivor menu (or the small window, by the setting). */
+  toggleBag(tab: 'bag' | 'craft' | 'skills' = 'bag'): void {
+    if (this.bagWindow && tab !== 'skills') {
+      if (this.panel === 'bag' || this.panel === 'craft' || this.panel === 'skills')
+        this.openPanel(null);
+      else if (!this.panel) this.toggleQuick(tab);
+      return;
+    }
+    this.quickOpen = false;
+    const open = this.panel === 'bag' || this.panel === 'craft' || this.panel === 'skills';
+    // 🎒 (and Tab/I) closes the menu from any page; C and L switch to theirs first.
+    if (open && (this.panel === tab || tab === 'bag')) this.openPanel(null);
+    else if (open || !this.panel) this.openPanel(tab);
   }
 
   /** Spends a skill point (the authority checks it). */

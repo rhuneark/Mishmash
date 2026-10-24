@@ -287,32 +287,88 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     ['cloth', 4],
   ]);
   await page.waitForTimeout(400);
+  // 🎒 opens the survivor menu: the survivor and bag, crafting by category, skills.
   await page.getByRole('button', { name: 'Bag and crafting' }).click();
-  await page
-    .getByRole('button', { name: /Craft$/ })
-    .first()
-    .click();
+  const menu = page.locator('.char-menu');
+  await menu.waitFor();
   check(
-    (await page.locator('.recipe-name', { hasText: /^(Campfire|Bedroll|Workbench)\b/ }).count()) ===
-      0,
+    (await menu.getByRole('tab', { name: /Survivor/ }).getAttribute('aria-selected')) === 'true',
+    `${tag} menu: didn't open on the survivor`,
+  );
+  check(
+    (await menu.locator('.survivor-figure').count()) === 1 &&
+      (await menu.locator('[data-slot="inv:23"]').count()) === 1,
+    `${tag} menu: no survivor or bag`,
+  );
+  await noSideScroll('survivor menu');
+  await menu.getByRole('tab', { name: /Crafting/ }).click();
+  const recipes = menu.locator('.recipe-grid');
+  check(
+    (await recipes.getByRole('button', { name: /^(Campfire|Bedroll|Workbench)$/ }).count()) === 0,
     `${tag} craft: buildings are still crafted`,
   );
+  await menu.getByRole('tab', { name: /Medicine/ }).click();
+  check(
+    (await recipes.getByRole('button', { name: 'Bandage', exact: true }).count()) === 1 &&
+      (await recipes.getByRole('button', { name: 'Stone axe', exact: true }).count()) === 0,
+    `${tag} craft: the Medicine category isn't just medicine`,
+  );
+  await menu.getByRole('tab', { name: /All/ }).click();
   for (const name of ['Stone axe', 'Bandage']) {
-    await page
-      .locator('.recipe', { hasText: name })
-      .first()
-      .getByRole('button', { name: 'Craft' })
+    await recipes.getByRole('button', { name, exact: true }).click();
+    await menu.locator('.recipe-detail .item-name', { hasText: name }).waitFor();
+    await menu
+      .locator('.recipe-detail')
+      .getByRole('button', { name: 'Craft', exact: true })
       .click();
     await page.waitForTimeout(250);
   }
   await noSideScroll('craft');
   await shot('6-craft');
-  await page.keyboard.press('Escape');
   await until(
     page,
     () => window.__game.client.count('axe_stone') === 1,
     `${tag} game: stone axe not crafted`,
   );
+  // Levels: what you do earns XP; a level brings a skill point for the tree.
+  check(
+    (await game(page, () => window.__game.client.me.xp)) > 0,
+    `${tag} skills: crafting earned no XP`,
+  );
+  await game(page, () => {
+    const c = window.__game.client;
+    c.link.sim.gainXp(c.link.sim.players.get(c.you), 100);
+  });
+  await until(
+    page,
+    () => window.__game.client.progress().points >= 1,
+    `${tag} skills: no skill point at level 2`,
+  );
+  await menu.getByRole('tab', { name: /Skills/ }).click();
+  await menu.getByRole('button', { name: /^Forager, rank 0/ }).click();
+  check(
+    await menu
+      .locator('.perk-detail')
+      .getByRole('button', { name: /^Learn/ })
+      .isDisabled(),
+    `${tag} skills: a tier 2 skill was open with no points in the branch`,
+  );
+  await menu.getByRole('button', { name: /^Lumberjack, rank 0/ }).click();
+  await menu
+    .locator('.perk-detail')
+    .getByRole('button', { name: /^Learn/ })
+    .click();
+  await until(
+    page,
+    () => window.__game.client.me.perks.lumberjack === 1,
+    `${tag} skills: Lumberjack not learned`,
+  );
+  await menu.getByRole('button', { name: /^Lumberjack, rank 1 of 3/ }).waitFor();
+  await noSideScroll('skills');
+  await shot('6a-skills');
+  await menu.getByRole('button', { name: 'Close' }).click();
+  await menu.waitFor({ state: 'detached' });
+  check((await page.locator('.level-badge').count()) === 1, `${tag} hud: no level badge`);
 
   // Build a campfire: pick it in build mode, and it's paid for straight from the bag.
   await teleport(page, 12, 272);
@@ -460,6 +516,121 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     15000,
     count,
   );
+  // Anywhere in the grid: a post 10 m or more away, without walking there.
+  await give(page, [['wood', 40]]);
+  const far = await game(page, () => {
+    const c = window.__game.client;
+    const sim = c.link.sim;
+    for (let r = 10; r <= 18; r += 2)
+      for (const [ux, uz] of [
+        [1, 0],
+        [0, 1],
+        [-1, 0],
+        [0, -1],
+        [1, 1],
+        [-1, 1],
+        [1, -1],
+        [-1, -1],
+      ]) {
+        const x = 2 * Math.round((c.x + ux * r) / 2);
+        const z = 2 * Math.round((c.z + uz * r) / 2);
+        const d = Math.hypot(x - c.x, z - c.z);
+        if (d >= 10 && d <= 20 && !sim.placeProblem('post_wood', x, z, 0)) return [x, z];
+      }
+    return null;
+  });
+  check(!!far, `${tag} build: no open spot 10–18 m away`);
+  if (far) {
+    await page.locator('.build-bar').getByRole('tab', { name: 'Walls' }).click();
+    await page.locator('.build-bar').getByRole('button', { name: 'Wooden post' }).click();
+    await game(page, ([x, z]) => window.__game.client.setBuildCursor({ x, z }), far);
+    await until(
+      page,
+      ([x, z]) => {
+        const g = window.__game.client.ghost;
+        return !!g && !g.problem && Math.hypot(g.x - x, g.z - z) < 0.01;
+      },
+      `${tag} build: the piece didn't follow the cursor ${far}`,
+      15000,
+      far,
+    );
+    const hasFar = ([x, z]) =>
+      [...window.__game.client.buildings.values()].some(
+        (b) => b.kind === 'post_wood' && Math.hypot(b.x - x, b.z - z) < 0.01,
+      );
+    await pressUntil(page, hasFar, far);
+    check(await game(page, hasFar, far), `${tag} build: nothing placed ${far} away`);
+  }
+  // Roofs come down again: the take-down tool picks the roof over a floor first.
+  const cell = await game(page, () => {
+    const c = window.__game.client;
+    const sim = c.link.sim;
+    for (let r = 3; r <= 9; r += 2)
+      for (const [ux, uz] of [
+        [1, 0],
+        [0, 1],
+        [-1, 0],
+        [0, -1],
+      ]) {
+        const x = 2 * Math.floor((c.x + ux * r) / 2) + 1;
+        const z = 2 * Math.floor((c.z + uz * r) / 2) + 1;
+        const clear = [...sim.buildings.values()].every((b) => Math.hypot(b.x - x, b.z - z) > 2);
+        if (clear && !sim.placeProblem('floor_wood', x, z, 0)) {
+          sim.handle(c.you, { type: 'build', kind: 'floor_wood', x, z, rot: 0 });
+          sim.handle(c.you, { type: 'build', kind: 'roof_thatch', x, z, rot: 0 });
+          return [x, z];
+        }
+      }
+    return null;
+  });
+  check(!!cell, `${tag} build: no spot for a floor and a roof`);
+  if (cell) {
+    // What stands on the cell, sorted (runs in the page).
+    const stacked = ([x, z]) =>
+      [...window.__game.client.buildings.values()]
+        .filter((b) => Math.hypot(b.x - x, b.z - z) < 0.01)
+        .map((b) => b.kind)
+        .sort()
+        .join();
+    await until(
+      page,
+      ([x, z]) =>
+        [...window.__game.client.buildings.values()].filter(
+          (b) => Math.hypot(b.x - x, b.z - z) < 0.01,
+        ).length === 2,
+      `${tag} build: the floor and roof weren't built`,
+      15000,
+      cell,
+    );
+    await page.locator('.build-bar').getByRole('tab', { name: 'Take down' }).click();
+    await game(page, ([x, z]) => window.__game.client.setBuildCursor({ x, z }), cell);
+    await until(
+      page,
+      () => {
+        const c = window.__game.client;
+        const id = c.removeTarget();
+        return id !== null && c.buildings.get(id)?.kind === 'roof_thatch';
+      },
+      `${tag} build: the take-down tool didn't pick the roof`,
+    );
+    check(
+      (await page
+        .locator('.build-panel')
+        .getByText(/1 of 2 here/)
+        .count()) === 1,
+      `${tag} build: the panel doesn't say what's stacked here`,
+    );
+    await pressUntil(
+      page,
+      ([x, z]) =>
+        ![...window.__game.client.buildings.values()].some(
+          (b) => b.kind === 'roof_thatch' && Math.hypot(b.x - x, b.z - z) < 0.01,
+        ),
+      cell,
+    );
+    const left = await game(page, stacked, cell);
+    check(left === 'floor_wood', `${tag} build: the roof didn't come down (${left})`);
+  }
   await page.getByRole('button', { name: 'Leave build mode' }).first().click();
   await page.locator('.build-panel').waitFor({ state: 'detached' });
 
@@ -543,6 +714,15 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     .then(() => true)
     .catch(() => false);
   check(pictured, `${tag} game: hotbar items without a picture`);
+  // Settings › Gameplay › Small bag window: 🎒 opens the window by the survivor instead.
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('tab', { name: /Gameplay/ }).click();
+  await page.getByRole('switch', { name: 'Small bag window' }).click();
+  await page.keyboard.press('Escape');
+  await page.getByText('Paused').waitFor();
+  await page.keyboard.press('Escape');
+  await page.locator('.menu-screen').waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Bag and crafting' }).click();
   await page.locator('.quick-panel').waitFor();
   await page.locator('.quick-panel').getByRole('button', { name: 'Bag', exact: true }).click();
@@ -634,6 +814,14 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await shot('9b-mashbench');
   await page.keyboard.press('Escape');
   await page.locator('.quick-panel').waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('tab', { name: /Gameplay/ }).click();
+  await page.getByRole('switch', { name: 'Small bag window' }).click();
+  await page.keyboard.press('Escape');
+  await page.getByText('Paused').waitFor();
+  await page.keyboard.press('Escape');
+  await page.locator('.menu-screen').waitFor({ state: 'detached' });
 
   // A Husk's research page tells the Bloom's story.
   await game(page, () => {

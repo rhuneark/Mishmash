@@ -210,7 +210,10 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   Bloom at Kessler Station within 75 m (her HP is kept when she despawns), crabs on beaches.
   Fire-fearing ones stop at the edge of firelight unless enraged; they break walls in their
   way; spikes hurt them; fire bombs and torches set them burning. At dawn the night's roamers
-  burrow.
+  burrow. **Nothing spawns in a base** (the user's report, v1.19: "a bloom spawn in my house"):
+  `spawnSpot` skips anywhere within `BASE_CLEAR` 10 m of a building (`IslandSim.baseAt`),
+  rooted Snapjaws under a base stay asleep, and crates, pods and Husk packs land clear of
+  bases too (`events.ts` `clear`). Monsters still walk in from outside.
 - **The way off** (`game/objectives.ts` turns flags + notes + what you carry into the
   checklist the HUD and journal show): boarding pass at the crash site → captain's log at the
   cockpit (north-west) reveals three parts: **battery** in the tail's cargo hold (west), code
@@ -286,8 +289,8 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
 - **Pause menu** (`hud/Menu.tsx`, ☰ or Esc; `client.menuPage`: main / settings / friends /
   howto / island): Resume, Settings, Journal, Map, Play with friends (room code), This island,
   How to play, Save and quit. Solo play pauses while it's open (`link.pause`, also when the app is in the background).
-  **Settings** (`SettingsPanel`, tabs): Gameplay (auto tool, auto weapon, switch back; build
-  snap, grid size, show grid), Audio (master, effects, ambience, music), Screen (phones:
+  **Settings** (`SettingsPanel`, tabs): Gameplay (auto tool, auto weapon, switch back; small
+  bag window (`bagWindow`); build snap, grid size, show grid), Audio (master, effects, ambience, music), Screen (phones:
   portrait/landscape + turn the other way, left-handed; camera angle and distance, shake,
   vibration), **HUD** (show the HUD (H), health/food/water on/off and where (auto / top left /
   bottom left), day and time, minimap on/off, size and turning, quests (every step / next
@@ -318,17 +321,30 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   Taking a piece down gives `refundOf` back (half of each material, a single part comes back).
   The camera pulls back and a grid shows on the ground around the piece (`view.updateGrid`).
   The piece follows the mouse on PC (`view.groundAt` raycast, re-aimed every frame) or a
-  finger dragged on the island (aimed 56 px above it), within 6.5 m (`setBuildCursor`; the
-  authority allows 7). ⟲ ⟳ / R / the wheel turn it (quarter turns), ▦ Snap (G) and the grid
+  finger dragged on the island (aimed 56 px above it), **anywhere on the grid you can see**:
+  within `BUILD_RANGE` 22 m of you (`setBuildCursor`; the authority allows `BUILD_REACH` 24,
+  the take-down 25; the user asked for v1.19: "place things anywhere inside the grid, not just
+  what's around the character"). ⟲ ⟳ / R / the wheel turn it (quarter turns), ▦ Snap (G) and the grid
   size (1 m / 2 m, `buildPrefs` from Settings) are on the panel. `snapToGrid` (place.ts):
   `shape: 'edge'` pieces (walls, doors, gates, fences, spikes) run along grid lines with their
   ends on grid points, `corner` pieces (posts) sit on grid points, others fill (half) cells;
   edge/corner pieces may overlap where they join (`joins`, ≤ 0.62 m both ways) so corners and
-  T-joints work. **Layers** (`BuildingDef.layer`): floors (`floor`, need flatter ground, 1.2 m)
-  lie under things and roofs (`roof`, at `WALL_HEIGHT` 2.6 m) over them; a piece only
-  collides with pieces of its own layer. Roofs within `ROOF_CUTAWAY` 6.5 m of you are hidden
-  (view.ts) so you can see inside. Place = the action button, click or Space; the take-down
-  tool demolishes the piece under the cursor (`removeTarget`, red ring). Esc / V / ✕ leaves.
+  T-joints work. **Flush snapping** (`snapFlush`, client ghost and tests; v1.19, "you can put a
+  workbench almost against another bench and the wall"): after the grid, a piece that isn't a
+  wall shape is pushed out of a shallow overlap (≤ 0.6 m) with its own layer's neighbours
+  within 6 m, small gaps (< 0.45 m) close, and an edge within 0.3 m lines up with the
+  neighbour's, so benches, chests and furniture sit flush against walls and each other.
+  **Layers** (`BuildingDef.layer`): floors (`floor`, need flatter ground, 1.2 m) and rugs
+  (`rug`) lie under things and roofs (`roof`, at `WALL_HEIGHT` 2.6 m) over them; a piece only
+  collides with pieces of its own layer. **Roofs** (v1.19 rework; the user: "you can't remove
+  the roof"): touching roof tiles join into one roof (view.ts `roofState`: neighbour masks
+  `ROOF_N/E/S/W`, `roofGeometry` draws eaves only on open edges); the whole roof you stand under
+  lifts away (every tile joined to the one over you); in build mode roofs are see-through
+  ghosts while placing roofs or taking down (`ROOF_GHOST`) and hidden while placing anything
+  else. Place = the action button, click or Space; the take-down tool demolishes the piece
+  under the cursor (`removeTarget`, red ring): of the pieces stacked there (`removeStack`: roof,
+  then things, rug, floor) it takes the top one; ⟳ / R / the wheel pick the next one down and
+  the panel says "N of M here". Esc / V / ✕ leaves.
   Outside build mode a held legacy placeable still shows the ghost in front of you.
   **Pieces**: campfire, workbench, Mashbench, storage box, bedroll, torch post, heart lantern;
   wooden/short/window/scrap walls, door, gate, posts, fences and fence gate, stone walls and
@@ -412,7 +428,38 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   dark outline) shown as a data-URL `<img>` (`Slots.tsx` `ItemIcon`). Not emoji: newer emoji
   (wood, rock, rope…) are empty boxes on older phones and Windows. `itemIcons.test.ts`
   fails when an item has no picture. The `icon` emoji in `items.ts` is unused by the HUD.
-- **Bag and craft window** (`hud/QuickPanel.tsx`, the 🎒 button, Tab, I/B or C on PC): pops
+- **Survivor menu** (`hud/Character.tsx` `CharacterMenu`, the 🎒 button, Tab/I/B, C, L on PC;
+  `client.toggleBag(tab)`, panels `bag` / `craft` / `skills`; v1.19, the user asked for "a
+  better character menu like other survival games, and crafting too, more intuitive than a
+  scroll"): one window with three tabs. **🎒 Survivor**: a figure in your colour holding what
+  you hold, level and XP, health/food/water, damage (`client.meleeDamage`), kills, crafted,
+  day; the hotbar and bag as grids (drag and drop works); tap an item for its picture, stats
+  (`itemStats`) and Eat / Use / Hold / Drop. **🔨 Crafting**: category chips (`CRAFT_CATS`,
+  `craftCategory`: tools, weapons, ranged, food, medicine, Bloom gear, parts), the stations in
+  reach, a "Can make" switch and a grid of recipe tiles (craftable first, green frame); the
+  picked recipe (`RecipeDetail`: what it needs, have/need, the station) crafts 1, ×5 or all
+  (C2S `craft {recipe, n}`, ≤20, `client.craftMax`). **⭐ Skills**: the tree (below). On
+  phones the picked item / recipe / skill sits pinned at the bottom of the window; on wide
+  screens crafting goes two columns. 🎒 or Tab closes it from any tab; C and L switch tabs.
+  The HUD shows a level badge over the health bars (`LevelBadge`: tap = skills, +N when points
+  wait) and a dot on 🎒.
+- **Levels and skills** (`game/skills.ts`, v1.19, the user: "introduce player levels with a
+  skill tree"): the authority grants XP (`IslandSim.gainXp`, the `XP` table) for felling,
+  picking, luggage, crafting (more at a bench), building, planting, harvesting, taming, notes
+  and pages, secrets, kills (by kind, to the killer) and surviving each night (more for a
+  Bloom night); levels at `xpForLevel` (50·(L−1)·L: 100, 300, 600…) up to `MAX_LEVEL` 30, a
+  skill point per level (`pointsFor`). Four branches (`BRANCHES`): Gatherer (lumberjack, miner,
+  forager, scavenger), Fighter (brawler, marksman, thick skin, executioner), Survivor (iron
+  stomach, field medic, runner, night owl), Homesteader (carpenter, green thumb, sturdy build,
+  tinkerer, animal friend): 17 perks with ranks (`PERKS`, `PERK_STEP`), tier 2 opens with 2
+  points in the branch and tier 3 with 5 (`TIER_POINTS`, `cantLearn`). C2S `learn {perk}`
+  (`onLearn` checks it); the authority applies every perk (`rank(p, id)`; the client only
+  mirrors runner stamina and carpenter costs, `costOf`). Saved per player (`PlayerSave.xp`,
+  `perks`, repaired by `parsePerks`: never more points than the level gives); `MeNet` sends
+  them; level-ups show a banner and fx `levelup`, XP a "+N" popup. New perk: append to
+  `PerkId`/`PERK_STEP`/`PERKS` and hook it in the authority.
+- **Small bag window** (`hud/QuickPanel.tsx`, Settings › Gameplay › Small bag window, off by
+  default; it was the 🎒 window before v1.19): pops
   up above and to the right of the survivor's head and stays open while you move, fight and
   gather (`client.quickOpen`, not a modal `panel`): the bag (slots 6–23; the hotbar is right
   below) and a craft list sorted craftable-first, with the station each recipe needs. Using a
@@ -431,7 +478,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   up to 3 keys or mouse buttons (`Mouse0`… and `WheelUp/Down`); one key never does two things
   (`bind` moves it); saved per player in appStorage under `mishmash_keys` (`parseBindings`
   repairs it). Defaults: WASD/arrows, Shift sprint, Space/E/left click action, F eat, Q drop,
-  R turn, V build mode, G snap, Tab bag window, I/B bag, C craft (both the window), J journal,
+  R turn, V build mode, G snap, Tab/I/B survivor menu, C crafting, L skills, J journal,
   M map, H hide/show the HUD, Enter chat (co-op), 1–6 hotbar, wheel cycles the hotbar (turns the piece in build
   mode), = and - move the camera (saved as the camera setting). Esc is fixed (opens and closes
   the menu, steps back a menu page). Key hints show on devices with a mouse
@@ -524,6 +571,7 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
   islands.ts         island parts: layout turns/mirror, climates, terrain styles, codes, names
   rules.ts           world rules (7 Days style), presets, what they mean in numbers
   objectives.ts      the escape checklist from flags/notes/inventory
+  skills.ts          levels, XP table and the skill tree (branches, perks, tiers)
   content/           items, recipes, nodes, buildings, crops, monsters, landmarks (pois),
                      secrets (bunker, wreck, markers, treasure), notes
   sim/               the island authority: sim.ts (IslandSim), mobs.ts (monsters, director),
@@ -541,8 +589,8 @@ src/play/          the game client: session.ts (solo/host/join, saves), link.ts 
                    TitleScene.ts (the title backdrop), render/ (terrain, nodes, actors,
                    structures, items, props, fx, geo, wind, ambient, climate, light,
                    weather), hud/ (Hud,
-                   Menu, Panels, QuickPanel, Craft, Slots, drag, itemIcons, MapView, map,
-                   RulesPanel, ChatBox)
+                   Character (survivor menu), Menu, Panels, QuickPanel, Craft, Slots, drag,
+                   itemIcons, MapView, map, RulesPanel, ChatBox)
 src/app/           community.ts (suggestions, Dev area over UgcApi), localUgc.ts (dev stand-in),
                    usePolling.ts, appEvents.ts (host lifecycle → game pause/resume), links.ts
                    (the October Jam link, copied)
@@ -604,12 +652,13 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # global chat, suggestions box: send and take back, owner Dev
                             # area: star, done, delete, reports; jam link), New island (code,
                             # presets), the game
-                            # (walk, read, gather, craft, a campfire from the build menu, night
+                            # (walk, read, gather, the survivor menu: crafting by category,
+                            # XP and learning a skill; a campfire from the build menu, night
                             # fight, death, item
-                            # pictures, quick panel, drag and drop, Mashbench, research page,
+                            # pictures, the small bag window: drag and drop, Mashbench, research page,
                             # auto tool, a supply pod, the bag window's place, isometric and
                             # top-down walking, quests, build mode (grid, corner, post, turn,
-                            # snap, take down), pause menu, This island (change the spawn
+                            # snap, take down, a post 10+ m away, a roof off a floor), pause menu, This island (change the spawn
                             # rate), a bow shot, planting and watering, feeding a goat, the
                             # bunker sign, HUD settings, settings, rebinding a key, landscape,
                             # save/continue, replace confirm), hub settings and local co-op on
@@ -667,7 +716,10 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   floors, roofs and furniture, farming and cooking, island animals and taming, weather, bows
   and ranged weapons, the bunker, the shipwreck and buried treasure; store text and tags
   updated: + farming, cooking, animals, taming, weather, archery, treasure, puzzles, secrets,
-  voting retired) are private builds until the user asks to publish them.
+  voting retired) and v1.19.0 (2026-10-24, the user's list: build anywhere on the grid you can
+  see, flush snapping, roofs that join and come down again, no Bloom spawning in bases, the
+  survivor menu with crafting by category, player levels and a skill tree) are private builds
+  until the user asks to publish them.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

@@ -169,7 +169,8 @@ export function Game(props: {
   useEffect(() => applyVolumes(settings), [settings]);
   useEffect(() => {
     client.auto = { tool: settings.autoTool, weapon: settings.autoWeapon, back: settings.autoBack };
-  }, [client, settings.autoTool, settings.autoWeapon, settings.autoBack]);
+    client.bagWindow = settings.bagWindow;
+  }, [client, settings.autoTool, settings.autoWeapon, settings.autoBack, settings.bagWindow]);
   useEffect(() => {
     client.buildPrefs = { snap: settings.buildSnap, grid: settings.buildGrid };
     client.touch();
@@ -340,17 +341,11 @@ export function Game(props: {
     input.on('snap', () => prefs.set({ buildSnap: !prefs.get().buildSnap }));
     input.on('hud', () => prefs.set({ hudOn: !prefs.get().hudOn }));
     input.on('chat', () => !client.panel && client.toggleChat(true));
-    input.on('quick', () => {
-      if (client.panel === 'bag' || client.panel === 'craft') client.openPanel(null);
-      else if (!client.panel) client.toggleQuick();
-    });
-    // The bag and crafting open the window by the survivor (⤢ in it opens the full sheet).
-    const bagWindow = (tab: 'bag' | 'craft') => () => {
-      if (client.panel === 'bag' || client.panel === 'craft') client.openPanel(null);
-      else if (!client.panel) client.toggleQuick(tab);
-    };
-    input.on('bag', bagWindow('bag'));
-    input.on('craft', bagWindow('craft'));
+    // The survivor menu's tabs (or, by the setting, the small window by your survivor).
+    input.on('quick', () => client.toggleBag('bag'));
+    input.on('bag', () => client.toggleBag('bag'));
+    input.on('craft', () => client.toggleBag('craft'));
+    input.on('skills', () => client.toggleBag('skills'));
     input.on('journal', toggle('journal'));
     input.on('map', toggle('map'));
     // The wheel turns the piece in build mode, else it picks hotbar slots.

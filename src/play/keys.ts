@@ -17,6 +17,7 @@ export type Action =
   | 'quick'
   | 'bag'
   | 'craft'
+  | 'skills'
   | 'journal'
   | 'map'
   | 'build'
@@ -58,9 +59,10 @@ export const ACTIONS: ActionDef[] = [
   { id: 'turn', label: 'Turn a building', group: 'Build', def: ['KeyR'] },
   { id: 'build', label: 'Build mode on/off', group: 'Build', def: ['KeyV'] },
   { id: 'snap', label: 'Snap to the grid on/off', group: 'Build', def: ['KeyG'] },
-  { id: 'quick', label: 'Quick bag and craft', group: 'Screens', def: ['Tab'] },
-  { id: 'bag', label: 'Bag', group: 'Screens', def: ['KeyI', 'KeyB'] },
+  { id: 'quick', label: 'Survivor menu', group: 'Screens', def: ['Tab'] },
+  { id: 'bag', label: 'Survivor and bag', group: 'Screens', def: ['KeyI', 'KeyB'] },
   { id: 'craft', label: 'Crafting', group: 'Screens', def: ['KeyC'] },
+  { id: 'skills', label: 'Skills', group: 'Screens', def: ['KeyL'] },
   { id: 'journal', label: 'Journal', group: 'Screens', def: ['KeyJ'] },
   { id: 'map', label: 'Map', group: 'Screens', def: ['KeyM'] },
   { id: 'hud', label: 'Hide or show the HUD', group: 'Screens', def: ['KeyH'] },

@@ -29,7 +29,13 @@ import {
   type Quest,
 } from '../game/objectives';
 import { HOTBAR, bestSlot, hasAll, jobScore } from '../game/sim/inventory';
-import { placementProblem, snapToGrid } from '../game/sim/place';
+import {
+  BUILD_RANGE,
+  BUILD_REACH,
+  placementProblem,
+  snapFlush,
+  snapToGrid,
+} from '../game/sim/place';
 import {
   MOB_KINDS,
   MOB_STATE,
@@ -64,7 +70,7 @@ const POS_EVERY = 0.1;
 /** A little short of the authority's reach, so lag doesn't turn a tap into nothing. */
 const NODE_REACH = 2.7;
 const SPOT_REACH = 3.6;
-const BUILD_REACH = 3.8;
+const USE_REACH = 3.8;
 const DROP_REACH = 3;
 const DIG_REACH = 2.4;
 
@@ -77,9 +83,7 @@ const LOOT_NAMES: Record<string, string> = {
 };
 const GHOST_AHEAD = 2.6;
 /** Pieces go down this far from you at most (the authority allows 7 m). */
-const BUILD_RANGE = 6.5;
 /** Pieces come down this far from you (the authority allows 5.2 m). */
-const REMOVE_RANGE = 5;
 
 /** Build mode: a piece from your bag, put down where the cursor is. */
 export interface BuildMode {
@@ -991,7 +995,11 @@ export class GameClient {
         ? undefined
         : build.piece
       : this.heldItem()?.place;
-    if (build) build.remove = build.piece === 'remove' ? this.removeTarget() : null;
+    if (build) {
+      const remove = build.piece === 'remove' ? this.removeTarget() : null;
+      if (remove !== build.remove) this.touch();
+      build.remove = remove;
+    }
     if (!kind || !this.me?.alive || !this.island) {
       if (this.ghost) this.touch();
       this.ghost = null;
@@ -1000,9 +1008,11 @@ export class GameClient {
     const facing = Math.round(this.ry / (Math.PI / 2));
     const rot = build ? build.rot : (((facing + this.ghostTurn) % 4) + 4) % 4;
     const at = this.buildPoint(kind);
-    const p = this.buildPrefs.snap
+    const grid = this.buildPrefs.snap
       ? snapToGrid(kind, at.x, at.z, rot, this.buildPrefs.grid)
       : { x: Math.round(at.x * 10) / 10, z: Math.round(at.z * 10) / 10 };
+    // Flush against the wall or bench next to it.
+    const p = snapFlush(kind, grid.x, grid.z, rot, this.buildings.values());
     const g = this.ghost;
     if (g && g.kind === kind && g.x === p.x && g.z === p.z && g.rot === rot) return;
     const problem = placementProblem(
@@ -1017,7 +1027,8 @@ export class GameClient {
     const tooClose =
       circleInBox(this.x, this.z, RADIUS, footprint(kind, p.x, p.z, rot)) &&
       BUILDINGS[kind]?.blocks;
-    const far = Math.hypot(p.x - this.x, p.z - this.z) > 7 ? 'Too far away.' : null;
+    const far =
+      Math.hypot(p.x - this.x, p.z - this.z) > (build ? BUILD_REACH : 7) ? 'Too far away.' : null;
     const poor = build && !this.canBuild(kind) ? this.missingFor(kind) : null;
     this.ghost = {
       kind,
@@ -1037,26 +1048,46 @@ export class GameClient {
     return { x: this.x + Math.sin(this.ry) * ahead, z: this.z + Math.cos(this.ry) * ahead };
   }
 
-  /** The building under the remove tool's cursor (in reach). */
-  private removeTarget(): number | null {
+  /**
+   * The pieces under the take-down cursor, topmost first (roofs, then walls and furniture,
+   * then rugs and floors): what you see from above is what comes down. ⟳ steps through them.
+   */
+  removeStack(): number[] {
+    if (!this.build) return [];
     const at = this.buildPoint('wall_wood');
-    if (Math.hypot(at.x - this.x, at.z - this.z) > REMOVE_RANGE) return null;
-    let best: number | null = null;
-    let bd = 1.2;
+    if (Math.hypot(at.x - this.x, at.z - this.z) > BUILD_REACH) return [];
+    const order = { roof: 0, undefined: 1, rug: 2, floor: 3 } as Record<string, number>;
+    const under: { id: number; rank: number; d: number }[] = [];
     for (const b of this.buildings.values()) {
       const box = footprint(b.kind, b.x, b.z, b.rot);
       const dx = Math.max(box.minX - at.x, 0, at.x - box.maxX);
       const dz = Math.max(box.minZ - at.z, 0, at.z - box.maxZ);
       const d = Math.hypot(dx, dz);
-      if (d < bd) {
-        bd = d;
-        best = b.id;
-      }
+      if (d > 0.6) continue;
+      under.push({ id: b.id, rank: order[String(BUILDINGS[b.kind]?.layer)] ?? 1, d });
     }
-    return best;
+    under.sort((a, b) => a.rank - b.rank || a.d - b.d || a.id - b.id);
+    return under.map((u) => u.id);
+  }
+
+  /** Which of the stacked pieces the take-down tool points at (⟳ steps on). */
+  private removePick = 0;
+
+  /** The building under the remove tool's cursor (in reach). */
+  private removeTarget(): number | null {
+    const stack = this.removeStack();
+    if (!stack.length) return null;
+    return stack[this.removePick % stack.length] ?? null;
   }
 
   turnGhost(dir = 1): void {
+    // Taking down: step to the next piece in the stack under the cursor instead.
+    if (this.build?.piece === 'remove') {
+      this.removePick = Math.max(0, this.removePick + dir);
+      this.updateGhost();
+      this.touch();
+      return;
+    }
     if (this.build) this.build.rot = (((this.build.rot + dir) % 4) + 4) % 4;
     else this.ghostTurn = (((this.ghostTurn + dir) % 4) + 4) % 4;
     this.ghost = null;
@@ -1149,7 +1180,10 @@ export class GameClient {
         dx *= BUILD_RANGE / d;
         dz *= BUILD_RANGE / d;
       }
+      const before = this.build.cursor;
       this.build.cursor = { dx, dz };
+      // A new spot: start from the top of what's there.
+      if (!before || Math.hypot(before.dx - dx, before.dz - dz) > 0.6) this.removePick = 0;
     }
     this.updateGhost();
   }
@@ -1234,9 +1268,9 @@ export class GameClient {
       );
     });
     for (const b of this.buildings.values()) {
-      if (Math.abs(b.x - x) > BUILD_REACH + 1 || Math.abs(b.z - z) > BUILD_REACH + 1) continue;
+      if (Math.abs(b.x - x) > USE_REACH + 1 || Math.abs(b.z - z) > USE_REACH + 1) continue;
       const d = Math.hypot(b.x - x, b.z - z);
-      if (d > BUILD_REACH) continue;
+      if (d > USE_REACH) continue;
       const t = this.buildingTarget(b);
       if (t) offer(t, score(b.x, b.z) + (t.verb ? -0.3 : 2.5));
     }

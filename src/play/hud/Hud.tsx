@@ -450,6 +450,10 @@ function BuildPanel({
   const s = usePrefs();
   const piece = client.build?.piece;
   const def = piece && piece !== 'remove' ? BUILDINGS[piece] : undefined;
+  const removing = piece === 'remove';
+  // Taking down: the pieces stacked under the cursor (roof, wall, floor…), topmost first.
+  const stack = removing ? client.removeStack() : [];
+  const at = removing ? stack.indexOf(client.build?.remove ?? -1) : -1;
   return (
     <div className="build-panel">
       <div className="build-head">
@@ -464,6 +468,11 @@ function BuildPanel({
         </button>
       </div>
       <div className="build-piece">{def ? def.name : 'Take pieces down (half comes back)'}</div>
+      {removing && stack.length > 1 && (
+        <div className="build-desc">
+          {at + 1} of {stack.length} here: ⟳ picks the next one down.
+        </div>
+      )}
       {def && (
         <div className="build-cost" aria-label="Cost">
           {Object.entries(def.cost).map(([id, n]) => {
@@ -479,14 +488,18 @@ function BuildPanel({
       )}
       {def && <div className="build-desc">{def.desc}</div>}
       <div className="build-tools">
-        <button className="round-btn" onClick={() => client.turnGhost(-1)} aria-label="Turn left">
+        <button
+          className="round-btn"
+          onClick={() => client.turnGhost(-1)}
+          aria-label={removing ? 'Piece above' : 'Turn left'}
+        >
           ⟲
         </button>
         <button
           className="round-btn"
           onClick={() => client.turnGhost(1)}
-          aria-label="Turn right"
-          title={withKey('Turn', hint('turn'))}
+          aria-label={removing ? 'Piece below' : 'Turn right'}
+          title={withKey(removing ? 'Next piece here' : 'Turn', hint('turn'))}
         >
           ⟳
         </button>
@@ -508,9 +521,13 @@ function BuildPanel({
         </button>
       </div>
       <div className="build-tip">
-        {pc
-          ? 'The mouse moves it, the wheel turns it, click to place.'
-          : 'Drag on the island to move it, then tap the build button.'}
+        {removing
+          ? pc
+            ? 'Point at a piece and click to take it down; the wheel picks the one below.'
+            : 'Drag onto a piece, then tap the button to take it down.'
+          : pc
+            ? 'Point anywhere on the island: the wheel turns it, click to place.'
+            : 'Drag anywhere on the island to move it, then tap the build button.'}
       </div>
     </div>
   );

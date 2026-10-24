@@ -9,6 +9,7 @@ import { monsterScale, spawnsPerSecond, speedFor, wildlifeScale } from '../rules
 import { BIOME, biomeAt, heightAt, hitCollider } from '../world';
 import type { IslandSim } from './sim';
 import { DAY } from './time';
+import { BASE_CLEAR } from './place';
 import { circleHitsBox, footprint, type Mob, type SimPlayer } from './types';
 
 const DESPAWN = 80;
@@ -758,6 +759,8 @@ export function runDirector(sim: IslandSim): void {
   sim.island.snapjaws.forEach((s, i) => {
     if (sim.snapMob.has(i) || (sim.snapDeadUntil.get(i) ?? 0) > sim.time) return;
     if (!players.some((p) => dist(p.x, p.z, s.x, s.z) < 45)) return;
+    // Built over: the roots stay down.
+    if (sim.baseAt(s.x, s.z, 4)) return;
     const m = spawnMob(sim, 'snapjaw', s.x, s.z, { spot: i });
     sim.snapMob.set(i, m.id);
   });
@@ -904,7 +907,7 @@ function spawnSpot(
     if (heightAt(sim.island, x, z) < 0.3) continue;
     if (biome !== undefined && biomeAt(sim.island, x, z) !== biome) continue;
     if (hitCollider(sim.island, x, z, 1)) continue;
-    if (sim.blockingAt(x, z, 1)) continue;
+    if (sim.baseAt(x, z, BASE_CLEAR)) continue;
     if (!ignoreLight && sim.litAt(x, z, 4)) continue;
     if (sim.repelAt(x, z, 3)) continue;
     let tooClose = false;

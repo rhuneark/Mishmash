@@ -9,7 +9,7 @@ import { NODE } from '../game/content/nodes';
 import { POD_FALL } from '../game/sim/events';
 import { MOB_STATE } from '../game/sim/protocol';
 import { NIGHT_END, NIGHT_START, daylight, lowTide } from '../game/sim/time';
-import { colorFor } from '../game/sim/types';
+import { circleHitsBox, colorFor, footprint } from '../game/sim/types';
 import { BIOME, biomeAt, forNodesNear, heightAt, type Island } from '../game/world';
 import type { Sound, Sfx } from './audio';
 import { RUN, type ChatLine, type ClientFx, type GameClient, type MoveInput } from './client';
@@ -19,6 +19,7 @@ import { Actor, setBlobShadows } from './render/actors';
 import { Ambient } from './render/ambient';
 import { climateLook } from './render/climate';
 import { Fx, FX_COLORS } from './render/fx';
+import { MAT } from './render/geo';
 import { bagModel, crateModel, podModel } from './render/items';
 import { NodeView } from './render/nodes';
 import { nodeTint } from './render/props';
@@ -33,8 +34,13 @@ import {
   type GraphicsLevel,
 } from './settings';
 import {
+  ROOF_E,
+  ROOF_N,
+  ROOF_S,
+  ROOF_W,
   cropModel,
   buildPois,
+  roofGeometry,
   buildingModel,
   helicopter,
   treasureMark,
@@ -103,7 +109,24 @@ interface Label {
 /** Seconds a chat line shows over the speaker's head. */
 const BUBBLE_SECONDS = 6;
 /** Roof pieces this close to you hide (Zomboid-style cutaway). */
-const ROOF_CUTAWAY = 6.5;
+/** See-through roofs in build mode, so you can aim at them and at what's below. */
+const ROOF_GHOST = new THREE.MeshLambertMaterial({
+  vertexColors: true,
+  flatShading: true,
+  transparent: true,
+  opacity: 0.42,
+  depthWrite: false,
+});
+
+interface RoofState {
+  /** Which sides of each roof tile have a neighbour (ROOF_N…). */
+  masks: Map<number, number>;
+  /** The roof over you: lifted away so you can see inside. */
+  over: Set<number>;
+  /** 'ghost': see-through (placing roofs, taking down); 'hidden': out of the way (building
+   * inside); 'normal' otherwise. */
+  mode: 'normal' | 'ghost' | 'hidden';
+}
 
 class Labels {
   private readonly pool: Label[] = [];
@@ -960,6 +983,7 @@ export class View {
     }
     // Buildings: flames, doors, water.
     const time = c.now();
+    const roofs = this.roofState();
     for (const [id, b] of this.builds) {
       const net = c.buildings.get(id);
       if (!net) continue;
@@ -1002,8 +1026,7 @@ export class View {
           if (net.crop) v.crop.add(cropModel(net.crop[0], net.crop[1], net.crop[2] === 1));
         }
       }
-      // Roofs lift away while you're under or beside them, so you can see inside.
-      if (v.roof) v.roof.visible = Math.hypot(net.x - c.x, net.z - c.z) > ROOF_CUTAWAY;
+      if (v.roof) this.showRoof(v.roof as THREE.Mesh, id, net, roofs);
     }
     this.smokeAcc += dt;
     const smoke = this.smokeAcc > 0.22;
@@ -1156,6 +1179,75 @@ export class View {
       }
     }
     this.danger = c.me?.alive ? Math.min(1, n / 3) : 0;
+  }
+
+  private roofKey = '';
+  private roofMasks = new Map<number, number>();
+  private roofLinks = new Map<number, number[]>();
+
+  /** Roof tiles: who touches whom (for eaves and for lifting the roof you're under). */
+  private roofState(): RoofState {
+    const c = this.client;
+    const tiles = [...c.buildings.values()].filter((b) => BUILDINGS[b.kind]?.layer === 'roof');
+    const key = tiles.map((b) => `${b.id}:${b.x}:${b.z}`).join('|');
+    if (key !== this.roofKey) {
+      this.roofKey = key;
+      this.roofMasks = new Map();
+      this.roofLinks = new Map();
+      for (const a of tiles) {
+        const fa = footprint(a.kind, a.x, a.z, a.rot);
+        let mask = 0;
+        const links: number[] = [];
+        for (const b of tiles) {
+          if (a === b) continue;
+          const fb = footprint(b.kind, b.x, b.z, b.rot);
+          const spanX = Math.min(fa.maxX, fb.maxX) - Math.max(fa.minX, fb.minX);
+          const spanZ = Math.min(fa.maxZ, fb.maxZ) - Math.max(fa.minZ, fb.minZ);
+          if (spanX > 0.5 && Math.abs(fb.maxZ - fa.minZ) < 0.15) mask |= ROOF_N;
+          else if (spanX > 0.5 && Math.abs(fb.minZ - fa.maxZ) < 0.15) mask |= ROOF_S;
+          else if (spanZ > 0.5 && Math.abs(fb.minX - fa.maxX) < 0.15) mask |= ROOF_E;
+          else if (spanZ > 0.5 && Math.abs(fb.maxX - fa.minX) < 0.15) mask |= ROOF_W;
+          else continue;
+          links.push(b.id);
+        }
+        this.roofMasks.set(a.id, mask);
+        this.roofLinks.set(a.id, links);
+      }
+    }
+    const build = c.build;
+    const mode = build
+      ? build.piece === 'remove' || BUILDINGS[build.piece]?.layer === 'roof'
+        ? 'ghost'
+        : 'hidden'
+      : 'normal';
+    // The whole roof you stand under (every tile joined to the one above you) lifts away.
+    const over = new Set<number>();
+    if (mode === 'normal') {
+      const start = tiles.find((b) =>
+        circleHitsBox(c.x, c.z, 0.4, footprint(b.kind, b.x, b.z, b.rot)),
+      );
+      const queue = start ? [start.id] : [];
+      while (queue.length) {
+        const id = queue.pop() as number;
+        if (over.has(id)) continue;
+        over.add(id);
+        for (const n of this.roofLinks.get(id) ?? []) if (!over.has(n)) queue.push(n);
+      }
+    }
+    return { masks: this.roofMasks, over, mode };
+  }
+
+  private showRoof(roof: THREE.Mesh, id: number, net: { kind: string; rot: number }, s: RoofState) {
+    const mask = s.masks.get(id) ?? 0;
+    if (roof.userData['mask'] !== mask) {
+      roof.userData['mask'] = mask;
+      roof.geometry = roofGeometry(net.kind, mask);
+    }
+    // Shaped in world directions: undo the piece's own turn.
+    roof.rotation.y = -net.rot * (Math.PI / 2);
+    roof.visible = s.mode === 'ghost' || (s.mode === 'normal' && !s.over.has(id));
+    const mat = s.mode === 'ghost' ? ROOF_GHOST : MAT.lit;
+    if (roof.material !== mat) roof.material = mat;
   }
 
   /** The bunker door swings open; the wreck's breach floods with the tide. */

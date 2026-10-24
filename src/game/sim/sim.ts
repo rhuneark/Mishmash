@@ -57,7 +57,7 @@ import { FIRST_EVENT, rollLoot, runEvents } from './events';
 import { parseWeather, runWeather, type WeatherState } from './weather';
 import { burrowAll, damageMob, runDirector, spawnMob, updateMobs } from './mobs';
 import { MONSTERS, PET_NAMES } from '../content/monsters';
-import { placementProblem } from './place';
+import { BUILD_REACH, placementProblem } from './place';
 import {
   MOB_KINDS,
   MOB_STATE,
@@ -1302,7 +1302,7 @@ export class IslandSim {
   /** Build mode: a piece paid for from the bag (a made one first, else its materials). */
   private onBuild(p: SimPlayer, kind: string, x: number, z: number, rot: number): void {
     const def = BUILDINGS[kind];
-    if (!p.alive || !def || !this.canPlaceAt(p, kind, x, z, rot)) return;
+    if (!p.alive || !def || !this.canPlaceAt(p, kind, x, z, rot, BUILD_REACH)) return;
     const made = p.inv.findIndex((s) => s && ITEMS[s.id]?.place === kind);
     const slot = made >= 0 ? p.inv[made] : null;
     if (slot) {
@@ -1320,8 +1320,15 @@ export class IslandSim {
     this.putDown(p, kind, x, z, rot);
   }
 
-  private canPlaceAt(p: SimPlayer, kind: string, x: number, z: number, rot: number): boolean {
-    if (!Number.isFinite(x) || !Number.isFinite(z) || dist(p.x, p.z, x, z) > 7) return false;
+  private canPlaceAt(
+    p: SimPlayer,
+    kind: string,
+    x: number,
+    z: number,
+    rot: number,
+    reach = 7,
+  ): boolean {
+    if (!Number.isFinite(x) || !Number.isFinite(z) || dist(p.x, p.z, x, z) > reach) return false;
     const problem = this.placeProblem(kind, x, z, Math.floor(rot) & 3);
     if (problem) {
       this.toast(p.id, problem);
@@ -1354,7 +1361,7 @@ export class IslandSim {
 
   private onDemolish(p: SimPlayer, id: number): void {
     const b = this.buildings.get(id);
-    if (!p.alive || !b || dist(p.x, p.z, b.x, b.z) > REACH + 2) return;
+    if (!p.alive || !b || dist(p.x, p.z, b.x, b.z) > BUILD_REACH + 1) return;
     const def = BUILDINGS[b.kind];
     this.buildings.delete(id);
     this.broadcast({ type: 'unbuild', id });
@@ -1615,6 +1622,15 @@ export class IslandSim {
   }
 
   /** The nearest blocking building whose footprint a circle at (x, z) overlaps. */
+  /** Is anything anyone built within `r` m of (x, z)? Nothing spawns in or beside a base. */
+  baseAt(x: number, z: number, r: number): boolean {
+    for (const b of this.buildings.values()) {
+      if (Math.abs(b.x - x) > r + 3 || Math.abs(b.z - z) > r + 3) continue;
+      if (circleHitsBox(x, z, r, footprint(b.kind, b.x, b.z, b.rot))) return true;
+    }
+    return false;
+  }
+
   blockingAt(x: number, z: number, r: number): Building | null {
     for (const b of this.buildings.values()) {
       if (!blocksNow(b)) continue;

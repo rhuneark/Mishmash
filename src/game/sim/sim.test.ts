@@ -9,11 +9,11 @@ import { POI_BY_ID, SPAWN, MOTHER_SPOT, RESCUE_SECONDS } from '../content/pois';
 import { rng } from '../rng';
 import { IslandSim } from './sim';
 import { runDirector, spawnMob } from './mobs';
-import { placementProblem, snapToGrid } from './place';
+import { BASE_CLEAR, placementProblem, snapFlush, snapToGrid } from './place';
 import { POD_FALL, POD_LOOT, compass, pickEvent, rollLoot } from './events';
 import { bestSlot, count, emptyInv, weaponScore } from './inventory';
 import { DAY, START_TIME, lowTide } from './time';
-import { newSave, parseIslandSave } from './types';
+import { footprint, newSave, parseIslandSave } from './types';
 import type { S2C } from './protocol';
 import { DEFAULT_RULES, type WorldRules } from '../rules';
 import { dayInfo } from './time';
@@ -1375,5 +1375,89 @@ describe('secrets', () => {
     expect(lowTide(hour(12))).toBe(false);
     expect(lowTide(hour(17.5))).toBe(true);
     expect(lowTide(hour(22))).toBe(false);
+  });
+});
+
+describe('building anywhere, flush, and a base the Bloom keeps out of', () => {
+  const placed = (kind: string, x: number, z: number, rot = 0) => ({ kind, x, z, rot });
+
+  it('snaps a bench flush against a wall and beside another bench', () => {
+    const wall = placed('wall_wood', 1, 0, 0);
+    // On the grid the bench's back sits on the wall's line: it moves out to touch the face.
+    const g = snapToGrid('workbench', 1.2, 0.3, 0, 2);
+    const p = snapFlush('workbench', g.x, g.z, 0, [wall]);
+    const wb = footprint('workbench', p.x, p.z, 0);
+    const wf = footprint('wall_wood', 1, 0, 0);
+    expect(wb.minZ).toBeCloseTo(wf.maxZ, 3);
+    expect(placementProblem(island, [wall], () => true, 'workbench', p.x, p.z, 0)).not.toBe(
+      'Something is already there.',
+    );
+    // A second bench a hand's width away slides up against the first, fronts in line.
+    const first = placed('workbench', p.x, p.z, 0);
+    const q = snapFlush('workbench', p.x + 2.1, p.z + 0.15, 0, [wall, first]);
+    const b2 = footprint('workbench', q.x, q.z, 0);
+    expect(b2.minX).toBeCloseTo(wb.maxX, 3);
+    expect(b2.minZ).toBeCloseTo(wb.minZ, 3);
+    // Walls keep to the grid.
+    expect(snapFlush('wall_wood', 3, 0.2, 0, [wall])).toEqual({ x: 3, z: 0.2 });
+    // Rugs lie on floors.
+    expect(
+      placementProblem(island, [placed('floor_wood', 0, 0)], () => true, 'rug', 0, 0, 0),
+    ).not.toBe('Something is already there.');
+  });
+
+  it('builds and takes down pieces well beyond arm’s reach', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    h.sim.give(p, 'wood', 20);
+    h.sim.give(p, 'fiber', 20);
+    // Somewhere open about 15 m away.
+    let at: { x: number; z: number } | null = null;
+    for (let a = 0; a < 32 && !at; a++) {
+      const x = Math.round(p.x + Math.sin(a) * 15);
+      const z = Math.round(p.z + Math.cos(a) * 15);
+      if (!h.sim.placeProblem('garden_plot', x, z, 0)) at = { x, z };
+    }
+    expect(at).not.toBeNull();
+    h.sim.handle('a', { type: 'build', kind: 'garden_plot', x: at!.x, z: at!.z, rot: 0 });
+    const plot = [...h.sim.buildings.values()].find((b) => b.kind === 'garden_plot');
+    expect(plot).toBeTruthy();
+    h.sim.handle('a', { type: 'demolish', id: plot!.id });
+    expect(h.sim.buildings.has(plot!.id)).toBe(false);
+  });
+
+  it('never spawns monsters or animals in or beside a base', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    // A ring of floor right where night spawns land (22–36 m out).
+    for (let a = 0; a < 64; a++) {
+      const r = 22 + (a % 8) * 2;
+      const x = p.x + Math.sin(a * 0.7) * r;
+      const z = p.z + Math.cos(a * 0.7) * r;
+      const id = h.sim.newId();
+      h.sim.buildings.set(id, {
+        id,
+        kind: 'floor_wood',
+        x,
+        z,
+        rot: 0,
+        hp: 100,
+        owner: 'a',
+        v: 0,
+        acc: 0,
+      });
+    }
+    h.sim.time = START_TIME + DAY * 2 + DAY * 0.4;
+    for (let k = 0; k < 40; k++) {
+      runDirector(h.sim);
+      h.sim.time += 1;
+    }
+    expect(h.sim.mobs.size).toBeGreaterThan(0);
+    for (const m of h.sim.mobs.values()) {
+      if (m.kind === 'snapjaw' || m.kind === 'mother') continue;
+      expect(h.sim.baseAt(m.x, m.z, BASE_CLEAR - 0.5)).toBe(false);
+    }
   });
 });

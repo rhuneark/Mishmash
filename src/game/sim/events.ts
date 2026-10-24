@@ -11,6 +11,7 @@ import type { IslandSim } from './sim';
 import type { SimPlayer } from './types';
 import { eventScale, monsterScale } from '../rules';
 import { DAY } from './time';
+import { BASE_CLEAR } from './place';
 
 /** Seconds from the start of a new island to its first event. */
 export const FIRST_EVENT = 150;
@@ -128,9 +129,12 @@ function findSpot(
   return null;
 }
 
+/** Nothing in the way, and well away from anyone's base (no crates, pods or packs in it). */
 function clear(sim: IslandSim, x: number, z: number): boolean {
   return (
-    !hitCollider(sim.island, x, z, 2) && !sim.blockingAt(x, z, 2) && !poolNear(sim.island, x, z, 2)
+    !hitCollider(sim.island, x, z, 2) &&
+    !sim.baseAt(x, z, BASE_CLEAR) &&
+    !poolNear(sim.island, x, z, 2)
   );
 }
 

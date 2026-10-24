@@ -43,8 +43,9 @@ export interface BuildingDef {
    * at corners and joints.
    */
   shape?: 'edge' | 'corner';
-  /** Floors lie under other pieces and roofs over them; each only meets its own layer. */
-  layer?: 'floor' | 'roof';
+  /** Floors lie under other pieces, rugs on floors, roofs over everything; each only meets its
+   * own layer. */
+  layer?: 'floor' | 'rug' | 'roof';
   /** Storage slots (boxes, shelves, chests). */
   slots?: number;
   /** You wake up here after you fall (bedroll, bed). */
@@ -323,7 +324,7 @@ const list: BuildingDef[] = [
     w: 2.0,
     d: 1.4,
     blocks: false,
-    layer: 'floor',
+    layer: 'rug',
     cat: 'floors',
     cost: { cloth: 3, fiber: 2 },
     desc: 'Makes a shelter feel like home.',

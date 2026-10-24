@@ -5,7 +5,7 @@ import { POI_BY_ID, type PoiDef, type Spot } from '../../game/content/pois';
 import { SECRETS } from '../../game/content/secrets';
 import type { IslandParts } from '../../game/islands';
 import { WALL_HEIGHT } from '../../game/content/buildings';
-import { MAT, box, cone, cyl, disc, dodeca, ico, mesh, sphere, torus } from './geo';
+import { MAT, box, cone, cyl, disc, dodeca, ico, merge, mesh, sphere, torus } from './geo';
 
 export interface BuildingView {
   group: THREE.Group;
@@ -44,6 +44,47 @@ function flameGroup(scale = 1): THREE.Group {
     ),
   );
   return g;
+}
+
+/** Roof neighbours, in world directions: a tile beside this one on that side. */
+export const ROOF_N = 1;
+export const ROOF_E = 2;
+export const ROOF_S = 4;
+export const ROOF_W = 8;
+
+const roofCache = new Map<string, THREE.BufferGeometry>();
+
+/**
+ * A 2 m roof tile: a slab with thatch or plank rows, and eaves that slope down and out on
+ * every side without a neighbouring tile, so tiles together read as one roof.
+ */
+export function roofGeometry(kind: string, mask: number): THREE.BufferGeometry {
+  const key = `${kind}|${mask}`;
+  const hit = roofCache.get(key);
+  if (hit) return hit;
+  const thatch = kind === 'roof_thatch';
+  const base = thatch ? 0xc9a85a : WOOD2;
+  const dark = thatch ? 0xb8964a : 0x6a4a2a;
+  const light = thatch ? 0xd6b56a : WOOD;
+  const y = WALL_HEIGHT + 0.1;
+  const parts = [
+    box(2.0, 0.2, 2.0, base, { y }, 0.04),
+    ...[-0.62, 0.05, 0.7].map((z, k) =>
+      box(2.0, 0.09, 0.5, k === 1 ? light : dark, { y: y + 0.13, z }, 0.04),
+    ),
+  ];
+  const eave = (side: number) => {
+    const out = 1.12;
+    const tilt = 0.5;
+    if (side === ROOF_N) return box(2.06, 0.1, 0.56, dark, { y: y - 0.08, z: -out, rx: -tilt });
+    if (side === ROOF_S) return box(2.06, 0.1, 0.56, dark, { y: y - 0.08, z: out, rx: tilt });
+    if (side === ROOF_E) return box(0.56, 0.1, 2.06, dark, { y: y - 0.08, x: out, rz: -tilt });
+    return box(0.56, 0.1, 2.06, dark, { y: y - 0.08, x: -out, rz: tilt });
+  };
+  for (const side of [ROOF_N, ROOF_E, ROOF_S, ROOF_W]) if (!(mask & side)) parts.push(eave(side));
+  const geo = merge(parts);
+  roofCache.set(key, geo);
+  return geo;
 }
 
 export function buildingModel(kind: string): BuildingView {
@@ -476,13 +517,9 @@ export function buildingModel(kind: string): BuildingView {
       break;
     case 'roof_thatch':
     case 'roof_wood': {
-      const thatch = kind === 'roof_thatch';
-      const roof = mesh([
-        box(2.1, 0.22, 2.1, thatch ? 0xc9a85a : WOOD2, { y: WALL_HEIGHT + 0.12 }),
-        box(2.12, 0.1, 0.5, thatch ? 0xb8964a : 0x6a4a2a, { y: WALL_HEIGHT + 0.27, z: -0.6 }),
-        box(2.12, 0.1, 0.5, thatch ? 0xd6b56a : WOOD, { y: WALL_HEIGHT + 0.27, z: 0.1 }),
-        box(2.12, 0.1, 0.5, thatch ? 0xb8964a : 0x6a4a2a, { y: WALL_HEIGHT + 0.27, z: 0.75 }),
-      ]);
+      // Built in world axes (view.ts turns it back and reshapes it to its neighbours).
+      const roof = new THREE.Mesh(roofGeometry(kind, 0), MAT.lit);
+      roof.userData['mask'] = 0;
       group.add(roof);
       view.roof = roof;
       break;

@@ -822,19 +822,31 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await give(page, [['berries', 6]]);
   await page.waitForTimeout(400);
   await hold(page, 'berries', 2);
-  await game(page, async () => {
+  const goat = await game(page, async () => {
     const { spawnMob } = await import('/src/game/sim/mobs.ts');
     const c = window.__game.client;
-    spawnMob(c.link.sim, 'goat', c.x, c.z - 1.6, { roamer: false });
+    const m = spawnMob(c.link.sim, 'goat', c.x, c.z - 1.6, { roamer: false });
     c.ry = Math.PI;
+    return m.id;
   });
   await until(
     page,
     () => window.__game.client.actionLabel().text === 'Feed berries to the goat',
     `${tag} animals: can't feed the goat`,
   );
-  await pressUse(page);
-  await page.getByText(/eats from your hand/).waitFor();
+  // Headless frames are slow and the action has a short cooldown: press until it eats.
+  const fed = (id) => !!window.__game.client.link.sim.mobs.get(id)?.fed;
+  for (let k = 0; k < 6 && !(await game(page, fed, goat)); k++) {
+    await pressUse(page);
+    await page.waitForTimeout(700);
+  }
+  check(await game(page, fed, goat), `${tag} animals: the goat didn't eat`);
+  check(
+    (await game(page, () => window.__game.client.toasts.map((t) => t.text).join(' '))).includes(
+      'eats from your hand',
+    ),
+    `${tag} animals: no word that the goat ate`,
+  );
   await game(page, () => {
     const sim = window.__game.client.link.sim;
     window.__calm = setInterval(() => sim.mobs.clear(), 100);

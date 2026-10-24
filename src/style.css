@@ -1297,6 +1297,16 @@ button:disabled {
   flex: none;
 }
 
+/* Above the joystick zone (the build panel can reach into it on small phones); toasts let
+   touches through so the stick still starts under them. */
+.hud-left {
+  z-index: 2;
+}
+
+.hud-left > .toast {
+  pointer-events: none;
+}
+
 /* The player box moved down: the column starts at the top. */
 .game.stats-low .hud-left {
   --left-top: 8px;

@@ -2,14 +2,15 @@
 
 **The game is called Bloom Island** (since 2026-10-23: store name, logo, page title; the repo,
 save keys and code still say Mishmash, keep those). A game for RUN.world that **the community
-designs**: players suggest features, everyone votes,
-and the winners get built, one update at a time, so it becomes a mishmash of everyone's ideas.
-Round 1 (the base genre) got no votes, so the user picked the base: **Bloom Island**, a 2.5D
-survival / crafting / horror game (a small 7 Days to Die with an escape-room chain) where your
-plane crashes on a big island and the other passengers turn into walking plants (the Bloom).
-Around it sits a small hub on the title screen: the Round 2 vote on what to add next (🗳️ Vote
-for updates) and the owner's Dev area. Chat lives inside co-op games (no global chat since
-v1.17.0).
+designs**: players suggest features and the best ones get built, one update at a time, so it
+becomes a mishmash of everyone's ideas. Round 1 (the base genre) got no votes, so the user
+picked the base: **Bloom Island**, a 2.5D survival / crafting / horror game (a small 7 Days to
+Die with an escape-room chain) where your plane crashes on a big island and the other
+passengers turn into walking plants (the Bloom). Round 2's ballot was all built in v1.18.0 and
+voting rounds are over (the user's call, 2026-10-24: "no rounds like that, just a suggestions
+box I can go through in the dev area"). Around the game sits a small hub on the title screen:
+the suggestions box (💡 Suggest an update) and the owner's Dev area. Chat lives inside co-op
+games (no global chat since v1.17.0).
 
 Share link (private, unlisted): https://w.run/rhuneark/bloom-island?tag=private&k=5ba4a9c6c90a7da7908d7c7dbb35a5f3
 (since the rename to Bloom Island, v1.15.0; before that the slug was `mishmash`, same key;
@@ -20,20 +21,20 @@ update to the user with this link)
 ## The hub
 
 - **No tab bar** (the user's call, 2026-10-23: "now that it's established"): the title screen
-  (`Play`) is home. Vote and the owner's Dev area open from it as pages with a ‹ Back button
-  (`ui/SubPage.tsx`; `App.tsx` `screen`: play / vote / dev). While a game runs `Game` is full
+  (`Play`) is home. The suggestions box and the owner's Dev area open from it as pages with a
+  ‹ Back button (`ui/SubPage.tsx`; `App.tsx` `screen`: play / suggest / dev). While a game runs `Game` is full
   screen.
 - **Intro** (`screens/Intro.tsx`): full screen on first launch only (`save.introSeen`). "A game
-  the players build" → it starts as a survival game → play / vote / we build it (`STEPS`, also
-  in the title's ❓ How to play) → "Now voting: what to add next". Buttons (pinned under the
-  text): Play, Vote on what's next.
+  the players build" → it starts as a survival game → play / suggest / we build it (`STEPS`,
+  also in the title's ❓ How to play) → "Built by you" (what players asked for and got).
+  Buttons (pinned under the text): Play, Suggest an idea.
 - **Play** (`screens/Play.tsx`): a game title screen. Behind the menu your saved island turns
   slowly around the crash site (`play/TitleScene.ts`: the game's own terrain, nodes, grass and
   landmarks, 30 fps, gives the WebGL context back on unmount; no save: an autumn showcase
   island). Buttons: Continue (island name · Day N) or Start surviving, New island, Play with
   friends (host my island), Join a friend (room code), ⚙️ Settings (the game's settings panel
-  without the key list), ❓ How to play, 🗳️ Vote for updates, 🎃 Vote for us in October Jam,
-  and for the owner only 🛠️ Dev (· N to check: messages with open reports). **New island** (`screens/NewIsland.tsx`): map preview, name and code, 🎲
+  without the key list), ❓ How to play, 💡 Suggest an update, 🎃 Vote for us in October Jam,
+  and for the owner only 🛠️ Dev (· N to check: new suggestions + messages with open reports). **New island** (`screens/NewIsland.tsx`): map preview, name and code, 🎲
   Surprise me / Same kind, new island, climate, terrain, layout (quarter turns + mirror), an
   island code box, then the world rules (`hud/RulesPanel.tsx`); starting asks before it
   replaces a save. The win screen's New island lands here too (`App` `wantNew`).
@@ -42,24 +43,15 @@ update to the user with this link)
   `window.open` as critical), so the button copies `JAM_URL`
   (`https://run.world/jams/octoberjam?game=7VPvCLP7URUp69R6K10O`) and shows it to copy by
   hand.
-- **Vote** (`screens/Vote.tsx`, `game/poll.ts`): shows `CURRENT_POLL` = `NEXT_POLL` (id
-  `next1`, Round 2: what gets added next: boats, farming, pets, weather, ranged weapons, new
-  monsters, bigger bases, puzzles & secrets) under a "Round 1 is closed" card. `BASE_POLL`
-  (Round 1) is closed (`open: false`) and kept so its votes keep counting the same way.
-  **One vote per person** (the user's rule): each vote is a UGC entry of content type
-  `vote-<poll>-<option>` (`voteType`), and `loadPoll` reads every vote entry of the poll (all
-  options in one browse, 100 a page, up to `VOTE_PAGES` 30 pages, so exact up to 3,000
-  entries; revisit past that) and `countVotes` counts only each author's newest one, so a
-  second entry (a failed delete, a tampered client) never counts. Refreshed every 60 s while
-  the page is open. Moving a vote creates the new entry, then deletes the old one; the
-  player's own extra entries are deleted when found. The buttons stay disabled until the
-  player's current vote is known, so the client never makes a second vote blind.
-  **Never rename a live poll or option id**: its votes stay under the old content type. To
-  close a poll set `open: false`; a new round is a new `Poll` with a new id (point
-  `CURRENT_POLL` at it). When a round's winner is built, say so on the Vote page and in the
-  intro.
-  **Don't build a ballot option before it wins** (weather, boats, farming, pets, ranged
-  weapons, new monsters, bigger bases, puzzles & secrets): the vote decides those.
+- **Suggestions box** (`screens/Suggest.tsx`, `game/suggest.ts`): replaced the votes in v1.18.0
+  (`poll.ts` and `Vote.tsx` are gone; the old `vote-…` UGC entries stay on RUN's servers,
+  unread). A "You asked, we built it" card (`BUILT`: Round 1 and every Round 2 option, now in
+  the game), a topic (`TOPICS`: gameplay, building, creatures, the island, something else), a
+  text box (≤`MAX_SUGGESTION` 300 characters, `cleanSuggestion`; RUN's word filter
+  `run.isCleanText` before sending) and the player's own suggestions with Take back. Each one
+  is a UGC entry of type `suggest` (`SUGGEST_TYPE`, data `{v, text, topic}`); a player may send
+  `DAILY_LIMIT` 5 a day (`sentToday`, a courtesy limit). When something players asked for gets
+  built, add it to `BUILT`.
 - **Island chat (co-op only)** (`hud/ChatBox.tsx`, `game/chat.ts`; the user's call: chat only
   in games, the Town Square is gone since v1.17.0). 💬 next to ☰ (with an unread badge) or
   Enter on PC opens a box at the top: the lines so far, a line to type (≤`MAX_SAY` 120
@@ -74,22 +66,28 @@ update to the user with this link)
   their reports.
 - **Dev area** (`screens/Dev.tsx`, `game/moderation.ts`): a 🛠️ Dev button on the title that
   **only the game's owner (the user) sees** (`isOwner` → `app.getMyRole()`, checked by RUN against the account;
-  RUN also refuses the admin calls it makes for anyone but the owner and editors). Lists player
+  RUN also refuses the admin calls it makes for anyone but the owner and editors). Two areas:
+  **💡 Suggestions** (every `suggest` entry, newest first, "Load older suggestions" pages on;
+  filters To read / ⭐ Starred / ✓ Done / All; Star and Done are the owner's own marks, kept on
+  their device in appStorage `mishmash_dev_marks` (`DevMarks`, `parseMarks`, with `seenAt` for
+  the New badge); Delete removes the entry for good (`adminUgc.removeEntry`)) and **🚩
+  Reports**, which lists player
   reports grouped per message (`groupReports`: most reported first), with the reported text even
   when the message is hidden (`adminEntries`: `ugc.getMany`, then `app.adminUgc.browse` over the
   newest 500 chat entries for hidden ones), its state (visible / hidden from players / deleted /
   already gone), report count, reasons and notes. Open: **Delete message**
   (`adminUgc.removeEntry`, reports resolved as `reviewed`) or **Keep** (resolved as
   `dismissed`). Resolved: the history. The SDK can't lift an auto-hide (3 reports), so a
-  hidden message shows the CLI command (`rundot ugc approve <id>`). The button counts the
-  messages with open reports (`ReportWatch` in App.tsx, every 5 min; the list
-  refreshes every 60 s while open).
+  hidden message shows the CLI command (`rundot ugc approve <id>`). The button counts new
+  suggestions and messages with open reports (`DevWatch` in App.tsx, every 5 min; the report
+  list refreshes every 60 s while open).
 - **Community data is UGC** (`rundot/ugc.config.json`: 500 entries per player; 2 KB data; 3
-  reports hide an entry): votes now (and the old chat entries). UGC needs a RUN sign-in to post
-  (the SDK prompts). `src/app/community.ts` holds the vote and Dev area logic over a `UgcApi`: `run.ugc` in
-  the RUN host, `src/app/localUgc.ts` in `npm run dev` (the mock SDK can't store UGC). The
-  local stand-in is in memory (resets on reload), seeded with sample players (one voted twice),
-  and the screens show a "Local preview" tag; add `?owner` to the dev URL to play the owner.
+  reports hide an entry): suggestions now (and the old chat and vote entries). UGC needs a RUN
+  sign-in to post (the SDK prompts). `src/app/community.ts` holds the suggestions and Dev area
+  logic over a `UgcApi`: `run.ugc` in the RUN host, `src/app/localUgc.ts` in `npm run dev` (the
+  mock SDK can't store UGC). The local stand-in is in memory (resets on reload), seeded with
+  sample players and three suggestions (Nova, Pip, Bram), and the screens show a "Local
+  preview" tag; add `?owner` to the dev URL to play the owner.
   It follows the server's rules (own deletes only, 3 reports hide, admin calls need the owner)
   and seeds reports for the Dev area (a hidden spam message, one open, one dismissed).
   Rate limits aren't published; reads back off on `RATE_LIMITED`.
@@ -138,7 +136,9 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   while too few are around; labelled under "The Bloom (zombies)"), their damage to buildings, your damage to nodes, yield, world events, map
   markers (all / landmarks / only you, `MapView`), connected storage (`sharedChests`: every box
   shows `sim.chest`, `CHEST_SLOTS` 48, saved as `IslandSave.chest`) and craft from storage
-  (`craftFromChests`: `removeFrom` takes from the bag first, client `craftCount`). Presets:
+  (`craftFromChests`: `removeFrom` takes from the bag first, client `craftCount`; it pays for
+  build-mode pieces too), weather (`weather`: off / rare / normal / often) and island animals
+  (`animals`: none / few / normal / many, `wildlifeScale`). Presets:
   Relaxed, Survivor (the defaults), Nightmare. The pause menu's 🏝️ This island page shows the
   name, code and rules, and the island's owner (`sim.owner`: the solo player, or the room's
   host) can change them there mid-game (C2S/S2C `rules`, `changeRules`: storage stays as it
@@ -164,14 +164,17 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   6 day, 4 night); every 7th night is a **Bloom night** (`BLOOM_EVERY`): bigger, enraged
   hordes that ignore fire. Dying drops your bag where you fell (2 days); you wake at your
   bedroll or the crash site.
-- **Content tables** (`game/content/`): `items.ts` (materials, food, medicine, tools, weapons,
-  torch, fire bomb, placeables, quest parts), `recipes.ts` (by hand / at a lit campfire / at a
-  workbench), `nodes.ts` (trees, bushes, rocks, branches, wreckage, suitcases, Bloom vines),
-  `buildings.ts` (campfire with fuel, workbench, walls, door, stone wall, spikes, torch post,
-  storage box, bedroll, rain collector), `monsters.ts` (Husk = a taken passenger, Snapjaw =
-  rooted biting flower, Puffer = spore sac that bursts into poison, Thornback = fast heavy
-  crawler, the Mother Bloom = boss, crabs), `pois.ts` (landmarks, colliders, interactive
-  spots), `notes.ts` (lore notes, research pages, the cargo code).
+- **Content tables** (`game/content/`): `items.ts` (materials, food and meals, seeds and
+  crops, medicine, tools, weapons, ranged weapons and ammo, torch, fire bomb, the shovel,
+  messages in bottles, legacy placeables, quest parts), `recipes.ts` (by hand / at a lit
+  campfire / at a workbench / at the Mashbench / in a cooking pot; no buildings),
+  `nodes.ts` (trees, bushes, rocks, branches, wreckage, suitcases, Bloom vines),
+  `buildings.ts` (every build-menu piece with its `cost` and `cat`), `crops.ts` (what grows),
+  `monsters.ts` (Husk = a taken passenger, Snapjaw = rooted biting flower, Puffer = spore sac
+  that bursts into poison, Thornback = fast heavy crawler, the Mother Bloom = boss, crabs;
+  island animals: boar, goat, fowl, dog), `pois.ts` (landmarks, colliders, interactive
+  spots), `secrets.ts` (the bunker, the wreck, survey markers, treasure, their codes),
+  `notes.ts` (lore notes, research pages, the cargo code, the secrets' notes).
 - **Lore** (`content/notes.ts`, header comment has the whole story): under the marsh lives
   one root colony, "Specimen M"; Verdance Biotech's Kessler Station studied it (Project
   Perennial: its sap heals, and it makes the dead walk). It took the staff (Husks), their guard
@@ -302,22 +305,109 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   `--safe-*` set on `.game`). `.game.landscape` (any wide game, turned or not) has its own HUD
   layout (stats and minimap in a row, smaller hotbar); `.lefty` swaps stick and buttons; `.hud-small/large` scale the button
   groups. `.game` is a size container (`cqw`/`cqh` for the full map).
-- **Build mode** (🔨 button or V; `client.build`, `BuildPanel`/`BuildBar` in Hud.tsx): the
-  hotbar becomes the build bar (every placeable kind in your bag, plus 🗑️ take down), the
-  camera pulls back and a grid shows on the ground around the piece (`view.updateGrid`).
+- **Build menu** (🔨 button or V; `client.build` = `{piece, cat, rot, cursor, remove}`,
+  `BuildPanel`/`BuildBar` in Hud.tsx; the user's call, 2026-10-24: "in the build menu you
+  choose what you want to place"): **buildings aren't crafted any more**. The hotbar becomes
+  the build menu: a 🗑️ take-down tab and a tab per `BUILD_CATS` (camp, walls, floors & roofs,
+  furniture, farm & kitchen, defense), each listing its pieces (`client.buildPieces`, greyed
+  `poor` when you can't pay; the count of legacy placeable items you still carry shows on
+  them). The panel shows the piece, its cost chips (have/need) and `desc`. Placing sends C2S
+  `build {kind, x, z, rot}`; the authority (`onBuild`, sharing `canPlaceAt`/`putDown` with the
+  old `place` of a held item) takes a legacy item of that kind first, else the
+  `BuildingDef.cost` from the bag (and from storage with the craft-from-storage rule).
+  Taking a piece down gives `refundOf` back (half of each material, a single part comes back).
+  The camera pulls back and a grid shows on the ground around the piece (`view.updateGrid`).
   The piece follows the mouse on PC (`view.groundAt` raycast, re-aimed every frame) or a
   finger dragged on the island (aimed 56 px above it), within 6.5 m (`setBuildCursor`; the
   authority allows 7). ⟲ ⟳ / R / the wheel turn it (quarter turns), ▦ Snap (G) and the grid
   size (1 m / 2 m, `buildPrefs` from Settings) are on the panel. `snapToGrid` (place.ts):
-  `shape: 'edge'` pieces (walls, doors, gates, spikes) run along grid lines with their ends
-  on grid points, `corner` pieces (posts) sit on grid points, others fill (half) cells;
+  `shape: 'edge'` pieces (walls, doors, gates, fences, spikes) run along grid lines with their
+  ends on grid points, `corner` pieces (posts) sit on grid points, others fill (half) cells;
   edge/corner pieces may overlap where they join (`joins`, ≤ 0.62 m both ways) so corners and
-  T-joints work. Place = the action button, click or Space (from any bag slot); the
-  take-down tool demolishes the piece under the cursor (`removeTarget`, red ring). Esc / V /
-  ✕ leaves. Outside build mode a held placeable still shows the ghost in front of you, with
-  the same snapping. **Shapes** (2026-10-23): short wall (1 m), window wall, wooden post,
-  wooden gate (4 m, two leaves, `opens` like the door), short stone wall, stone pillar.
-  Floors, roofs, furniture and traps are the "Bigger bases" ballot option: not built.
+  T-joints work. **Layers** (`BuildingDef.layer`): floors (`floor`, need flatter ground, 1.2 m)
+  lie under things and roofs (`roof`, at `WALL_HEIGHT` 2.6 m) over them; a piece only
+  collides with pieces of its own layer. Roofs within `ROOF_CUTAWAY` 6.5 m of you are hidden
+  (view.ts) so you can see inside. Place = the action button, click or Space; the take-down
+  tool demolishes the piece under the cursor (`removeTarget`, red ring). Esc / V / ✕ leaves.
+  Outside build mode a held legacy placeable still shows the ghost in front of you.
+  **Pieces**: campfire, workbench, Mashbench, storage box, bedroll, torch post, heart lantern;
+  wooden/short/window/scrap walls, door, gate, posts, fences and fence gate, stone walls and
+  pillar, thorn wall; wooden/stone floors, rug, thatch and wooden roofs; table, chair, bed
+  (`spawn`, like the bedroll), shelf (8 `slots`), big chest (24), lamp; garden plot, cooking
+  pot (station `pot`, needs a lit campfire within `POT_FIRE_RANGE` 3 m), rain collector;
+  spikes, spike pit (floor layer, `thorns`), snap trap.
+- **Farming and cooking** (`content/crops.ts`, `sim.ts` `usePlot`/`updatePlot`): a garden plot
+  takes a seed (the one in hand, else the first in the bag; `seedFor`): corn, potatoes,
+  tomatoes, pumpkins, berries (`CROPS`; berry bushes regrow from halfway). A crop only grows
+  while its plot is wet (`WET_SECONDS` 0.45 day after a watering or a shower; rain waters
+  plots without a roof over them, `sheltered`); `Building.crop {id, grow, wet}`, sent as
+  `cropNet` `[idx, stage, wet, pct]`, drawn by `cropModel(crop, stage, wet)`. Ripe: harvest
+  gives the food and seeds back. The watering can (bench) keeps its water in `d` (`can: true`,
+  8 waterings), filled at a pool or a rain collector. Seeds come from suitcases, crates, pods,
+  berries (by hand) and the bunker's seed vault. Meals: at a campfire (roast corn, baked
+  potato, fried egg, cooked meat) or in the cooking pot (stews, pumpkin soup, omelette,
+  coconut curry): they have `food` and `heal` (healing over time, `onEat`).
+- **Island animals and taming** (`MonsterDef.animal`, `mobs.ts` `wildAnimal`/`pet`,
+  `sim.ts` `usePet`): boars, goats, island fowl and wild dogs (`MOB_KINDS` appended) roam by
+  day (`ANIMALS_BY_BIOME`, the director, `wildlifeScale` from the `animals` rule). Shy ones flee
+  when hurt, boars and dogs fight back (`angryUntil`). Hunting gives meat, hides and feathers.
+  Hold one's favourite `food` and use it `feeds` times (the same player, `Mob.fed`) and it's
+  yours: `Mob.tame {owner, name (PET_NAMES), mode follow/stay, next}`; it follows you (and
+  catches up when far), fowl lay eggs and goats give milk every `gives.every` seconds (collect
+  with the action button), dogs fight the Bloom with you. Pets are saved (`IslandSave.pets`,
+  ≤40), never despawn or burrow, aren't hit by your bombs, traps or arrows, and wear their name
+  (S2C `pets` `PetNet[]`, `view.ts` `tag-name pet`). A pet dying tells its owner. Feeding,
+  petting and calling show the use button, not the attack one.
+- **Weather** (`sim/weather.ts`, `render/weather.ts`): the authority picks spells (`nextWeather`:
+  clear, cloudy, rain, storm, fog; odds by climate, `LASTS` minutes, never two storms in a
+  row; a new island starts fair for `FIRST_FAIR` 240 s; the `weather` rule: off / rare /
+  normal / often) and sends S2C `weather` (snapshot too; saved as `IslandSave.weather`). Rain
+  waters unsheltered plots, fills rain collectors 5× faster, burns campfire fuel 1.6× (storms
+  2.2×) and halves thirst; storms throw lightning near survivors (`lightning`: hurts players
+  in the open, `sim.strike` hurts monsters and fells trees; fx `lightning`); fog: monsters
+  notice you at 0.6× range. The client blends sky, sun, hemisphere light and fog
+  (`WEATHER_LOOK`), draws rain streaks around the camera (`Rain`, count by quality), bolts and
+  flashes, plays rain and thunder, and shows the weather by the clock. News toasts on change
+  (`WEATHER_NEWS`).
+- **Ranged weapons** (`ItemDef.ranged {damage, range, cooldown, speed, ammo}`, `ItemDef.ammo`):
+  slingshot (stones), bow (arrows, fire arrows), crossbow (bolts). C2S `shoot {x, z}`:
+  `IslandSim.onShoot` takes the first matching ammo in the bag, finds the first creature on
+  the line (never pets) unless a tree, rock or landmark wall comes first (`shotBlocked`; arrows
+  fly over your own walls), and the hit lands when the arrow arrives (`shots`, `far / speed`);
+  fire arrows burn. fx `shot` (`r` = `SHOTS` index) flies an arrow, bolt or stone in a shallow
+  arc (`fx.shoot`). Client: with ammo, `shotTarget` aims at the nearest Bloom in range (or a
+  wild animal you face); on PC at whatever is near the mouse (`client.setAim` from Game's frame
+  loop; pointing away from something in reach shoots instead of using it); holding the button
+  keeps shooting; auto weapon never swaps a bow away while it has ammo; the hotbar slot shows
+  the ammo left (`.slot-ammo`). Arrows: wood, stone and feathers (or fiber) by hand; fire
+  arrows add sap; bolts at the bench.
+- **Secrets** (`content/secrets.ts`, `world.ts` `placeSecrets`; the user asked for "puzzles and
+  secrets, like a bunker, a ship wreckage"): sites placed on every island **after** generation,
+  so no tree, hill or node id moved: `SECRETS` (the bunker, the wreck, survey markers A–D) are
+  `PoiDef`s with `secret: true` and `rot` (one of 8 exact `HEADINGS`, no trig), found by
+  integer-hash search (inland flat ground for the bunker, a beach facing the sea for the
+  wreck, one marker per island corner), their boxes pushed onto `island.colliders` and the
+  nodes under them hidden (`island.hidden`, checked by every `nodeGone` and the title
+  backdrop); five treasure spots in `island.treasures`. The ground isn't flattened under them;
+  models come from the template (`buildPois` turns them by `rot` only). Spots gain `after`
+  (only once a flag is set), `tide` (only at low tide: `time.ts` `lowTide`, 04–08 and 16–20 on
+  the island clock), `lock` ('cargo' / 'bunker' / 'wreck', flag `<lock>_open`; `onCode` uses
+  the nearest lock; the keypad sheet follows `client.keypadLock`), `code: 'bunker'` on tags,
+  kind `generator`. **The bunker**: read the sign (reveals the markers on the map), find the 4
+  survey markers (one digit of `bunkerCode` each), fuel the generator with `GENERATOR_SAP` 3
+  sap (`bunker_power`), enter the code: the door swings open (view.ts) onto the seed vault, a
+  weapons locker (bow, arrows, shovel, treasure map 2) and the shelter terminal's lore. **The
+  wreck** (the freighter Marisol): her log says the safe opens to the hull number backwards
+  (`hullNumber`, `wreckCode`), the bow shows it; the hold and the safe (crossbow, bolts,
+  treasure map 1) only at low tide (the breach floods at high water). **Treasure**: maps are
+  notes `treasure_1`…`5` (1 the safe, 2 the bunker, 3–5 from messages in bottles: `bottle`
+  items (`reads`) wash up in wreckage crates; reading one gives the next map, then
+  `bottle_letter`). A found map puts a red X on the map, minimap and the ground
+  (`treasureMark`); dig there with a shovel (UseKind `dig`, id = map number, `DIG_HP` 60, auto
+  tool takes the shovel out) for a buried chest (`TREASURE_LOOT`, a `crate` drop), flag
+  `dug:N`. The journal lists treasure maps; the quest list shows one secret card at a time
+  (`secretQuest`: treasure, then the wreck, then the bunker), and only after "The first night"
+  is done, so there are never more than two cards.
 - **Item pictures** (`hud/itemIcons.ts`): every item is a small SVG (48×48, flat colours,
   dark outline) shown as a data-URL `<img>` (`Slots.tsx` `ItemIcon`). Not emoji: newer emoji
   (wood, rock, rope…) are empty boxes on older phones and Windows. `itemIcons.test.ts`
@@ -347,8 +437,9 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   the menu, steps back a menu page). Key hints show on devices with a mouse
   (`isPc`: `(pointer: fine)`).
 - **Saves**: your island is one JSON in appStorage (`mishmash_island`, `IslandSave` v1,
-  `parseIslandSave` repairs untrusted data; keep it accepting old saves; `island`, `rules` and
-  `chest` are optional: missing = the classic island, default rules). The player key is the
+  `parseIslandSave` repairs untrusted data; keep it accepting old saves; `island`, `rules`,
+  `chest`, `weather` and `pets` are optional: missing = the classic island, default rules,
+  fair weather, no pets). The player key is the
   RUN profile id (the same id the room uses), so your survivor is the same solo and hosting.
 - **Co-op** (`play/roomLink.ts`, `server/IslandRoom.ts`, `rundot/realtime.config.json`, room
   type `island`, 4 players, reconnect 60 s). The host creates a room and uploads their island
@@ -364,14 +455,20 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
 Most features are data first, then a little code:
 
 - **New item**: add it to `content/items.ts` (an emoji icon, stack size, and `tool` / `weapon`
-  / `food` / `heal` / `place` / `throwable` as needed), a recipe in `content/recipes.ts`
+  / `food` / `heal` / `place` / `throwable` / `ranged` / `ammo` / `can` / `reads` as needed), a recipe in `content/recipes.ts`
   and/or a drop in `content/nodes.ts` / `monsters.ts`. Inventory, crafting UI, hotbar, eating
   and the authority's checks pick it up. A held model is optional (`render/items.ts`).
-- **New building**: `content/buildings.ts` (footprint, hp, blocks, light, station, thorns;
-  `shape: 'edge' | 'corner'` for wall pieces and posts on the build grid, `opens` for doors
-  and gates), an item with `place`, a model in `render/structures.ts` `buildingModel`, and behaviour in
-  `sim.ts` (`useBuilding`, `updateBuildings`) plus its action label in `client.ts`
-  `buildingTarget`.
+- **New building**: `content/buildings.ts` (footprint, hp, blocks, `cost`, `cat` (its build-menu
+  tab), `desc`, light, station, thorns, `slots`, `spawn`, `layer`; `shape: 'edge' | 'corner'`
+  for wall pieces and posts on the build grid, `opens` for doors and gates), a model in
+  `render/structures.ts` `buildingModel`, a picture in `itemIcons.ts` `PIECE_ICONS`, and
+  behaviour in `sim.ts` (`useBuilding`, `updateBuildings`) plus its action label in
+  `client.ts` `buildingTarget`. No item or recipe: build mode pays the cost.
+- **New crop**: `content/crops.ts` (append to `CROPS`: the index is sent), its seed and food in
+  `items.ts` (with pictures), a stage look in `structures.ts` `cropModel`.
+- **New animal**: a `MonsterDef` with `animal` (food, feeds, shy/fights, gives, noun, icon) and
+  `hostile: false`, appended to `MOB_KINDS`, a rig in `actors.ts` (`BEASTS`), where it lives in
+  `mobs.ts` `ANIMALS_BY_BIOME`, a name in `MOB_NAMES`.
 - **New monster**: `content/monsters.ts` (+ `MOB_KINDS` in `sim/protocol.ts`: append, never
   reorder), a rig in `render/actors.ts`, behaviour in `sim/mobs.ts` (walkers reuse `walker`),
   spawn rules in `runDirector`, a name in `client.ts` `MOB_NAMES`. Give it a part to drop
@@ -382,6 +479,10 @@ Most features are data first, then a little code:
   research page (`page_9`…, Husks drop them in order).
 - **New node / resource**: `content/nodes.ts` (append to `NODE`, never reorder: ids are
   saved), scatter rules in `world.ts` `NODE_TABLE`, geometry in `render/props.ts`.
+- **New secret**: append a `SecretDef` to `SECRETS` (and a `place` rule in `world.ts`
+  `placeSecrets`): it goes on every island without moving anything. Keep its boxes' `rot` 0
+  (the site turns as a whole); its model is a `poiStructure` case; puzzles use spot `after` /
+  `tide` / `lock` and flags. More treasure: raise `TREASURES` and add `treasure_N` notes.
 - **New landmark or puzzle**: a `PoiDef` in `content/pois.ts` (boxes = colliders, spots =
   interactions), its model in `render/structures.ts` `poiStructure`, spot behaviour in
   `sim.ts` `useSpot` and labels in `client.ts` `spotTarget`, objectives in `objectives.ts`.
@@ -415,7 +516,7 @@ deploys a private build (v1.1.0 was the placeholder). The one-time steps stay in
 ```
 src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inputs + seed.
   save.ts            hub save (SAVE_KEY, SAVE_VERSION; visits, introSeen)
-  poll.ts            polls, vote content types, tallies (BASE_POLL closed, NEXT_POLL current)
+  suggest.ts         the suggestions box: cleaning, topics, daily limit, the owner's marks
   chat.ts            chat line cleaning (MAX_SAY, SAY_GAP), old Town Square entries (Dev area)
   moderation.ts      reports grouped per message (Dev area)
   rng.ts, noise.ts   seeded hashes and value noise (engine-independent)
@@ -423,11 +524,12 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
   islands.ts         island parts: layout turns/mirror, climates, terrain styles, codes, names
   rules.ts           world rules (7 Days style), presets, what they mean in numbers
   objectives.ts      the escape checklist from flags/notes/inventory
-  content/           items, recipes, nodes, buildings, monsters, landmarks (pois), notes
+  content/           items, recipes, nodes, buildings, crops, monsters, landmarks (pois),
+                     secrets (bunker, wreck, markers, treasure), notes
   sim/               the island authority: sim.ts (IslandSim), mobs.ts (monsters, director),
                      events.ts (world events), protocol.ts (messages), types.ts (save format,
                      collision helpers), inventory.ts (+ best tool/weapon), place.ts (build
-                     rules), time.ts (day/night)
+                     rules), time.ts (day/night, tides), weather.ts (spells, lightning)
   *.test.ts          vitest unit tests
 src/sdk/run.ts     THE ONLY client module that imports the RUN SDK. Waits for start-up,
                    catches everything. UgcApi + run.ugc, realtime rooms (createRoom/joinRoom).
@@ -437,17 +539,18 @@ src/play/          the game client: session.ts (solo/host/join, saves), link.ts 
                    settings.ts + prefs.ts (settings), screen.ts (landscape), audio.ts +
                    music.ts, view.ts (scene), Game.tsx (canvas, frame loop, settings),
                    TitleScene.ts (the title backdrop), render/ (terrain, nodes, actors,
-                   structures, items, props, fx, geo, wind, ambient, climate, light), hud/ (Hud,
+                   structures, items, props, fx, geo, wind, ambient, climate, light,
+                   weather), hud/ (Hud,
                    Menu, Panels, QuickPanel, Craft, Slots, drag, itemIcons, MapView, map,
                    RulesPanel, ChatBox)
-src/app/           community.ts (votes, Dev area over UgcApi), localUgc.ts (dev stand-in),
+src/app/           community.ts (suggestions, Dev area over UgcApi), localUgc.ts (dev stand-in),
                    usePolling.ts, appEvents.ts (host lifecycle → game pause/resume), links.ts
                    (the October Jam link, copied)
-src/screens/       Play (title, home), NewIsland, Intro (first launch), Vote, Dev (owner)
+src/screens/       Play (title, home), NewIsland, Intro (first launch), Suggest, Dev (owner)
 src/ui/            Logo (the BLOOM / ISLAND wordmark, `.brand`), Notice (failure messages),
-                   SubPage (a page with ‹ Back: Vote, Dev)
+                   SubPage (a page with ‹ Back: Suggest, Dev)
 src/components/    ErrorBoundary
-src/App.tsx        hub save, first-launch intro, title / vote / dev pages, starts/leaves games
+src/App.tsx        hub save, first-launch intro, title / suggest / dev pages, starts/leaves games
 src/main.tsx       entry: safe-area/font-scale CSS vars, lifecycle hooks, render
 scripts/playthrough.mjs  Playwright: hub + solo game + co-op at 375×667 and 390×844
 scripts/islandmap.ts     `npx tsx scripts/islandmap.ts <seed> <out.png>`
@@ -498,14 +601,17 @@ npm run build
 rundot preflight --strict   # must be 0 warnings
 npm run dev                 # then, in another shell:
 npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, no tab bar or
-                            # global chat, vote, owner Dev area, jam link), New island (code,
+                            # global chat, suggestions box: send and take back, owner Dev
+                            # area: star, done, delete, reports; jam link), New island (code,
                             # presets), the game
-                            # (walk, read, gather, craft, build, night fight, death, item
+                            # (walk, read, gather, craft, a campfire from the build menu, night
+                            # fight, death, item
                             # pictures, quick panel, drag and drop, Mashbench, research page,
                             # auto tool, a supply pod, the bag window's place, isometric and
                             # top-down walking, quests, build mode (grid, corner, post, turn,
                             # snap, take down), pause menu, This island (change the spawn
-                            # rate), HUD settings, settings, rebinding a key, landscape,
+                            # rate), a bow shot, planting and watering, feeding a goat, the
+                            # bunker sign, HUD settings, settings, rebinding a key, landscape,
                             # save/continue, replace confirm), hub settings and local co-op on
                             # a made island with Relaxed rules (island chat: log, bubble,
                             # badge, Enter, mute);
@@ -556,8 +662,12 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   Jam link) were private builds; all of it went public with v1.15.0. v1.16.0 (build mode and
   shapes, quests under the minimap, HUD settings, spawn rate, rules changed mid-game) and
   v1.17.0 (no tab bar, the title is home with Vote for updates; no global chat, island chat in
-  co-op; shadows, tone mapping, a moving sun, new palms and trees, sea swells) are private
-  builds until the user asks to publish them.
+  co-op; shadows, tone mapping, a moving sun, new palms and trees, sea swells) and v1.18.0
+  (2026-10-24, Round 2 all built: the suggestions box instead of votes, the build menu with
+  floors, roofs and furniture, farming and cooking, island animals and taming, weather, bows
+  and ranged weapons, the bunker, the shipwreck and buried treasure; store text and tags
+  updated: + farming, cooking, animals, taming, weather, archery, treasure, puzzles, secrets,
+  voting retired) are private builds until the user asks to publish them.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

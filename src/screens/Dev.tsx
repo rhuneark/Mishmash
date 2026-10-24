@@ -194,7 +194,9 @@ function Suggestions({ onNewCount }: { onNewCount: (n: number) => void }) {
     setNext(res.next);
   };
 
-  const shown = (list ?? []).filter((s) => {
+  // Star and Done need the marks: the list waits for them.
+  const ready = list && marks ? list : null;
+  const shown = (ready ?? []).filter((s) => {
     const done = marks?.done.includes(s.id) ?? false;
     if (filter === 'new') return !done;
     if (filter === 'done') return done;
@@ -218,8 +220,8 @@ function Suggestions({ onNewCount }: { onNewCount: (n: number) => void }) {
         ))}
       </div>
       {notice && <Notice state={notice} onClose={() => setNotice(null)} />}
-      {!list && <p className="muted center">Loading suggestions…</p>}
-      {list && shown.length === 0 && (
+      {!ready && <p className="muted center">Loading suggestions…</p>}
+      {ready && shown.length === 0 && (
         <p className="muted center">
           {filter === 'new' ? 'Nothing new to read. 🎉' : 'Nothing here yet.'}
         </p>

@@ -5,7 +5,7 @@
 import { BUILDINGS } from '../content/buildings';
 import { ITEMS } from '../content/items';
 import { MONSTERS, MOTHER_SLAM_RADIUS, PUFFER_BURST, type MonsterKind } from '../content/monsters';
-import { monsterScale, spawnsPerSecond, speedFor } from '../rules';
+import { monsterScale, spawnsPerSecond, speedFor, wildlifeScale } from '../rules';
 import { BIOME, biomeAt, heightAt, hitCollider } from '../world';
 import type { IslandSim } from './sim';
 import { DAY } from './time';
@@ -78,10 +78,15 @@ export function damageMob(
     m.target = by;
     m.enraged = m.enraged || m.kind === 'husk';
   }
-  if (m.kind === 'crab' && by) {
+  const animal = def.animal;
+  if ((m.kind === 'crab' || (animal && !animal.fights)) && by) {
     m.st = 'flee';
-    m.t = 3;
+    m.t = 4;
     m.target = by;
+  } else if (animal?.fights && by && !m.tame) {
+    // A hurt boar or dog turns on whoever hurt it.
+    m.target = by;
+    m.angryUntil = sim.time + 15;
   }
   if (m.hp <= 0) killMob(sim, m);
 }
@@ -91,6 +96,11 @@ function killMob(sim: IslandSim, m: Mob): void {
   sim.mobs.delete(m.id);
   sim.fx('death', m.x, m.z);
   const def = MONSTERS[m.kind];
+  if (m.tame) {
+    sim.toast(m.tame.owner, `${def.animal?.icon ?? ''} ${m.tame.name} is gone.`);
+    sim.petsChanged();
+    return;
+  }
   const killer = m.lastHitBy ? sim.players.get(m.lastHitBy) : undefined;
   if (m.kind === 'snapjaw' && m.spot >= 0) {
     sim.snapDeadUntil.set(m.spot, sim.time + DAY);
@@ -256,6 +266,13 @@ export function updateMobs(sim: IslandSim, dt: number): void {
       case 'crab':
         crab(sim, m, dt);
         break;
+      case 'boar':
+      case 'goat':
+      case 'fowl':
+      case 'dog':
+        if (m.tame) pet(sim, m, m.tame, dt);
+        else wildAnimal(sim, m, dt);
+        break;
       case 'snapjaw':
         snapjaw(sim, m, dt);
         break;
@@ -265,7 +282,8 @@ export function updateMobs(sim: IslandSim, dt: number): void {
       default:
         walker(sim, m, dt, info.night);
     }
-    // Spike barricades hurt whatever presses on them.
+    // Spike barricades hurt whatever presses on them (not your own animals).
+    if (m.tame) continue;
     for (const b of sim.buildings.values()) {
       const thorns = BUILDINGS[b.kind]?.thorns;
       if (!thorns || Math.abs(b.x - m.x) > 3 || Math.abs(b.z - m.z) > 3) continue;
@@ -298,6 +316,164 @@ function crab(sim: IslandSim, m: Mob, dt: number): void {
     return;
   }
   wander(sim, m, dt, def.walk, 6);
+}
+
+/** Whoever is closest and holds something this animal eats (it comes closer to them). */
+function foodHolder(sim: IslandSim, m: Mob, range: number): SimPlayer | null {
+  const food = MONSTERS[m.kind].animal?.food ?? [];
+  return nearestPlayer(sim, m.x, m.z, range, (p) => {
+    const held = p.inv[p.held];
+    return !!held && food.includes(held.id);
+  });
+}
+
+/**
+ * A wild animal grazes and wanders. Shy ones run from people, but come closer to someone
+ * holding their food; boars and dogs fight back when hurt.
+ */
+function wildAnimal(sim: IslandSim, m: Mob, dt: number): void {
+  const def = MONSTERS[m.kind];
+  const animal = def.animal;
+  if (!animal) return;
+  if (m.st === 'windup') {
+    m.t -= dt;
+    if (m.t > 0) return;
+    const p = alivePlayer(sim, m.target);
+    if (p && dist(p.x, p.z, m.x, m.z) <= def.reach + 0.7) sim.hurtPlayer(p, def.damage, m.x, m.z, false);
+    else sim.fx('swing', m.x, m.z);
+    m.st = 'recover';
+    m.t = def.cooldown;
+    return;
+  }
+  if (m.st === 'recover') {
+    m.t -= dt;
+    if (m.t <= 0) m.st = 'idle';
+    return;
+  }
+  // Angry: chase whoever hurt it, for a while.
+  const foe = (m.angryUntil ?? 0) > sim.time ? alivePlayer(sim, m.target) : null;
+  if (foe && animal.fights) {
+    const d = dist(foe.x, foe.z, m.x, m.z);
+    m.ry = Math.atan2(foe.x - m.x, foe.z - m.z);
+    if (d <= def.reach + 0.4) {
+      m.st = 'windup';
+      m.t = def.windup;
+      return;
+    }
+    if (d > 25) m.angryUntil = 0;
+    m.st = 'chase';
+    stepToward(sim, m, foe.x, foe.z, def.run, dt, def.reach * 0.8);
+    return;
+  }
+  if (m.st === 'flee') {
+    m.t -= dt;
+    const from = alivePlayer(sim, m.target);
+    if (from && m.t > 0) {
+      const dx = m.x - from.x;
+      const dz = m.z - from.z;
+      const d = Math.max(0.1, Math.sqrt(dx * dx + dz * dz));
+      stepToward(sim, m, m.x + (dx / d) * 5, m.z + (dz / d) * 5, def.run, dt, 0);
+      return;
+    }
+    m.st = 'idle';
+  }
+  // Someone holding its food: come closer, slowly, and wait to be fed.
+  const friend = foodHolder(sim, m, 12);
+  if (friend) {
+    m.ry = Math.atan2(friend.x - m.x, friend.z - m.z);
+    if (dist(friend.x, friend.z, m.x, m.z) > 1.8) {
+      m.st = 'wander';
+      stepToward(sim, m, friend.x, friend.z, def.walk, dt, 1.6);
+    } else m.st = 'idle';
+    return;
+  }
+  if (animal.shy) {
+    const near = nearestPlayer(sim, m.x, m.z, m.kind === 'dog' ? 9 : 6);
+    if (near) {
+      m.st = 'flee';
+      m.t = 2;
+      m.target = near.id;
+      return;
+    }
+  }
+  wander(sim, m, dt, def.walk, 7);
+}
+
+/**
+ * A tamed animal follows its person (or stays put when told), and boars and dogs go for
+ * the Bloom near them.
+ */
+function pet(sim: IslandSim, m: Mob, tame: NonNullable<Mob['tame']>, dt: number): void {
+  const def = MONSTERS[m.kind];
+  if (m.st === 'windup') {
+    m.t -= dt;
+    if (m.t > 0) return;
+    const foe = m.siege !== null ? sim.mobs.get(m.siege) : undefined;
+    if (foe && dist(foe.x, foe.z, m.x, m.z) <= def.reach + MONSTERS[foe.kind].radius + 0.6) {
+      sim.fx('bite', foe.x, foe.z);
+      damageMob(sim, foe, def.damage * 1.5, tame.owner, 0);
+    }
+    m.st = 'recover';
+    m.t = def.cooldown;
+    return;
+  }
+  if (m.st === 'recover') {
+    m.t -= dt;
+    if (m.t <= 0) m.st = 'idle';
+    return;
+  }
+  const owner = alivePlayer(sim, tame.owner);
+  // Fighters go for the Bloom close to their person (or to where they were told to stay).
+  if (def.animal?.fights) {
+    const cx = tame.mode === 'follow' && owner ? owner.x : m.gx;
+    const cz = tame.mode === 'follow' && owner ? owner.z : m.gz;
+    let foe: Mob | null = null;
+    let fd = 9;
+    for (const o of sim.mobs.values()) {
+      if (o.hp <= 0 || o.tame || !MONSTERS[o.kind].hostile || o.kind === 'mother') continue;
+      const d = dist(o.x, o.z, cx, cz);
+      if (d < fd && dist(o.x, o.z, m.x, m.z) < 14) {
+        fd = d;
+        foe = o;
+      }
+    }
+    if (foe) {
+      m.ry = Math.atan2(foe.x - m.x, foe.z - m.z);
+      if (dist(foe.x, foe.z, m.x, m.z) <= def.reach + MONSTERS[foe.kind].radius + 0.3) {
+        m.st = 'windup';
+        m.t = def.windup;
+        m.siege = foe.id;
+        return;
+      }
+      m.st = 'chase';
+      stepToward(sim, m, foe.x, foe.z, def.run, dt, def.reach * 0.7);
+      return;
+    }
+  }
+  if (tame.mode === 'stay' || !owner) {
+    // Potter about where it was left.
+    if (dist(m.x, m.z, m.gx, m.gz) > 4) {
+      m.st = 'wander';
+      stepToward(sim, m, m.gx, m.gz, def.walk, dt, 1);
+    } else {
+      m.t -= dt;
+      if (m.t <= 0) m.st = 'idle';
+    }
+    return;
+  }
+  const d = dist(owner.x, owner.z, m.x, m.z);
+  if (d > 80) {
+    // Lost them (they died, or ran far): catch up.
+    m.x = owner.x + 2;
+    m.z = owner.z + 2;
+    return;
+  }
+  if (d > 3.2) {
+    m.st = d > 8 ? 'chase' : 'wander';
+    stepToward(sim, m, owner.x, owner.z, d > 8 ? def.run : def.walk * 1.4, dt, 2.4);
+  } else {
+    m.st = 'idle';
+  }
 }
 
 function wander(sim: IslandSim, m: Mob, dt: number, speed: number, range: number): void {
@@ -437,7 +613,9 @@ function walker(sim: IslandSim, m: Mob, dt: number, night: boolean): void {
   }
 
   // Pick or keep a target. A petal mask hides you from all but the enraged.
-  const aggro = (night || m.enraged ? def.aggroNight : def.aggroDay) * (m.enraged ? 1.5 : 1);
+  // Fog hides you: they notice you closer (not on a Bloom night).
+  const fog = sim.weather.kind === 'fog' && !m.enraged ? 0.6 : 1;
+  const aggro = (night || m.enraged ? def.aggroNight : def.aggroDay) * (m.enraged ? 1.5 : 1) * fog;
   const sees = (p: SimPlayer) =>
     m.enraged || !sim.hidden(p) || dist(p.x, p.z, m.x, m.z) < STEALTH_RANGE;
   let target = alivePlayer(sim, m.target);
@@ -540,7 +718,7 @@ function separate(sim: IslandSim): void {
 export function burrowAll(sim: IslandSim): void {
   if (sim.rescue.phase === 'calling') return;
   for (const m of sim.mobs.values()) {
-    if (m.roamer && m.kind !== 'crab' && m.kind !== 'snapjaw' && m.kind !== 'mother') {
+    if (m.roamer && MONSTERS[m.kind].hostile && m.kind !== 'snapjaw' && m.kind !== 'mother') {
       m.st = 'burrow';
       m.t = 1.6;
     }
@@ -562,8 +740,9 @@ export function runDirector(sim: IslandSim): void {
     .map((id) => alivePlayer(sim, id))
     .filter((p): p is SimPlayer => !!p);
 
-  // Despawn what nobody is near.
+  // Despawn what nobody is near (never someone's animal).
   for (const m of [...sim.mobs.values()]) {
+    if (m.tame) continue;
     let near = Infinity;
     for (const p of players) near = Math.min(near, dist(p.x, p.z, m.x, m.z));
     const limit = m.kind === 'mother' ? 95 : m.kind === 'snapjaw' ? 60 : DESPAWN;
@@ -595,11 +774,14 @@ export function runDirector(sim: IslandSim): void {
   for (const p of players) {
     let hostileNear = 0;
     let crabsNear = 0;
+    let animalsNear = 0;
     for (const m of sim.mobs.values()) {
       const d = dist(p.x, p.z, m.x, m.z);
       if (d > 50) continue;
       if (m.kind === 'crab') crabsNear++;
-      else if (m.roamer) hostileNear++;
+      else if (MONSTERS[m.kind].animal) {
+        if (!m.tame) animalsNear++;
+      } else if (m.roamer) hostileNear++;
     }
     const biome = biomeAt(sim.island, p.x, p.z);
     const rescueHere =
@@ -674,8 +856,36 @@ export function runDirector(sim: IslandSim): void {
       const pos = spawnSpot(sim, p.x, p.z, false, false, BIOME.beach);
       if (pos) spawnMob(sim, 'crab', pos.x, pos.z, { roamer: true });
     }
+    // Island animals by day, by what grows where.
+    const herd = ANIMALS_BY_BIOME[biome];
+    const wantAnimals = Math.round(2 * wildlifeScale(sim.rules.animals));
+    if (herd && !info.night && animalsNear < wantAnimals && sim.random() < 0.25) {
+      const pos = spawnSpot(sim, p.x, p.z, false, false, biome);
+      if (pos) spawnMob(sim, pickKind(sim.random(), herd), pos.x, pos.z, { roamer: true });
+    }
   }
 }
+
+/** Which island animals live where. */
+const ANIMALS_BY_BIOME: Partial<Record<number, [MonsterKind, number][]>> = {
+  [BIOME.meadow]: [
+    ['fowl', 0.55],
+    ['goat', 0.45],
+  ],
+  [BIOME.jungle]: [
+    ['boar', 0.55],
+    ['fowl', 0.45],
+  ],
+  [BIOME.forest]: [
+    ['boar', 0.4],
+    ['goat', 0.3],
+    ['dog', 0.3],
+  ],
+  [BIOME.highland]: [
+    ['goat', 0.8],
+    ['dog', 0.2],
+  ],
+};
 
 function spawnSpot(
   sim: IslandSim,

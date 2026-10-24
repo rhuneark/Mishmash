@@ -1,6 +1,7 @@
 // World rules, picked when an island is made (like 7 Days to Die's world options)
 // and kept in its save, so friends who join play by the host's rules. The
-// defaults are the game as it always played.
+// defaults are the game as it's meant to be played (weather and animals since
+// v1.18).
 
 export type Speed = 'walk' | 'jog' | 'run' | 'sprint';
 export type DeathDrop = 'everything' | 'toolbelt' | 'backpack' | 'nothing' | 'delete';
@@ -9,6 +10,7 @@ export type Markers = 'all' | 'landmarks' | 'none';
 export type Often = 'off' | 'rare' | 'normal' | 'often';
 export type Hunger = 'off' | 'slow' | 'normal' | 'fast';
 export type SpawnRate = 'slow' | 'normal' | 'fast' | 'frantic';
+export type Wildlife = 'none' | 'few' | 'normal' | 'many';
 
 export interface WorldRules {
   /** Damage the Bloom does to you, % (difficulty). */
@@ -41,6 +43,10 @@ export interface WorldRules {
   sharedChests: boolean;
   /** Crafting can use what's in your storage boxes, wherever you are. */
   craftFromChests: boolean;
+  /** How often rain, storms and fog come ('off': always fair). */
+  weather: Often;
+  /** How many island animals roam. */
+  animals: Wildlife;
 }
 
 export const DEFAULT_RULES: WorldRules = {
@@ -60,6 +66,8 @@ export const DEFAULT_RULES: WorldRules = {
   markers: 'all',
   sharedChests: false,
   craftFromChests: false,
+  weather: 'normal',
+  animals: 'normal',
 };
 
 export const SPEEDS: Speed[] = ['walk', 'jog', 'run', 'sprint'];
@@ -69,6 +77,7 @@ export const MARKERS: Markers[] = ['all', 'landmarks', 'none'];
 export const OFTEN: Often[] = ['off', 'rare', 'normal', 'often'];
 export const HUNGERS: Hunger[] = ['off', 'slow', 'normal', 'fast'];
 export const SPAWN_RATES: SpawnRate[] = ['slow', 'normal', 'fast', 'frantic'];
+export const WILDLIFE: Wildlife[] = ['none', 'few', 'normal', 'many'];
 export const DIFFICULTIES = [50, 100, 150, 200];
 export const BLOOM_EVERY_CHOICES = [3, 5, 7, 10, 14, 0];
 export const BLOCK_DAMAGES = [0, 25, 50, 100, 200, 300];
@@ -101,6 +110,8 @@ export function parseRules(raw: unknown): WorldRules {
     markers: pick(o['markers'], MARKERS, d.markers),
     sharedChests: o['sharedChests'] === true,
     craftFromChests: o['craftFromChests'] === true,
+    weather: pick(o['weather'], OFTEN, d.weather),
+    animals: pick(o['animals'], WILDLIFE, d.animals),
   };
 }
 
@@ -139,6 +150,8 @@ export const PRESETS: Preset[] = [
       yield: 200,
       craftFromChests: true,
       sharedChests: true,
+      weather: 'rare',
+      animals: 'many',
     },
   },
   {
@@ -164,6 +177,8 @@ export const PRESETS: Preset[] = [
       bloomBlockDamage: 300,
       yield: 50,
       events: 'often',
+      weather: 'often',
+      animals: 'few',
     },
   },
 ];
@@ -210,6 +225,11 @@ export function spawnsPerSecond(r: SpawnRate): number {
 /** Rules the island's owner may change after it was made (storage stays as it was made). */
 export function changeRules(current: WorldRules, raw: unknown): WorldRules {
   return { ...parseRules(raw), sharedChests: current.sharedChests };
+}
+
+/** Island animals near you × this. */
+export function wildlifeScale(w: Wildlife): number {
+  return { none: 0, few: 0.5, normal: 1, many: 1.6 }[w];
 }
 
 /** Seconds between world events × this (0: no events). */

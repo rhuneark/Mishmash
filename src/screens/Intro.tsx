@@ -3,16 +3,16 @@ import { Logo } from '../ui/Logo';
 /** The welcome on first launch. */
 interface Props {
   onPlay: () => void;
-  onVote: () => void;
+  onSuggest: () => void;
 }
 
 export const STEPS = [
   { icon: '🏝️', name: 'Play', text: 'Survive the island, alone or with friends.' },
-  { icon: '🗳️', name: 'Vote', text: 'Everyone votes on what gets added next.' },
+  { icon: '💡', name: 'Suggest', text: 'Tell us what the island should get next.' },
   { icon: '🔨', name: 'We build it', text: 'The winner lands in the next update.' },
 ];
 
-export function Intro({ onPlay, onVote }: Props) {
+export function Intro({ onPlay, onSuggest }: Props) {
   return (
     <div className="intro-screen first">
       <div className="scroll">
@@ -43,8 +43,11 @@ export function Intro({ onPlay, onVote }: Props) {
           </ol>
           <p className="intro-lead">Update by update, it becomes a mix of everyone's ideas.</p>
           <div className="card callout">
-            <div className="label">Now voting</div>
-            <p>What should we add to the island next? Boats? Farming? Pets? Storms? You decide.</p>
+            <div className="label">Built by you</div>
+            <p>
+              The players voted for farming, animals, weather, bows, bigger bases and secrets, and
+              now they're all on the island. What next? Drop an idea in the suggestions box.
+            </p>
           </div>
         </div>
       </div>
@@ -52,8 +55,8 @@ export function Intro({ onPlay, onVote }: Props) {
         <button className="btn primary" onClick={onPlay}>
           Play
         </button>
-        <button className="btn" onClick={onVote}>
-          Vote on what's next
+        <button className="btn" onClick={onSuggest}>
+          Suggest an idea
         </button>
       </div>
     </div>

@@ -1,9 +1,11 @@
 // Crafting recipes. `station`: 'hand' anywhere, 'fire' near a lit campfire,
-// 'bench' near a workbench, 'mash' near a Mashbench (monster parts).
+// 'bench' near a workbench, 'mash' near a Mashbench (monster parts), 'pot' at a
+// cooking pot next to a lit campfire. Buildings aren't crafted: build mode puts
+// them down straight from materials (buildings.ts `cost`).
 
-export type Station = 'hand' | 'fire' | 'bench' | 'mash';
+export type Station = 'hand' | 'fire' | 'bench' | 'mash' | 'pot';
 
-export const STATIONS: Station[] = ['hand', 'fire', 'bench', 'mash'];
+export const STATIONS: Station[] = ['hand', 'fire', 'bench', 'mash', 'pot'];
 
 export interface Recipe {
   id: string;
@@ -17,6 +19,7 @@ const list: Recipe[] = [
   // By hand
   { id: 'rope', out: 'rope', n: 1, station: 'hand', needs: { fiber: 3 } },
   { id: 'rope_tendril', out: 'rope', n: 2, station: 'hand', needs: { bloom_tendril: 1 } },
+  { id: 'cloth_hide', out: 'cloth', n: 2, station: 'hand', needs: { hide: 1 } },
   {
     id: 'axe_stone',
     out: 'axe_stone',
@@ -35,61 +38,56 @@ const list: Recipe[] = [
   { id: 'spear', out: 'spear', n: 1, station: 'hand', needs: { wood: 3, stone: 1, fiber: 2 } },
   { id: 'torch', out: 'torch', n: 1, station: 'hand', needs: { wood: 1, fiber: 2 } },
   { id: 'bandage', out: 'bandage', n: 1, station: 'hand', needs: { cloth: 1, fiber: 2 } },
-  { id: 'campfire', out: 'campfire', n: 1, station: 'hand', needs: { wood: 5, stone: 4 } },
-  { id: 'bedroll', out: 'bedroll', n: 1, station: 'hand', needs: { fiber: 8, cloth: 2 } },
-  {
-    id: 'workbench',
-    out: 'workbench',
-    n: 1,
-    station: 'hand',
-    needs: { wood: 10, stone: 4, rope: 2 },
-  },
+  { id: 'seed_berry', out: 'seed_berry', n: 2, station: 'hand', needs: { berries: 4 } },
   // At a campfire
   { id: 'crab_cooked', out: 'crab_cooked', n: 1, station: 'fire', needs: { crab_raw: 1 } },
   { id: 'skewer', out: 'skewer', n: 1, station: 'fire', needs: { mushroom: 2, wood: 1 } },
-  // At a workbench
-  { id: 'wall_wood', out: 'wall_wood', n: 1, station: 'bench', needs: { wood: 6 } },
-  { id: 'door_wood', out: 'door_wood', n: 1, station: 'bench', needs: { wood: 6, scrap: 1 } },
-  { id: 'wall_stone', out: 'wall_stone', n: 1, station: 'bench', needs: { stone: 10, wood: 2 } },
-  { id: 'wall_half', out: 'wall_half', n: 1, station: 'bench', needs: { wood: 3 } },
+  { id: 'meat_cooked', out: 'meat_cooked', n: 1, station: 'fire', needs: { meat_raw: 1 } },
+  { id: 'corn_roast', out: 'corn_roast', n: 1, station: 'fire', needs: { corn: 1 } },
+  { id: 'potato_baked', out: 'potato_baked', n: 1, station: 'fire', needs: { potato: 1 } },
+  { id: 'egg_fried', out: 'egg_fried', n: 1, station: 'fire', needs: { egg: 1 } },
+  // In a cooking pot by a lit campfire
   {
-    id: 'wall_window',
-    out: 'wall_window',
+    id: 'veg_stew',
+    out: 'veg_stew',
     n: 1,
-    station: 'bench',
-    needs: { wood: 6, scrap: 1 },
-  },
-  { id: 'post_wood', out: 'post_wood', n: 2, station: 'bench', needs: { wood: 3 } },
-  {
-    id: 'gate_wood',
-    out: 'gate_wood',
-    n: 1,
-    station: 'bench',
-    needs: { wood: 12, rope: 2, scrap: 1 },
+    station: 'pot',
+    needs: { potato: 1, corn: 1, tomato: 1 },
   },
   {
-    id: 'wall_stone_half',
-    out: 'wall_stone_half',
+    id: 'meat_stew',
+    out: 'meat_stew',
     n: 1,
-    station: 'bench',
-    needs: { stone: 5, wood: 1 },
+    station: 'pot',
+    needs: { meat_raw: 1, potato: 1, corn: 1 },
   },
-  { id: 'pillar_stone', out: 'pillar_stone', n: 1, station: 'bench', needs: { stone: 6 } },
-  { id: 'spikes', out: 'spikes', n: 1, station: 'bench', needs: { wood: 5, stone: 2 } },
   {
-    id: 'torch_post',
-    out: 'torch_post',
-    n: 1,
-    station: 'bench',
-    needs: { wood: 3, fiber: 2, sap: 1 },
+    id: 'pumpkin_soup',
+    out: 'pumpkin_soup',
+    n: 2,
+    station: 'pot',
+    needs: { pumpkin: 1, tomato: 1 },
   },
-  { id: 'storage', out: 'storage', n: 1, station: 'bench', needs: { wood: 8, rope: 1 } },
   {
-    id: 'rain_collector',
-    out: 'rain_collector',
+    id: 'omelette',
+    out: 'omelette',
+    n: 1,
+    station: 'pot',
+    needs: { egg: 2, tomato: 1, mushroom: 1 },
+  },
+  {
+    id: 'coconut_curry',
+    out: 'coconut_curry',
+    n: 1,
+    station: 'pot',
+    needs: { coconut: 1, meat_raw: 1, corn: 1 },
+  },
+  {
+    id: 'watering_can',
+    out: 'watering_can',
     n: 1,
     station: 'bench',
-    needs: { wood: 6, cloth: 2, rope: 1 },
+    needs: { scrap: 2, cloth: 1 },
   },
   {
     id: 'axe_scrap',
@@ -114,13 +112,6 @@ const list: Recipe[] = [
   },
   { id: 'firebomb', out: 'firebomb', n: 2, station: 'bench', needs: { sap: 2, cloth: 1 } },
   { id: 'medkit', out: 'medkit', n: 1, station: 'bench', needs: { bandage: 1, sap: 2 } },
-  {
-    id: 'mashbench',
-    out: 'mashbench',
-    n: 1,
-    station: 'bench',
-    needs: { wood: 10, scrap: 4, bloom_tendril: 3, snap_tooth: 2 },
-  },
   // At a Mashbench: monster parts
   {
     id: 'jawblade',
@@ -152,27 +143,6 @@ const list: Recipe[] = [
     needs: { spore_sac: 1, sap: 2, bandage: 1 },
   },
   {
-    id: 'thorn_wall',
-    out: 'thorn_wall',
-    n: 1,
-    station: 'mash',
-    needs: { thorn_plate: 2, wood: 6 },
-  },
-  {
-    id: 'snap_trap',
-    out: 'snap_trap',
-    n: 1,
-    station: 'mash',
-    needs: { snap_tooth: 2, scrap: 2, rope: 1 },
-  },
-  {
-    id: 'heart_lantern',
-    out: 'heart_lantern',
-    n: 1,
-    station: 'mash',
-    needs: { bloom_heart: 1, scrap: 4, sap: 4 },
-  },
-  {
     id: 'radio',
     out: 'radio',
     n: 1,
@@ -189,4 +159,5 @@ export const STATION_NAMES: Record<Station, string> = {
   fire: 'Campfire',
   bench: 'Workbench',
   mash: 'Mashbench',
+  pot: 'Cooking pot',
 };

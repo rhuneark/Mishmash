@@ -36,6 +36,8 @@ export const WRECK_LOOT: LootRow[] = [
   { id: 'water_bottle', min: 1, max: 2, chance: 0.6 },
   { id: 'bandage', min: 1, max: 2, chance: 0.4 },
   { id: 'torch', min: 1, max: 1, chance: 0.3 },
+  { id: 'seed_tomato', min: 2, max: 3, chance: 0.25 },
+  { id: 'seed_corn', min: 2, max: 3, chance: 0.25 },
 ];
 
 export const POD_LOOT: LootRow[] = [
@@ -48,6 +50,9 @@ export const POD_LOOT: LootRow[] = [
   { id: 'axe_scrap', min: 1, max: 1, chance: 0.12 },
   { id: 'pick_scrap', min: 1, max: 1, chance: 0.12 },
   { id: 'machete', min: 1, max: 1, chance: 0.08 },
+  // Verdance's drones still bring the station its seed stock.
+  { id: 'seed_pumpkin', min: 2, max: 3, chance: 0.35 },
+  { id: 'seed_potato', min: 2, max: 3, chance: 0.3 },
 ];
 
 /** Rolls a loot table (always at least one thing). */

@@ -1,6 +1,7 @@
 // Authority-side state and the island save format.
 
-import { BUILDINGS } from '../content/buildings';
+import { BUILDINGS, slotsOf } from '../content/buildings';
+import { CROP_BY_ID } from '../content/crops';
 import { MONSTERS, type MonsterKind } from '../content/monsters';
 import { isClassic, parseParts, type IslandParts } from '../islands';
 import { parseRules, type WorldRules } from '../rules';
@@ -52,6 +53,8 @@ export interface Building {
   /** Seconds accumulated towards the next rain charge. */
   acc: number;
   inv?: (Slot | null)[];
+  /** Garden plot: what grows (crops.ts), how far (0..1), and seconds it stays wet. */
+  crop?: { id: string; grow: number; wet: number };
 }
 
 /** A bag on the ground, a crate washed up on a beach, or a Verdance supply pod. */
@@ -105,6 +108,28 @@ export interface Mob {
   heldUntil: number;
   /** Where it's headed when nobody is in sight (a roaming pack). */
   goal?: { x: number; z: number };
+  /** A wild animal: feedings so far, by whom. */
+  fed?: { by: string; n: number };
+  /** An animal that trusts someone. */
+  tame?: PetState;
+  /** A hurt animal that fights back stays angry until then. */
+  angryUntil?: number;
+}
+
+/** A tamed animal: whose it is, its name, follow or stay, and when it next gives. */
+export interface PetState {
+  owner: string;
+  name: string;
+  mode: 'follow' | 'stay';
+  /** Island time its next egg or milk is ready. */
+  next: number;
+}
+
+export interface PetSave extends PetState {
+  kind: MonsterKind;
+  x: number;
+  z: number;
+  hp: number;
 }
 
 export interface RescueState {
@@ -152,6 +177,10 @@ export interface IslandSave {
   rules?: WorldRules;
   /** The storage every box opens when the rules connect them. */
   chest?: (Slot | null)[];
+  /** The weather and when it changes (missing: fair for a while). */
+  weather?: { kind: string; until: number };
+  /** Animals that trust someone. */
+  pets?: PetSave[];
 }
 
 export function newSave(seed: number, parts?: IslandParts, rules?: WorldRules): IslandSave {
@@ -217,7 +246,15 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
         v: num(b['v'], 0),
         acc: num(b['acc'], 0),
       };
-      if (kind === 'storage') building.inv = cleanInv(b['inv'], infinite).slice(0, 12);
+      const slots = slotsOf(kind);
+      if (slots) building.inv = cleanInv(b['inv'], infinite, slots).slice(0, slots);
+      const crop = b['crop'] as Record<string, unknown> | undefined;
+      if (kind === 'garden_plot' && crop && CROP_BY_ID[str(crop['id'], '')])
+        building.crop = {
+          id: str(crop['id'], ''),
+          grow: Math.min(1, Math.max(0, num(crop['grow'], 0))),
+          wet: Math.max(0, num(crop['wet'], 0)),
+        };
       save.buildings.push(building);
       save.nextId = Math.max(save.nextId, id + 1);
     }
@@ -276,6 +313,27 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
   }
   const ne = d['nextEvent'];
   if (typeof ne === 'number' && Number.isFinite(ne)) save.nextEvent = ne;
+  if (Array.isArray(d['pets'])) {
+    const pets: PetSave[] = [];
+    for (const o of d['pets'] as Record<string, unknown>[]) {
+      const kind = str(o?.['kind'], '') as MonsterKind;
+      if (!MONSTERS[kind]?.animal) continue;
+      pets.push({
+        kind,
+        x: num(o['x'], 0),
+        z: num(o['z'], 0),
+        hp: Math.max(1, Math.min(MONSTERS[kind].hp, num(o['hp'], MONSTERS[kind].hp))),
+        owner: str(o['owner'], ''),
+        name: str(o['name'], 'Buddy').slice(0, 16),
+        mode: o['mode'] === 'stay' ? 'stay' : 'follow',
+        next: num(o['next'], 0),
+      });
+    }
+    if (pets.length) save.pets = pets.slice(0, 40);
+  }
+  const w = d['weather'] as Record<string, unknown> | undefined;
+  if (w && typeof w['kind'] === 'string' && typeof w['until'] === 'number')
+    save.weather = { kind: w['kind'], until: w['until'] };
   return save;
 }
 

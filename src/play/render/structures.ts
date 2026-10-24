@@ -3,7 +3,8 @@
 import * as THREE from 'three';
 import { POI_BY_ID, type PoiDef, type Spot } from '../../game/content/pois';
 import type { IslandParts } from '../../game/islands';
-import { MAT, box, cone, cyl, disc, dodeca, mesh, sphere, torus } from './geo';
+import { WALL_HEIGHT } from '../../game/content/buildings';
+import { MAT, box, cone, cyl, disc, dodeca, ico, mesh, sphere, torus } from './geo';
 
 export interface BuildingView {
   group: THREE.Group;
@@ -19,6 +20,10 @@ export interface BuildingView {
   door2?: THREE.Object3D;
   /** Rain collector water surface. */
   water?: THREE.Object3D;
+  /** A roof: hidden while you stand under it (cutaway). */
+  roof?: THREE.Object3D;
+  /** Garden plot: where the crop grows (the view fills it). */
+  crop?: THREE.Group;
 }
 
 const WOOD = 0x8a5f3a;
@@ -393,6 +398,215 @@ export function buildingModel(kind: string): BuildingView {
       view.water = water;
       break;
     }
+    case 'wall_scrap':
+      group.add(
+        mesh([
+          box(0.16, 2.6, 0.38, 0x5b5f66, { x: -0.92, y: 1.3 }),
+          box(0.16, 2.6, 0.38, 0x5b5f66, { x: 0.92, y: 1.3 }),
+          box(1.7, 1.2, 0.18, 0xb0b6bd, { y: 0.65, rz: 0.02 }),
+          box(1.7, 1.15, 0.18, 0xc9d0d8, { y: 1.85, rz: -0.03 }),
+          box(1.2, 0.12, 0.2, 0xd0453b, { x: 0.1, y: 1.85, z: 0.01 }),
+          ...[-0.6, 0, 0.6].map((x) => sphere(0.05, 4, 3, 0x3a3a3a, { x, y: 1.25, z: 0.11 })),
+        ]),
+      );
+      break;
+    case 'fence_wood':
+      group.add(
+        mesh([
+          box(0.16, 1.15, 0.16, WOOD2, { x: -0.9, y: 0.58 }),
+          box(0.16, 1.15, 0.16, WOOD2, { x: 0.9, y: 0.58 }),
+          box(2.0, 0.12, 0.08, WOOD, { y: 0.4 }),
+          box(2.0, 0.12, 0.08, WOOD, { y: 0.9 }),
+        ]),
+      );
+      break;
+    case 'fence_gate': {
+      group.add(
+        mesh([
+          box(0.18, 1.25, 0.18, 0x5b3a22, { x: -0.94, y: 0.62 }),
+          box(0.18, 1.25, 0.18, 0x5b3a22, { x: 0.94, y: 0.62 }),
+        ]),
+      );
+      const leaf = new THREE.Group();
+      leaf.position.set(-0.85, 0, 0);
+      leaf.add(
+        mesh([
+          box(1.7, 0.12, 0.07, WOOD, { x: 0.85, y: 0.35 }),
+          box(1.7, 0.12, 0.07, WOOD, { x: 0.85, y: 0.95 }),
+          box(0.1, 0.8, 0.07, WOOD2, { x: 0.12, y: 0.65 }),
+          box(0.1, 0.8, 0.07, WOOD2, { x: 1.58, y: 0.65 }),
+          box(0.08, 1.0, 0.07, WOOD2, { x: 0.85, y: 0.65, rz: 0.95 }),
+        ]),
+      );
+      group.add(leaf);
+      view.door = leaf;
+      break;
+    }
+    case 'floor_wood':
+      group.add(
+        mesh(
+          Array.from({ length: 5 }, (_, k) =>
+            box(0.38, 0.3, 2.0, k % 2 ? WOOD : 0x9a6a42, { x: -0.8 + k * 0.4, y: -0.03 }),
+          ),
+        ),
+      );
+      break;
+    case 'floor_stone':
+      group.add(
+        mesh(
+          Array.from({ length: 4 }, (_, k) =>
+            box(0.96, 0.3, 0.96, [0x9a9ca1, 0x8f9196, 0xa3a5aa, 0x86888d][k] as number, {
+              x: (k % 2) * 1.0 - 0.5,
+              y: -0.03,
+              z: Math.floor(k / 2) * 1.0 - 0.5,
+            }),
+          ),
+        ),
+      );
+      break;
+    case 'rug':
+      group.add(
+        mesh([
+          box(2.0, 0.04, 1.4, 0xb5483b, { y: 0.03 }),
+          box(1.6, 0.045, 1.0, 0xe0b04a, { y: 0.035 }),
+          box(1.2, 0.05, 0.6, 0x3a6a8a, { y: 0.04 }),
+        ]),
+      );
+      break;
+    case 'roof_thatch':
+    case 'roof_wood': {
+      const thatch = kind === 'roof_thatch';
+      const roof = mesh([
+        box(2.1, 0.22, 2.1, thatch ? 0xc9a85a : WOOD2, { y: WALL_HEIGHT + 0.12 }),
+        box(2.12, 0.1, 0.5, thatch ? 0xb8964a : 0x6a4a2a, { y: WALL_HEIGHT + 0.27, z: -0.6 }),
+        box(2.12, 0.1, 0.5, thatch ? 0xd6b56a : WOOD, { y: WALL_HEIGHT + 0.27, z: 0.1 }),
+        box(2.12, 0.1, 0.5, thatch ? 0xb8964a : 0x6a4a2a, { y: WALL_HEIGHT + 0.27, z: 0.75 }),
+      ]);
+      group.add(roof);
+      view.roof = roof;
+      break;
+    }
+    case 'table':
+      group.add(
+        mesh([
+          box(1.6, 0.1, 0.9, WOOD, { y: 0.8 }),
+          ...[-0.7, 0.7].flatMap((x) =>
+            [-0.35, 0.35].map((z) => box(0.1, 0.8, 0.1, WOOD2, { x, y: 0.4, z })),
+          ),
+          cyl(0.08, 0.06, 0.14, 6, 0xd8d0c0, { x: 0.3, y: 0.92 }),
+          box(0.3, 0.03, 0.22, 0xe8e0d0, { x: -0.3, y: 0.86 }),
+        ]),
+      );
+      break;
+    case 'chair':
+      group.add(
+        mesh([
+          box(0.5, 0.08, 0.5, WOOD, { y: 0.48 }),
+          box(0.5, 0.6, 0.08, WOOD2, { y: 0.8, z: -0.22 }),
+          ...[-0.2, 0.2].flatMap((x) =>
+            [-0.2, 0.2].map((z) => box(0.07, 0.48, 0.07, WOOD2, { x, y: 0.24, z })),
+          ),
+        ]),
+      );
+      break;
+    case 'bed':
+      group.add(
+        mesh([
+          box(1.2, 0.35, 2.2, WOOD2, { y: 0.18 }),
+          box(1.1, 0.16, 2.0, 0xe8e0d0, { y: 0.42 }),
+          box(1.12, 0.12, 1.2, 0x4a7ab5, { y: 0.48, z: 0.38 }),
+          box(0.8, 0.14, 0.4, 0xffffff, { y: 0.55, z: -0.72 }),
+          box(1.2, 0.7, 0.12, WOOD, { y: 0.55, z: -1.05 }),
+        ]),
+      );
+      break;
+    case 'shelf':
+      group.add(
+        mesh([
+          box(0.1, 1.8, 0.5, WOOD2, { x: -0.75, y: 0.9 }),
+          box(0.1, 1.8, 0.5, WOOD2, { x: 0.75, y: 0.9 }),
+          ...[0.1, 0.65, 1.2, 1.75].map((y) => box(1.6, 0.06, 0.48, WOOD, { y })),
+          box(0.3, 0.3, 0.3, 0xa0703f, { x: -0.4, y: 0.82 }),
+          cyl(0.1, 0.1, 0.3, 6, 0x5ab0d8, { x: 0.3, y: 0.82 }),
+          box(0.5, 0.2, 0.3, 0xc9a46a, { x: 0.2, y: 1.33 }),
+          sphere(0.12, 6, 4, 0x6e7d2c, { x: -0.3, y: 1.35 }),
+        ]),
+      );
+      break;
+    case 'chest_big':
+      group.add(
+        mesh([
+          box(1.4, 0.7, 0.9, WOOD, { y: 0.35 }),
+          cyl(0.45, 0.45, 1.42, 8, 0x9a6a42, { y: 0.7, rz: Math.PI / 2, sz: 1.0 }),
+          box(0.08, 0.95, 0.94, 0x6d737a, { x: -0.5, y: 0.5 }),
+          box(0.08, 0.95, 0.94, 0x6d737a, { x: 0.5, y: 0.5 }),
+          box(0.18, 0.2, 0.06, 0xd0c060, { y: 0.66, z: 0.47 }),
+        ]),
+      );
+      break;
+    case 'lamp': {
+      group.add(
+        mesh([
+          cyl(0.2, 0.25, 0.1, 6, 0x3a3a3a, { y: 0.05 }),
+          cyl(0.04, 0.05, 1.3, 5, 0x3a3a3a, { y: 0.7 }),
+          cone(0.28, 0.2, 6, 0x2a2a2a, { y: 1.62 }),
+        ]),
+      );
+      const glow = mesh([sphere(0.14, 6, 5, 0xc8ff7a)], MAT.glow);
+      glow.position.y = 1.42;
+      group.add(glow);
+      break;
+    }
+    case 'garden_plot': {
+      group.add(
+        mesh([
+          box(2.0, 0.22, 0.14, WOOD2, { y: 0.05, z: -0.93 }),
+          box(2.0, 0.22, 0.14, WOOD2, { y: 0.05, z: 0.93 }),
+          box(0.14, 0.22, 1.72, WOOD2, { x: -0.93, y: 0.05 }),
+          box(0.14, 0.22, 1.72, WOOD2, { x: 0.93, y: 0.05 }),
+          box(1.72, 0.12, 1.72, 0x4a3324, { y: 0.06 }),
+          ...[-0.5, 0, 0.5].map((z) => box(1.6, 0.06, 0.18, 0x5a3e2a, { y: 0.13, z })),
+        ]),
+      );
+      const crop = new THREE.Group();
+      group.add(crop);
+      view.crop = crop;
+      break;
+    }
+    case 'cooking_pot':
+      group.add(
+        mesh([
+          ...[0, 1, 2].map((k) => {
+            const a = (k / 3) * Math.PI * 2;
+            return cyl(0.03, 0.04, 1.3, 4, 0x3a3a3a, {
+              x: Math.sin(a) * 0.35,
+              y: 0.6,
+              z: Math.cos(a) * 0.35,
+              rx: Math.cos(a) * 0.3,
+              rz: -Math.sin(a) * 0.3,
+            });
+          }),
+          sphere(0.34, 8, 6, 0x4a4a50, { y: 0.55, sy: 0.85 }),
+          cyl(0.3, 0.3, 0.06, 8, 0x8a6a3a, { y: 0.8 }),
+          torus(0.3, 0.03, 0x2a2a2a, { y: 0.82, rx: Math.PI / 2 }),
+        ]),
+      );
+      break;
+    case 'spike_pit':
+      group.add(
+        mesh([
+          box(1.9, 0.08, 1.9, 0x4a3a2a, { y: 0.02 }),
+          ...Array.from({ length: 9 }, (_, k) =>
+            cone(0.07, 0.55, 4, k % 2 ? 0xc9a46a : 0xb08a52, {
+              x: (k % 3) * 0.6 - 0.6,
+              y: 0.3,
+              z: Math.floor(k / 3) * 0.6 - 0.6,
+              rx: (k % 2 ? 0.2 : -0.2) * (k % 3 === 1 ? 0 : 1),
+            }),
+          ),
+        ]),
+      );
+      break;
   }
   return view;
 }
@@ -804,4 +1018,101 @@ export function helicopter(): { group: THREE.Group; rotor: THREE.Object3D } {
   );
   group.add(rotor);
   return { group, rotor };
+}
+
+/**
+ * What grows in a garden plot: nine plants in three rows (two big pumpkins), drawn by
+ * crop (index in crops.ts: corn, potato, tomato, pumpkin, berry) and stage 0-3; wet soil
+ * shows darker.
+ */
+export function cropModel(crop: number, stage: number, wet: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const parts: THREE.BufferGeometry[] = [];
+  if (wet) parts.push(box(1.72, 0.02, 1.72, 0x2e2018, { y: 0.125 }));
+  const LEAF = 0x4f9a3a;
+  const LEAF2 = 0x5fae44;
+  const k = [0.45, 0.7, 0.9, 1][stage] ?? 1;
+  const spots: [number, number][] = [];
+  for (const z of [-0.55, 0, 0.55]) for (const x of [-0.55, 0, 0.55]) spots.push([x, z]);
+  if (crop === 3 && stage >= 1) {
+    // Pumpkins: sprawling vines and two fat fruit.
+    for (const [x, z] of spots)
+      parts.push(
+        box(0.36 * k, 0.04, 0.3 * k, (x + z) % 2 ? LEAF : LEAF2, { x, y: 0.17, z, ry: x * 3 }),
+      );
+    if (stage >= 2) {
+      const big = stage === 3;
+      for (const [x, z] of [
+        [-0.35, 0.3],
+        [0.4, -0.3],
+      ] as [number, number][])
+        parts.push(
+          sphere(big ? 0.32 : 0.16, 8, 6, big ? 0xe8822a : 0x7aa04a, {
+            x,
+            y: 0.15 + (big ? 0.2 : 0.1),
+            z,
+            sy: 0.72,
+          }),
+          cyl(0.03, 0.04, 0.12, 4, 0x5b3a22, { x, y: big ? 0.6 : 0.33, z }),
+        );
+    }
+  } else {
+    for (const [x, z] of spots) {
+      if (stage === 0) {
+        parts.push(cone(0.06, 0.16, 4, LEAF2, { x, y: 0.2, z }));
+        continue;
+      }
+      switch (crop) {
+        case 0: {
+          // Corn: tall stalks, cobs and tassels when ripe.
+          const h = [0, 0.55, 1.05, 1.4][stage] ?? 1.4;
+          parts.push(cyl(0.03, 0.045, h, 4, 0x6aa040, { x, y: 0.12 + h / 2, z }));
+          parts.push(box(0.04, 0.02, 0.4 * k, LEAF, { x, y: 0.12 + h * 0.55, z, ry: x * 5 + z }));
+          if (stage === 3) {
+            parts.push(
+              cyl(0.06, 0.05, 0.28, 6, 0xf2c94a, { x: x + 0.07, y: 0.12 + h * 0.6, z, rz: -0.3 }),
+            );
+            parts.push(cone(0.06, 0.18, 4, 0xd8c070, { x, y: 0.12 + h + 0.08, z }));
+          }
+          break;
+        }
+        case 1:
+          // Potatoes: leafy clumps, white flowers and a few tubers when ready.
+          parts.push(
+            ico(0.18 * k, 0, (x + z) % 2 ? LEAF : LEAF2, { x, y: 0.2 + 0.08 * k, z, sy: 0.7 }),
+          );
+          if (stage === 3) {
+            parts.push(sphere(0.05, 4, 3, 0xf8f4e8, { x: x + 0.08, y: 0.42, z }));
+            parts.push(dodeca(0.07, 0xb08a52, { x: x - 0.1, y: 0.15, z: z + 0.12 }));
+          }
+          break;
+        case 2:
+          // Tomatoes: staked plants, red fruit when ripe.
+          parts.push(cyl(0.015, 0.015, 0.8 * k, 3, 0x8a6a3a, { x, y: 0.12 + 0.4 * k, z }));
+          parts.push(ico(0.16 * k, 0, LEAF, { x, y: 0.12 + 0.45 * k, z, sy: 1.3 }));
+          if (stage >= 2)
+            for (const d of [-0.09, 0.09])
+              parts.push(
+                sphere(0.05, 5, 4, stage === 3 ? 0xe03a2a : 0x8ab84a, {
+                  x: x + d,
+                  y: 0.12 + 0.4 * k,
+                  z: z + 0.08,
+                }),
+              );
+          break;
+        default:
+          // Berry bushes: round, dotted blue when ripe.
+          parts.push(ico(0.2 * k, 0, LEAF2, { x, y: 0.12 + 0.18 * k, z, sy: 0.85 }));
+          if (stage === 3)
+            for (const [dx, dy] of [
+              [0.1, 0.25],
+              [-0.1, 0.2],
+              [0.02, 0.32],
+            ] as [number, number][])
+              parts.push(sphere(0.04, 4, 3, 0x4a3ab8, { x: x + dx, y: 0.12 + dy, z: z + 0.1 }));
+      }
+    }
+  }
+  if (parts.length) g.add(mesh(parts));
+  return g;
 }

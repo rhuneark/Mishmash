@@ -1,11 +1,22 @@
-// Chat, voting and the owner's Dev area on top of the UGC backend: RUN's UGC
-// in the host, the local stand-in in `npm run dev`.
+// The suggestions box and the owner's Dev area on top of the UGC backend: RUN's
+// UGC in the host, the local stand-in in `npm run dev`.
 
 import * as run from '../sdk/run';
 import type { UgcFail, UgcRow } from '../sdk/run';
 import { createLocalUgc } from './localUgc';
 import { CHAT_TYPE, messageFromEntry, type ChatMessage } from '../game/chat';
-import { countVotes, voteType, voteTypes, type Counts, type Poll } from '../game/poll';
+import {
+  DAILY_LIMIT,
+  MARKS_KEY,
+  SUGGEST_TYPE,
+  cleanSuggestion,
+  newCount,
+  parseMarks,
+  suggestionFromEntry,
+  type DevMarks,
+  type Suggestion,
+  type Topic,
+} from '../game/suggest';
 import { groupReports, type ReportGroup } from '../game/moderation';
 
 let api: run.UgcApi | null = null;
@@ -19,7 +30,7 @@ function backend(): run.UgcApi {
   return api;
 }
 
-/** True in `npm run dev`: chat and votes are a local stand-in that stays in this tab. */
+/** True in `npm run dev`: suggestions and reports are a local stand-in that stays in this tab. */
 export function isLocalPreview(): boolean {
   return run.isMock();
 }
@@ -120,57 +131,76 @@ async function resolveAll(item: Flagged, action: 'reviewed' | 'dismissed'): Prom
 }
 
 // ---------------------------------------------------------------------------
-// Votes: one per person. Every vote entry of the poll is read and only each
-// player's newest counts (countVotes); this player's extra entries (left by a
-// failed delete) are cleaned up when found.
+// The suggestions box: players send ideas, the owner reads them in the Dev area.
 
-export const VOTE_PAGE = 100;
-/** Pages read per refresh: counts are exact up to VOTE_PAGE × VOTE_PAGES entries. */
-export const VOTE_PAGES = 30;
+export type SendFailure = Failure | { ok: false; reason: 'empty' | 'unclean' | 'limit' };
 
-export interface MyVote {
-  option: string | null;
-  /** Ids of this player's vote entries for the poll. */
-  entryIds: string[];
-}
-
-export interface PollState {
-  ok: true;
-  counts: Counts;
-  mine: MyVote;
-}
-
-export async function loadPoll(poll: Poll): Promise<PollState | Failure> {
-  const rows: UgcRow[] = [];
-  let cursor: string | undefined;
-  for (let page = 0; page < VOTE_PAGES; page++) {
-    const res = await backend().browse({ types: voteTypes(poll), limit: VOTE_PAGE, cursor });
-    if (!res.ok) return res;
-    rows.push(...res.value.rows);
-    cursor = res.value.next;
-    if (!cursor) break;
-  }
-  const { counts, byAuthor, extras } = countVotes(poll, rows);
+/** This player's own suggestions, newest first. */
+export async function mySuggestions(): Promise<{ ok: true; list: Suggestion[] } | Failure> {
   const me = myId();
-  for (const e of extras) if (me && e.authorId === me) void backend().remove(e.id);
-  const counted = me ? byAuthor.get(me) : undefined;
-  return {
-    ok: true,
-    counts,
-    mine: counted
-      ? { option: counted.option, entryIds: [counted.id] }
-      : { option: null, entryIds: [] },
-  };
+  if (!me) return { ok: true, list: [] };
+  const res = await backend().browse({ types: [SUGGEST_TYPE], authorId: me, limit: 50 });
+  if (!res.ok) return res;
+  return { ok: true, list: toSuggestions(res.value.rows) };
 }
 
-/** Votes for `option`, then removes the player's previous vote entries. */
-export async function castVote(
-  poll: Poll,
-  option: string,
-  previous: MyVote,
-): Promise<{ ok: true; vote: MyVote } | Failure> {
-  const res = await backend().create(voteType(poll.id, option), { v: 1, poll: poll.id, option });
+/** Sends a suggestion (checked with RUN's word filter first). */
+export async function sendSuggestion(
+  topic: Topic,
+  raw: string,
+  sentToday: number,
+): Promise<{ ok: true; suggestion: Suggestion | null } | SendFailure> {
+  const text = cleanSuggestion(raw);
+  if (!text) return { ok: false, reason: 'empty' };
+  if (sentToday >= DAILY_LIMIT) return { ok: false, reason: 'limit' };
+  if (!(await backend().isClean(text))) return { ok: false, reason: 'unclean' };
+  const res = await backend().create(SUGGEST_TYPE, { v: 1, text, topic });
   if (!res.ok) return res;
-  await Promise.all(previous.entryIds.map((id) => backend().remove(id)));
-  return { ok: true, vote: { option, entryIds: [res.value.id] } };
+  return { ok: true, suggestion: suggestionFromEntry(res.value) };
+}
+
+/** Takes back one of your own suggestions. */
+export function withdrawSuggestion(id: string): Promise<boolean> {
+  return backend().remove(id);
+}
+
+export const SUGGEST_PAGE = 50;
+
+/** Everyone's suggestions, newest first (the owner's Dev area). */
+export async function allSuggestions(
+  cursor?: string,
+): Promise<{ ok: true; list: Suggestion[]; next?: string } | Failure> {
+  const res = await backend().browse({ types: [SUGGEST_TYPE], limit: SUGGEST_PAGE, cursor });
+  if (!res.ok) return res;
+  return { ok: true, list: toSuggestions(res.value.rows), next: res.value.next };
+}
+
+/** Deletes anyone's suggestion (owner only; RUN refuses everyone else). */
+export function deleteSuggestion(id: string): Promise<boolean> {
+  return backend().adminRemove(id);
+}
+
+function toSuggestions(rows: UgcRow[]): Suggestion[] {
+  return rows.map(suggestionFromEntry).filter((s): s is Suggestion => s !== null);
+}
+
+/** The owner's marks (seen, starred, done), kept in appStorage. */
+export async function loadMarks(): Promise<DevMarks> {
+  const raw = await run.getItem(MARKS_KEY);
+  try {
+    return parseMarks(raw ? JSON.parse(raw) : null);
+  } catch {
+    return parseMarks(null);
+  }
+}
+
+export function saveMarks(marks: DevMarks): void {
+  void run.setItem(MARKS_KEY, JSON.stringify(marks));
+}
+
+/** Suggestions the owner hasn't seen yet (the newest page), or null if unknown. */
+export async function newSuggestionCount(): Promise<number | null> {
+  const res = await allSuggestions();
+  if (!res.ok) return null;
+  return newCount(res.list, await loadMarks());
 }

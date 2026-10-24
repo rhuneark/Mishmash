@@ -3,10 +3,18 @@
 // action button would do right now.
 
 import { MAX_SAY, SAY_GAP, cleanMessage } from '../game/chat';
-import { BUILDINGS, CAMPFIRE_FUEL_MAX, STATION_RANGE } from '../game/content/buildings';
+import {
+  BUILDINGS,
+  CAMPFIRE_FUEL_MAX,
+  POT_FIRE_RANGE,
+  STATION_RANGE,
+  slotsOf,
+  type BuildCat,
+} from '../game/content/buildings';
 import { ITEMS, type ItemDef, type ToolKind } from '../game/content/items';
 import { MONSTERS, type MonsterKind } from '../game/content/monsters';
 import { NODES } from '../game/content/nodes';
+import { CROPS, cropForSeed } from '../game/content/crops';
 import { type PoiDef, type Spot } from '../game/content/pois';
 import { CLASSIC, specCode, type IslandSpec } from '../game/islands';
 import { DEFAULT_RULES, parseRules, type WorldRules } from '../game/rules';
@@ -30,6 +38,7 @@ import {
   type DropNet,
   type FxKind,
   type MeNet,
+  type PetNet,
   type PlayerInfo,
   type RescueNet,
   type S2C,
@@ -39,6 +48,7 @@ import {
 } from '../game/sim/protocol';
 import { MONSTER_RADIUS } from '../game/sim/sim';
 import { dayInfo, type DayInfo } from '../game/sim/time';
+import { WEATHER_KINDS, type WeatherKind } from '../game/sim/weather';
 import { footprint, pushOutOfBox } from '../game/sim/types';
 import { DEEP, HALF, forNodesNear, heightAt, poolNear, type Island } from '../game/world';
 import type { Link } from './link';
@@ -62,14 +72,24 @@ const REMOVE_RANGE = 5;
 
 /** Build mode: a piece from your bag, put down where the cursor is. */
 export interface BuildMode {
-  /** The item to place, 'remove' to take pieces down, or null (nothing to build). */
-  piece: string | null;
+  /** The building kind to put down, or 'remove' to take pieces down. */
+  piece: string;
+  /** The build menu tab showing. */
+  cat: BuildCat;
   /** Quarter turns (0 = facing south, the way the camera sees it straight). */
   rot: number;
   /** Where the piece goes, relative to you (null: in front of you). */
   cursor: { dx: number; dz: number } | null;
   /** The building the remove tool points at. */
   remove: number | null;
+}
+/** A piece in the build menu: made ones in the bag are used first, else its materials. */
+export interface BuildPiece {
+  kind: string;
+  /** Pieces already made (crafted before the build menu) in the bag. */
+  made: number;
+  /** You have what it takes. */
+  can: boolean;
 }
 const TOAST_SECONDS = 3.6;
 /** Auto tool: seconds after the last swing before switching back. */
@@ -200,6 +220,10 @@ export class GameClient {
   players: PlayerInfo[] = [];
   rescue: RescueNet = { phase: 'none', left: 0 };
   private rescueAt = 0;
+  /** The sky right now (weather.ts). */
+  weather: WeatherKind = 'clear';
+  /** Animals that trust someone, by monster id. */
+  readonly pets = new Map<number, PetNet>();
   me: MeNet | null = null;
   readonly others = new Map<string, Other>();
   readonly mobs = new Map<number, MobMirror>();
@@ -224,6 +248,8 @@ export class GameClient {
   private ghostTurn = 0;
   /** Build mode (null: off). */
   build: BuildMode | null = null;
+  /** What build mode last put down (it opens on that again). */
+  private lastPiece = 'campfire';
   /** Snap to the grid and its cell size (Settings, set by Game). */
   buildPrefs = { snap: true, grid: 2 };
 
@@ -448,6 +474,12 @@ export class GameClient {
       case 'rules':
         this.rules = parseRules(msg.rules);
         break;
+      case 'weather':
+        this.weather = WEATHER_KINDS.includes(msg.w) ? msg.w : 'clear';
+        break;
+      case 'pets':
+        this.setPets(msg.list);
+        break;
       case 'say':
         this.onSay(msg.from, msg.name, msg.text);
         return;
@@ -460,6 +492,8 @@ export class GameClient {
   private applySnapshot(s: Snapshot): void {
     this.seed = s.seed;
     this.rules = parseRules(s.rules);
+    this.weather = s.weather && WEATHER_KINDS.includes(s.weather) ? s.weather : 'clear';
+    this.setPets(s.pets ?? []);
     this.setTime(s.time);
     this.nodes.clear();
     for (const [id, hp, until] of s.nodes) this.nodes.set(id, { hp, until });
@@ -478,6 +512,11 @@ export class GameClient {
     this.phase = 'ready';
     this.emit({ type: 'reset' });
     this.touch();
+  }
+
+  private setPets(list: PetNet[]): void {
+    this.pets.clear();
+    for (const p of list) this.pets.set(p.id, p);
   }
 
   /** "+3 Wood": what's new in the bag (moving things around changes nothing). */
@@ -735,7 +774,8 @@ export class GameClient {
       alive &&
       this.clock >= this.nextUse &&
       this.target &&
-      (this.target.kind === 'mob' || this.target.kind === 'node')
+      ((this.target.kind === 'mob' && (this.target.hostile || this.target.verb === 'Hunt')) ||
+        this.target.kind === 'node')
     ) {
       this.use();
     }
@@ -748,7 +788,7 @@ export class GameClient {
     if (this.stationAcc > 0.25) {
       this.stationAcc = 0;
       const st = this.stations();
-      const key = `${st.fire ? 1 : 0}${st.bench ? 1 : 0}${st.mash ? 1 : 0}`;
+      const key = `${st.fire ? 1 : 0}${st.bench ? 1 : 0}${st.mash ? 1 : 0}${st.pot ? 1 : 0}`;
       if (key !== this.stationKey) {
         this.stationKey = key;
         this.touch();
@@ -904,7 +944,7 @@ export class GameClient {
     let n = this.count(id);
     if (!this.rules.craftFromChests) return n;
     for (const b of this.buildings.values()) {
-      if (b.kind !== 'storage') continue;
+      if (!slotsOf(b.kind)) continue;
       for (const s of b.inv ?? []) if (s?.id === id) n += s.n;
       // Connected boxes all show the same chest: count it once.
       if (this.rules.sharedChests) break;
@@ -914,16 +954,11 @@ export class GameClient {
 
   private updateGhost(): void {
     const build = this.build;
-    // The last of a piece went down (or none had come yet): the next kind in the bag.
-    if (build && build.piece !== 'remove' && !this.me?.inv.some((s) => s?.id === build.piece)) {
-      const next = this.buildPieces()[0]?.id ?? null;
-      if (next !== build.piece) {
-        build.piece = next;
-        this.touch();
-      }
-    }
-    const piece = build && build.piece !== 'remove' ? build.piece : null;
-    const kind = build ? (piece ? ITEMS[piece]?.place : undefined) : this.heldItem()?.place;
+    const kind = build
+      ? build.piece === 'remove'
+        ? undefined
+        : build.piece
+      : this.heldItem()?.place;
     if (build) build.remove = build.piece === 'remove' ? this.removeTarget() : null;
     if (!kind || !this.me?.alive || !this.island) {
       if (this.ghost) this.touch();
@@ -951,12 +986,13 @@ export class GameClient {
       circleInBox(this.x, this.z, RADIUS, footprint(kind, p.x, p.z, rot)) &&
       BUILDINGS[kind]?.blocks;
     const far = Math.hypot(p.x - this.x, p.z - this.z) > 7 ? 'Too far away.' : null;
+    const poor = build && !this.canBuild(kind) ? this.missingFor(kind) : null;
     this.ghost = {
       kind,
       x: p.x,
       z: p.z,
       rot,
-      problem: problem ?? (tooClose ? 'Step back a little.' : far),
+      problem: problem ?? (tooClose ? 'Step back a little.' : (far ?? poor)),
     };
     this.touch();
   }
@@ -996,13 +1032,36 @@ export class GameClient {
     this.touch();
   }
 
-  /** The pieces you can build: placeable items in your bag (one entry per kind). */
-  buildPieces(): { id: string; n: number }[] {
-    const out = new Map<string, number>();
-    for (const s of this.me?.inv ?? []) {
-      if (s && ITEMS[s.id]?.place) out.set(s.id, (out.get(s.id) ?? 0) + s.n);
-    }
-    return [...out].map(([id, n]) => ({ id, n }));
+  /** Pieces in one build menu tab, and whether you can put each down. */
+  buildPieces(cat: BuildCat): BuildPiece[] {
+    return Object.values(BUILDINGS)
+      .filter((b) => b.cat === cat)
+      .map((b) => {
+        const made = this.madeCount(b.id);
+        return { kind: b.id, made, can: made > 0 || this.canBuild(b.id) };
+      });
+  }
+
+  /** Pieces of this kind already made (crafted before the build menu) in your bag. */
+  private madeCount(kind: string): number {
+    let n = 0;
+    for (const s of this.me?.inv ?? []) if (s && ITEMS[s.id]?.place === kind) n += s.n;
+    return n;
+  }
+
+  /** A made piece in the bag, or everything its cost asks for. */
+  canBuild(kind: string): boolean {
+    if (this.madeCount(kind) > 0) return true;
+    const cost = BUILDINGS[kind]?.cost ?? {};
+    return Object.entries(cost).every(([id, n]) => this.craftCount(id) >= n);
+  }
+
+  /** What a piece still needs, in words. */
+  missingFor(kind: string): string {
+    const need = Object.entries(BUILDINGS[kind]?.cost ?? {})
+      .filter(([id, n]) => this.craftCount(id) < n)
+      .map(([id, n]) => `${n - this.craftCount(id)} ${ITEMS[id]?.name.toLowerCase() ?? id}`);
+    return need.length ? `Needs ${need.join(', ')} more.` : '';
   }
 
   /** Build mode on or off. */
@@ -1010,11 +1069,12 @@ export class GameClient {
     if (!on) {
       this.build = null;
     } else {
-      const held = this.heldItem();
-      const pieces = this.buildPieces();
+      const held = this.heldItem()?.place;
+      const piece = held ?? this.lastPiece;
       const facing = Math.round(this.ry / (Math.PI / 2));
       this.build = {
-        piece: held?.place ? held.id : (pieces[0]?.id ?? null),
+        piece,
+        cat: BUILDINGS[piece]?.cat ?? 'camp',
         rot: (((facing + this.ghostTurn) % 4) + 4) % 4,
         cursor: null,
         remove: null,
@@ -1031,8 +1091,16 @@ export class GameClient {
   buildPick(piece: string): void {
     if (!this.build) return;
     this.build.piece = piece;
+    if (piece !== 'remove') this.lastPiece = piece;
     this.ghost = null;
     this.updateGhost();
+    this.touch();
+  }
+
+  /** Shows another tab of the build menu. */
+  buildTab(cat: BuildCat): void {
+    if (!this.build) return;
+    this.build.cat = cat;
     this.touch();
   }
 
@@ -1097,8 +1165,7 @@ export class GameClient {
           id: m.id,
           x: m.x,
           z: m.z,
-          verb: def.hostile ? 'Attack' : 'Catch',
-          name: MOB_NAMES[m.kind],
+          ...this.animalAction(m),
           hostile: def.hostile,
         };
       }
@@ -1159,8 +1226,8 @@ export class GameClient {
           id: 0,
           x: pool.x,
           z: pool.z,
-          verb: 'Drink',
-          name: 'fresh water',
+          verb: held?.can ? 'Fill' : 'Drink',
+          name: held?.can ? 'the watering can' : 'fresh water',
           hostile: false,
         };
     }
@@ -1190,21 +1257,32 @@ export class GameClient {
       }
       case 'door_wood':
       case 'gate_wood':
+      case 'fence_gate':
         return {
           ...base,
           verb: b.v === 1 ? 'Close' : 'Open',
-          name: b.kind === 'gate_wood' ? 'the gate' : 'the door',
+          name: b.kind === 'door_wood' ? 'the door' : 'the gate',
         };
       case 'bedroll':
+      case 'bed':
         return { ...base, verb: 'Sleep here:', name: 'set spawn' };
+      case 'cooking_pot':
+        return this.fireBy(b)
+          ? { ...base, verb: 'Cook at', name: 'the pot', panel: 'craft' }
+          : { ...base, verb: '', name: 'Cooking pot (needs a lit fire next to it)' };
       case 'rain_collector':
         return {
           ...base,
-          verb: (b.v ?? 0) >= 1 ? 'Drink from' : 'Empty:',
+          verb:
+            (b.v ?? 0) >= 1 ? (this.heldItem()?.can ? 'Fill the can at' : 'Drink from') : 'Empty:',
           name: `collector (${b.v ?? 0})`,
         };
+      case 'garden_plot':
+        return this.plotTarget(b, base);
       case 'storage':
-        return { ...base, verb: 'Open', name: 'storage box', panel: 'storage' };
+      case 'shelf':
+      case 'chest_big':
+        return { ...base, verb: 'Open', name: name.toLowerCase(), panel: 'storage' };
       case 'workbench':
         return { ...base, verb: 'Craft at', name: 'the workbench', panel: 'craft' };
       case 'mashbench':
@@ -1218,6 +1296,56 @@ export class GameClient {
       default:
         return { ...base, verb: '', name };
     }
+  }
+
+  /** What the action button does to a creature: attack, hunt, feed, or tend your pet. */
+  private animalAction(m: MobMirror): { verb: string; name: string } {
+    const def = MONSTERS[m.kind];
+    const animal = def.animal;
+    if (def.hostile || !animal) return { verb: def.hostile ? 'Attack' : 'Catch', name: MOB_NAMES[m.kind] };
+    const pet = this.pets.get(m.id);
+    if (pet) {
+      if (pet.owner !== this.you) {
+        const owner = this.players.find((p) => p.id === pet.owner)?.name ?? 'someone';
+        return { verb: 'Pet', name: `${pet.name} (${owner}'s)` };
+      }
+      if (pet.ready && animal.gives)
+        return {
+          verb: `Collect ${ITEMS[animal.gives.item]?.name.toLowerCase() ?? ''} from`,
+          name: pet.name,
+        };
+      return { verb: pet.mode === 'follow' ? 'Tell to stay:' : 'Call:', name: pet.name };
+    }
+    const held = this.heldSlot();
+    if (held && animal.food.includes(held.id))
+      return { verb: `Feed ${ITEMS[held.id]?.name.toLowerCase() ?? ''} to`, name: `the ${animal.noun}` };
+    return { verb: 'Hunt', name: MOB_NAMES[m.kind] };
+  }
+
+  /** A garden plot: plant what you carry, water it, or harvest it. */
+  private plotTarget(b: Built, base: Omit<Target, 'verb' | 'name'>): Target {
+    const crop = b.crop;
+    if (!crop) {
+      const seed = this.seedSlot();
+      return seed
+        ? { ...base, verb: 'Plant', name: ITEMS[seed.id]?.name.toLowerCase() ?? 'seeds' }
+        : { ...base, verb: 'Check', name: 'the garden plot (no seeds)' };
+    }
+    const [idx, stage, wet, pct] = crop;
+    const def = CROPS[idx];
+    const name = def?.name ?? 'crop';
+    if (stage >= 3) return { ...base, verb: 'Harvest', name: name.toLowerCase() };
+    const can = this.heldSlot();
+    if (!wet && can && ITEMS[can.id]?.can && (can.d ?? 0) >= 1)
+      return { ...base, verb: 'Water', name: name.toLowerCase() };
+    return { ...base, verb: 'Check', name: `${name} ${pct}%${wet ? '' : ' (dry)'}` };
+  }
+
+  /** The seed planting would use: the one in hand, else the first in the bag. */
+  seedSlot(): Slot | null {
+    const held = this.heldSlot();
+    if (held && cropForSeed(held.id)) return held;
+    return this.me?.inv.find((s) => s && cropForSeed(s.id)) ?? null;
   }
 
   private spotTarget(poi: PoiDef, spot: Spot, x: number, z: number): Target | null {
@@ -1296,10 +1424,10 @@ export class GameClient {
           ? { text: `Take down ${BUILDINGS[b.kind]?.name ?? ''}`, kind: 'place' }
           : { text: '', kind: 'none', blocked: 'Point at something you built.' };
       }
-      if (!this.ghost) return { text: '', kind: 'none', blocked: 'Craft pieces at a workbench.' };
+      if (!this.ghost) return { text: '', kind: 'none', blocked: 'Pick a piece to build.' };
     }
     if (this.ghost) {
-      const name = ITEMS[this.build?.piece ?? '']?.name ?? held?.name ?? '';
+      const name = BUILDINGS[this.ghost.kind]?.name ?? held?.name ?? '';
       return {
         text: `Place ${name}`,
         kind: 'place',
@@ -1319,7 +1447,7 @@ export class GameClient {
         ...auto,
       };
     if (this.wantsToEat()) {
-      if (held?.heal) return { text: `Use ${held.name}`, kind: 'eat' };
+      if (held?.heal && !held.food) return { text: `Use ${held.name}`, kind: 'eat' };
       if (held?.food)
         return {
           text: `${held.food.water > held.food.food ? 'Drink' : 'Eat'} ${held.name}`,
@@ -1334,9 +1462,12 @@ export class GameClient {
     const held = this.heldItem();
     const me = this.me;
     if (!held || !me) return false;
-    if (held.heal) return me.hp < 100 || me.poison > 0;
-    if (!held.food) return false;
-    return (held.food.food > 0 && me.food < 90) || (held.food.water > 0 && me.water < 90);
+    const hungry =
+      !!held.food &&
+      ((held.food.food > 0 && me.food < 90) || (held.food.water > 0 && me.water < 90));
+    // Meals heal too; medicine also cures poison.
+    const hurt = !!held.heal && (me.hp < 100 || (!held.food && me.poison > 0));
+    return hungry || hurt;
   }
 
   /** The action button. */
@@ -1355,16 +1486,9 @@ export class GameClient {
         this.toast(this.ghost.problem);
         return;
       }
-      const piece = this.build?.piece;
-      const slot = piece ? me.inv.findIndex((s) => s?.id === piece) : me.held;
-      if (slot < 0) return;
-      this.send({
-        type: 'place',
-        slot,
-        x: this.ghost.x,
-        z: this.ghost.z,
-        rot: this.ghost.rot,
-      });
+      const g = this.ghost;
+      if (this.build) this.send({ type: 'build', kind: g.kind, x: g.x, z: g.z, rot: g.rot });
+      else this.send({ type: 'place', slot: me.held, x: g.x, z: g.z, rot: g.rot });
       this.nextUse = this.clock + 0.35;
       return;
     }
@@ -1479,7 +1603,7 @@ export class GameClient {
       const def = NODES[(this.island as Island).nodeType[Number(t.id)] as number];
       return def && def.tool !== 'hand' && this.auto.tool ? def.tool : null;
     }
-    if (t.kind === 'mob' && t.hostile && this.auto.weapon) return 'weapon';
+    if (t.kind === 'mob' && (t.hostile || t.verb === 'Hunt') && this.auto.weapon) return 'weapon';
     return null;
   }
 
@@ -1683,14 +1807,33 @@ export class GameClient {
 
   /** Crafting stations in reach. */
   stations(): Record<Station, boolean> {
-    const out: Record<Station, boolean> = { hand: true, fire: false, bench: false, mash: false };
+    const out: Record<Station, boolean> = {
+      hand: true,
+      fire: false,
+      bench: false,
+      mash: false,
+      pot: false,
+    };
     for (const b of this.buildings.values()) {
       const st = BUILDINGS[b.kind]?.station;
       if (!st || Math.hypot(b.x - this.x, b.z - this.z) > STATION_RANGE) continue;
       if (st === 'fire' && this.fuel(b) <= 0) continue;
+      if (st === 'pot' && !this.fireBy(b)) continue;
       out[st] = true;
     }
     return out;
+  }
+
+  /** A cooking pot cooks only with a lit campfire next to it. */
+  fireBy(pot: Built): boolean {
+    for (const b of this.buildings.values())
+      if (
+        b.kind === 'campfire' &&
+        this.fuel(b) > 0 &&
+        Math.hypot(b.x - pot.x, b.z - pot.z) <= POT_FIRE_RANGE
+      )
+        return true;
+    return false;
   }
 
   canCraft(recipe: string): boolean {
@@ -1730,7 +1873,7 @@ export class GameClient {
     const starter = starterQuest({
       axe: (this.me?.inv ?? []).some((s) => s && ITEMS[s.id]?.tool?.kind === 'axe'),
       campfire: built.some((b) => b.kind === 'campfire'),
-      bedroll: built.some((b) => b.kind === 'bedroll' && b.owner === this.you),
+      bedroll: built.some((b) => BUILDINGS[b.kind]?.spawn && b.owner === this.you),
       day: this.info().day,
     });
     return [main, starter].filter((q): q is Quest => q !== null);
@@ -1748,6 +1891,10 @@ export const MOB_NAMES: Record<MonsterKind, string> = {
   thornback: 'Thornback',
   mother: 'the Mother Bloom',
   crab: 'Crab',
+  boar: 'Wild boar',
+  goat: 'Goat',
+  fowl: 'Jungle fowl',
+  dog: 'Stray dog',
 };
 
 function blocks(b: BuildingNet): boolean {

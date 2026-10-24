@@ -94,8 +94,8 @@ export interface StarterProgress {
 export function starterQuest(p: StarterProgress): Quest | null {
   const steps = [
     { id: 'axe', text: 'Craft a stone axe', done: p.axe },
-    { id: 'campfire', text: 'Build a campfire before dark', done: p.campfire },
-    { id: 'bedroll', text: 'Put down a bedroll', done: p.bedroll },
+    { id: 'campfire', text: 'Build a campfire before dark (🔨)', done: p.campfire },
+    { id: 'bedroll', text: 'Put down a bedroll or a bed', done: p.bedroll },
   ];
   if (p.day > 3 || steps.every((s) => s.done)) return null;
   return { id: 'starter', title: '🔥 The first night', steps };

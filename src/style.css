@@ -317,85 +317,6 @@ button:disabled {
   padding-bottom: calc(12px + var(--safe-bottom));
 }
 
-/* Vote */
-
-.options {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.option {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 60px;
-  padding: 8px 14px;
-  overflow: hidden;
-  text-align: left;
-  background: var(--panel);
-  border: 2px solid var(--line);
-  border-radius: 14px;
-}
-
-.option.picked {
-  border-color: var(--accent);
-}
-
-.option:disabled {
-  opacity: 1;
-}
-
-.option-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  opacity: 0.22;
-  transform: none;
-  border-radius: 0;
-  box-shadow: none;
-  transition: width 0.4s ease;
-  pointer-events: none;
-}
-
-.option-icon,
-.option-text,
-.option-pct {
-  position: relative;
-}
-
-.option-icon {
-  flex: none;
-  font-size: calc(26px * var(--fs));
-}
-
-.option-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.option-name {
-  font-weight: 800;
-}
-
-.option-blurb {
-  font-size: calc(14px * var(--fs));
-  color: var(--text-soft);
-}
-
-.option.picked .option-blurb {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.option-pct {
-  flex: none;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
 /* Notices */
 
 .notice {
@@ -517,13 +438,109 @@ button:disabled {
   color: var(--bg);
 }
 
-/* Vote: round 1 result */
+/* The suggestions box */
 
-.round-done {
+.built-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
   font-size: calc(14px * var(--fs));
 }
 
-/* Pages opened from the title screen (Vote, Dev): a back button and a title */
+.built-list li {
+  display: flex;
+  gap: 8px;
+}
+
+.suggest-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.topic {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text-soft);
+  font-size: calc(14px * var(--fs));
+  font-weight: 700;
+}
+
+.topic.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.suggest-text {
+  width: 100%;
+  min-height: 96px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  resize: vertical;
+}
+
+.suggest-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.suggest-ok {
+  margin: 0;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.my-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.my-suggestions li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.my-suggestion-text {
+  flex: 1 1 100%;
+  overflow-wrap: anywhere;
+}
+
+.idea.done {
+  opacity: 0.7;
+}
+
+.segmented.small .segment {
+  font-size: calc(14px * var(--fs));
+}
+
+/* Pages opened from the title screen (Suggestions, Dev): a back button and a title */
 
 .subpage {
   flex: 1;
@@ -1099,13 +1116,81 @@ button:disabled {
 }
 
 .build-bar {
-  max-width: calc(100% - 16px);
-  overflow-x: auto;
-  touch-action: pan-x;
+  position: absolute;
+  left: 50%;
+  bottom: calc(6px + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: min(calc(100% - 16px), 420px);
+  transform: translateX(-50%);
+  pointer-events: auto;
 }
 
-.build-bar .slot {
+.build-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.build-tab {
+  width: 44px;
+  height: 44px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  background: rgba(20, 20, 36, 0.8);
+  font-size: 20px;
+}
+
+.build-tab.on {
+  border-color: var(--accent);
+  background: rgba(70, 56, 20, 0.9);
+}
+
+.build-row {
+  display: flex;
+  gap: 5px;
+  max-width: 100%;
+  overflow-x: auto;
+  touch-action: pan-x;
+  scrollbar-width: none;
+}
+
+.build-row .slot {
   flex: none;
+}
+
+.build-row .slot.poor .slot-icon {
+  opacity: 0.4;
+  filter: grayscale(0.8);
+}
+
+.build-cost {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.build-need {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.build-need.short {
+  color: #ff8a7a;
+}
+
+.build-need-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.build-desc {
+  font-size: 14px;
+  color: var(--text-soft);
 }
 
 .slot-emoji {
@@ -3164,4 +3249,27 @@ button:disabled {
 
 .chat-input .btn {
   min-height: 44px;
+}
+
+/* Build mode: the menu is two rows tall, so the stick and the buttons sit higher. */
+.game.building .hud-actions {
+  bottom: calc(124px + var(--safe-bottom));
+}
+
+.game.building .joy-zone {
+  bottom: calc(122px + var(--safe-bottom));
+}
+
+.game.landscape.building .joy-zone {
+  bottom: calc(8px + var(--safe-bottom));
+  width: max(120px, calc(50% - 220px));
+}
+
+.game.landscape.building .hud-actions {
+  bottom: calc(10px + var(--safe-bottom));
+}
+
+.game-labels > .tag-name.pet {
+  font-size: 14px;
+  color: #ffe9b0;
 }

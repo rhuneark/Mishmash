@@ -24,6 +24,7 @@ import { NodeView } from './render/nodes';
 import { nodeTint } from './render/props';
 import { SunShadow, setupRenderer, shadeAll, toneMapped } from './render/light';
 import { WIND } from './render/wind';
+import { Rain, WEATHER_LOOK, lightningBolt } from './render/weather';
 import {
   cameraRig,
   screenToWorld,
@@ -32,6 +33,7 @@ import {
   type GraphicsLevel,
 } from './settings';
 import {
+  cropModel,
   buildPois,
   buildingModel,
   helicopter,
@@ -56,6 +58,7 @@ const SUN_DAY = new THREE.Color(0xfff1dc);
 const SUN_DUSK = new THREE.Color(0xff9a52);
 const MOON = new THREE.Color(0x9db4ff);
 const tmpColor = new THREE.Color();
+const tmpColor2 = new THREE.Color();
 const tmpV2 = new THREE.Vector2();
 /** The build grid reaches this far (m) around the piece. */
 const GRID_REACH = 9;
@@ -98,6 +101,8 @@ interface Label {
 /** DOM labels over the canvas (names, health bars, damage numbers). */
 /** Seconds a chat line shows over the speaker's head. */
 const BUBBLE_SECONDS = 6;
+/** Roof pieces this close to you hide (Zomboid-style cutaway). */
+const ROOF_CUTAWAY = 6.5;
 
 class Labels {
   private readonly pool: Label[] = [];
@@ -224,6 +229,12 @@ export class View {
   private readonly sunShadow: SunShadow;
   private readonly sunDir = new THREE.Vector3();
   private shadeAcc = 0;
+  private readonly rain: Rain;
+  /** The weather as it looks now, blending towards the sky the authority sends. */
+  private readonly sky = { cloud: 0, rain: 0, fog: 0 };
+  /** Lightning: a flash that fades, and bolts on screen. */
+  private flash = 0;
+  private readonly bolts: { line: THREE.LineSegments; life: number }[] = [];
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -254,6 +265,7 @@ export class View {
     this.ambient = new Ambient(this.island, this.scene);
     this.nodes = new NodeView(this.island, this.scene, (id) => client.nodeGone(id));
     this.fx = new Fx(this.scene);
+    this.rain = new Rain(this.scene);
     const look = climateLook(this.island.spec.climate);
     this.skyDay = new THREE.Color(look.skyDay ?? 0x9fd3ea);
     this.skyDusk = new THREE.Color(look.skyDusk ?? 0xe39a6a);
@@ -353,6 +365,7 @@ export class View {
       this.nodes.markDirty();
     }
     this.fx.density = o.gfx.particles;
+    this.rain.setMax(Math.round(1500 * o.gfx.particles));
     this.sunShadow.setSize(o.gfx.shadows);
     setBlobShadows(o.gfx.shadows === 0);
     const pr = Math.min(window.devicePixelRatio || 1, o.gfx.pixelRatio);
@@ -636,6 +649,19 @@ export class View {
         });
         this.sfx('pickup', x, z);
         break;
+      case 'lightning': {
+        const line = lightningBolt(x, y, z, Math.floor(x * 31 + z * 17));
+        this.scene.add(line);
+        this.bolts.push({ line, life: 0.3 });
+        this.flash = 1;
+        this.fx.burst(x, y + 0.3, z, 14, FX_COLORS.spark, { speed: 4, up: 3, glow: true, life: 0.5 });
+        this.fx.ring(x, y, z, 3, 0xeef4ff, 0.5, { grow: true });
+        const d = this.dist(x, z);
+        this.sound.play('crack', d / 3);
+        this.sound.playLater('thunder', 0.3 + d / 120, d / 8);
+        this.kick(Math.max(0, 0.5 - d / 80));
+        break;
+      }
       case 'podfall': {
         const group = podModel().group;
         group.position.set(x + 14, y + 60, z - 10);
@@ -930,6 +956,20 @@ export class View {
         v.water.visible = k > 0;
         v.water.position.y = 0.1 + k * 0.35;
       }
+      // Garden plots: the crop, rebuilt when it grows or the soil dries.
+      if (v.crop) {
+        const key = net.crop ? `${net.crop[0]}|${net.crop[1]}|${net.crop[2]}` : '';
+        if (v.crop.userData['key'] !== key) {
+          v.crop.userData['key'] = key;
+          for (const ch of [...v.crop.children]) {
+            v.crop.remove(ch);
+            ch.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+          }
+          if (net.crop) v.crop.add(cropModel(net.crop[0], net.crop[1], net.crop[2] === 1));
+        }
+      }
+      // Roofs lift away while you're under or beside them, so you can see inside.
+      if (v.roof) v.roof.visible = Math.hypot(net.x - c.x, net.z - c.z) > ROOF_CUTAWAY;
     }
     this.smokeAcc += dt;
     const smoke = this.smokeAcc > 0.22;
@@ -1008,6 +1048,7 @@ export class View {
     const day = daylight(c.info().phase);
     this.ambient.update(dt, this.t, c.x, c.z, day, c.info().bloom, this.dangerSpots);
     this.fx.update(dt);
+    this.updateWeather(dt);
     for (let i = this.popups.length - 1; i >= 0; i--) {
       const p = this.popups[i] as Popup;
       p.life -= dt;
@@ -1269,22 +1310,27 @@ export class View {
     // Dusk/dawn warmth peaks while daylight is half up.
     const warm = Math.max(0, 1 - Math.abs(day - 0.5) * 2.2);
     const sky = tmpColor.copy(bloom ? SKY_BLOOM : SKY_NIGHT).lerp(this.skyDay, day);
-    sky.lerp(this.skyDusk, warm * 0.6);
+    sky.lerp(this.skyDusk, warm * 0.6 * (1 - this.sky.cloud));
+    // Clouds turn the sky grey; lightning lights it up.
+    sky.lerp(tmpColor2.setHex(0x7d8794).multiplyScalar(0.25 + day * 0.75), this.sky.cloud * 0.65);
+    sky.lerp(tmpColor2.setHex(0xdde6ff), this.flash * 0.6);
     this.fog.color.copy(sky);
     toneMapped(sky, this.scene.background as THREE.Color);
     const fog = this.fogMul * this.climateFog;
-    this.fog.near = this.fogFrom + (-14 + day * 40) * fog;
-    this.fog.far = this.fogFrom + (30 + day * 70) * fog;
+    // Rain and fog close the view in.
+    const closer = 1 - this.sky.rain * 0.3 - this.sky.fog * 0.55;
+    this.fog.near = this.fogFrom + (-14 + day * 40) * fog * closer;
+    this.fog.far = this.fogFrom + (30 + day * 70) * fog * closer;
     this.hemi.color.copy(bloom ? HEMI_BLOOM : HEMI_NIGHT).lerp(this.hemiDay, day);
     this.hemi.groundColor.copy(GROUND_NIGHT).lerp(this.groundDay, day);
-    this.hemi.intensity = 0.6 + day * 0.75;
+    this.hemi.intensity = (0.6 + day * 0.75) * (1 - this.sky.cloud * 0.15) + this.flash * 2.5;
     // The sun crosses from east to west, low and warm at dawn and dusk (long shadows); by
     // night a pale moon stands high in the south-west.
     const arc = (info.phase - NIGHT_END + 0.04) / (NIGHT_START - NIGHT_END + 0.08);
     const a = Math.min(1, Math.max(0, arc)) * Math.PI;
     const sunDir = tmpVec.set(Math.cos(a) * 0.95, 0.3 + Math.sin(a) * 1.05, 0.5).normalize();
     this.sunDir.copy(MOON_DIR).lerp(sunDir, day).normalize();
-    this.sun.intensity = 0.4 + day * 2.5;
+    this.sun.intensity = (0.4 + day * 2.5) * (1 - this.sky.cloud * 0.75);
     this.sun.color
       .copy(MOON)
       .lerp(SUN_DAY, day)
@@ -1356,6 +1402,14 @@ export class View {
       const info = c.players.find((q) => q.id === o.id);
       if (p && info) this.labels.add(p.x, p.y, info.name, 'tag-name');
     }
+    // Animals that trust someone wear their name.
+    for (const [id, pet] of c.pets) {
+      const m = c.mobs.get(id);
+      if (!m || m.dying > 0) continue;
+      const p = project(m.x, this.y(m.x, m.z) + 1.4, m.z);
+      const icon = MONSTERS[m.kind].animal?.icon ?? '';
+      if (p) this.labels.add(p.x, p.y, `${icon} ${pet.name}${pet.ready ? ' ✨' : ''}`, 'tag-name pet');
+    }
     for (const m of c.mobs.values()) {
       if (m.dying > 0 || m.hp >= 100 || !MONSTERS[m.kind].hostile || m.kind === 'mother') continue;
       const p = project(m.x, this.y(m.x, m.z) + (m.kind === 'thornback' ? 2 : 2.3), m.z);
@@ -1407,7 +1461,33 @@ export class View {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /** Rain falling around the camera, the sky blending to the weather, lightning fading. */
+  private updateWeather(dt: number): void {
+    const want = WEATHER_LOOK[this.client.weather];
+    const k = Math.min(1, dt * 0.35);
+    this.sky.cloud += (want.cloud - this.sky.cloud) * k;
+    this.sky.rain += (want.rain - this.sky.rain) * k;
+    this.sky.fog += (want.fog - this.sky.fog) * k;
+    const storm = this.client.weather === 'storm';
+    const ground = this.y(this.focus.x, this.focus.z);
+    this.rain.update(dt, this.focus, ground, this.sky.rain, storm ? 7 : 2);
+    this.sound.setRain(this.sky.rain);
+    this.flash = Math.max(0, this.flash - dt * 4);
+    for (let i = this.bolts.length - 1; i >= 0; i--) {
+      const b = this.bolts[i] as (typeof this.bolts)[number];
+      b.life -= dt;
+      (b.line.material as THREE.LineBasicMaterial).opacity = Math.max(0, b.life * 4);
+      if (b.life <= 0) {
+        this.scene.remove(b.line);
+        b.line.geometry.dispose();
+        (b.line.material as THREE.Material).dispose();
+        this.bolts.splice(i, 1);
+      }
+    }
+  }
+
   dispose(): void {
+    this.rain.dispose();
     this.ambient.dispose();
     this.renderer.dispose();
   }

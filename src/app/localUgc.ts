@@ -1,12 +1,12 @@
 // Local stand-in for RUN's UGC, used by `npm run dev` (the mock SDK can't store
 // entries). Same contract as run.ugc, kept in memory, seeded with a few sample
-// players (and reports) so the chat, the vote and the Dev area have something
-// to show. Mirrors the server's rules: players delete only their own entries,
+// players (old Town Square messages with reports, and suggestions) so the Dev
+// area has something to show. Mirrors the server's rules: players delete only their own entries,
 // 3 reports hide an entry, admin calls need the owner. Never used in the RUN
 // host. `owner` plays the game's owner (dev URL `?owner`).
 
 import type { ReportRow, UgcApi, UgcRow } from '../sdk/run';
-import { CURRENT_POLL, voteType } from '../game/poll';
+import { SUGGEST_TYPE, type Topic } from '../game/suggest';
 import { CHAT_TYPE } from '../game/chat';
 
 const ME = 'local-you';
@@ -88,21 +88,14 @@ export function createLocalUgc(owner = false, now: () => number = Date.now): Ugc
   fileReport(nova.id, 'local-bram', 'other', 25 * min);
   for (const r of reports) if (r.entryId === nova.id) r.status = 'dismissed';
 
-  const seedVotes: Record<string, number> = {
-    boats: 5,
-    pets: 3,
-    farming: 2,
-    weather: 2,
-    secrets: 1,
-  };
-  for (const [option, n] of Object.entries(seedVotes)) {
-    for (let i = 0; i < n; i++) {
-      const voter = `local-voter-${option}-${i}`;
-      add(voteType(CURRENT_POLL.id, option), voter, 'Voter', { v: 1, option }, 60 * min);
-    }
-  }
-  // A voter with a second, newer vote: only that one counts (pets, not boats).
-  add(voteType(CURRENT_POLL.id, 'pets'), 'local-voter-boats-0', 'Voter', { v: 1 }, 5 * min);
+  // A few suggestions for the owner's Dev area.
+  const ideas: [string, string, string, Topic, number][] = [
+    ['local-nova', 'Nova', 'Boats so we can sail to the little islands!', 'island', 50],
+    ['local-pip', 'Pip', 'A cave under the mountain with bats and crystals', 'island', 35],
+    ['local-bram', 'Bram', 'Let us build a second floor on our base', 'building', 18],
+  ];
+  for (const [id, name, text, topic, ago] of ideas)
+    add(SUGGEST_TYPE, id, name, { v: 1, text, topic }, ago * min);
 
   const denied = { ok: false as const, reason: 'error' as const };
 

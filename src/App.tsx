@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import * as run from './sdk/run';
 import { SAVE_KEY, parseSave, recordVisit, type SaveData } from './game/save';
-import { isOwner, openReportCount } from './app/community';
+import { isOwner, newSuggestionCount, openReportCount } from './app/community';
 import { usePolling } from './app/usePolling';
 import { Logo } from './ui/Logo';
 import { Intro } from './screens/Intro';
-import { Vote } from './screens/Vote';
+import { Suggest } from './screens/Suggest';
 import { Dev } from './screens/Dev';
 import { SubPage } from './ui/SubPage';
 import { Play, type PlayChoice } from './screens/Play';
@@ -14,7 +14,7 @@ import type { GameClient } from './play/client';
 import { FAIL_TEXT, startHost, startJoin, startSolo } from './play/session';
 
 /** The title screen, or a page opened from it (each has a back button). */
-type Screen = 'play' | 'vote' | 'dev';
+type Screen = 'play' | 'suggest' | 'dev';
 
 const REPORT_CHECK_MS = 5 * 60_000;
 
@@ -27,6 +27,7 @@ export default function App() {
   // The Dev area only exists for the game's owner (RUN checks the account).
   const [owner, setOwner] = useState(false);
   const [openReports, setOpenReports] = useState(0);
+  const [newIdeas, setNewIdeas] = useState(0);
   // The win screen's "New island" lands on the New island screen.
   const [wantNew, setWantNew] = useState(false);
 
@@ -130,34 +131,34 @@ export default function App() {
   if (!save.introSeen) {
     return (
       <div className="app">
-        <Intro onPlay={() => go('play')} onVote={() => go('vote')} />
+        <Intro onPlay={() => go('play')} onSuggest={() => go('suggest')} />
       </div>
     );
   }
 
   return (
     <div className="app">
-      {owner && <ReportWatch onCount={setOpenReports} />}
+      {owner && <DevWatch onReports={setOpenReports} onIdeas={setNewIdeas} />}
       <main className="tab-body">
         {screen === 'play' && (
           <Play
             onStart={(c) => void start(c)}
-            onVote={() => setScreen('vote')}
+            onSuggest={() => setScreen('suggest')}
             onDev={owner ? () => setScreen('dev') : undefined}
-            openReports={openReports}
+            devCount={openReports + newIdeas}
             error={playError}
             newIsland={wantNew}
             onNewIslandShown={clearWantNew}
           />
         )}
-        {screen === 'vote' && (
-          <SubPage title="🗳️ Vote on updates" onBack={() => setScreen('play')}>
-            <Vote />
+        {screen === 'suggest' && (
+          <SubPage title="💡 Suggestions" onBack={() => setScreen('play')}>
+            <Suggest />
           </SubPage>
         )}
         {screen === 'dev' && owner && (
           <SubPage title="🛠️ Dev" onBack={() => setScreen('play')}>
-            <Dev onOpenCount={setOpenReports} />
+            <Dev onOpenCount={setOpenReports} onNewCount={setNewIdeas} />
           </SubPage>
         )}
       </main>
@@ -165,11 +166,18 @@ export default function App() {
   );
 }
 
-/** Keeps the Dev area's open-report count fresh (owner only). */
-function ReportWatch({ onCount }: { onCount: (n: number) => void }) {
+/** Keeps the Dev button's count fresh: open reports and new suggestions (owner only). */
+function DevWatch({
+  onReports,
+  onIdeas,
+}: {
+  onReports: (n: number) => void;
+  onIdeas: (n: number) => void;
+}) {
   usePolling(async () => {
-    const n = await openReportCount();
-    if (n !== null) onCount(n);
+    const [reports, ideas] = await Promise.all([openReportCount(), newSuggestionCount()]);
+    if (reports !== null) onReports(reports);
+    if (ideas !== null) onIdeas(ideas);
   }, REPORT_CHECK_MS);
   return null;
 }

@@ -15,6 +15,7 @@ import type { S2C } from './protocol';
 import { DEFAULT_RULES, type WorldRules } from '../rules';
 import { dayInfo } from './time';
 import { MAX_SAY } from '../chat';
+import { nextWeather, type WeatherKind } from './weather';
 
 const island: Island = generateIsland(4242);
 
@@ -139,7 +140,7 @@ describe('island sim', () => {
     expect(h.sim.nodeGone(bush)).toBe(false);
   });
 
-  it('crafts, places a campfire, feeds it and cooks on it', () => {
+  it('builds a campfire, feeds it and cooks on it', () => {
     const h = harness();
     h.sim.join('a', 'Ann');
     const p = h.sim.players.get('a');
@@ -147,21 +148,19 @@ describe('island sim', () => {
     p.inv[5] = { id: 'wood', n: 20 };
     p.inv[6] = { id: 'stone', n: 10 };
     p.inv[7] = { id: 'crab_raw', n: 1 };
-    h.sim.handle('a', { type: 'craft', recipe: 'campfire' });
-    const slot = p.inv.findIndex((s) => s?.id === 'campfire');
-    expect(slot).toBeGreaterThanOrEqual(0);
     h.sim.handle('a', { type: 'craft', recipe: 'crab_cooked' });
     expect(h.toasts('a').some((t) => t.includes('campfire'))).toBe(true);
-    // Find a clear spot near the player.
+    // Find a clear spot near the player and build it from the bag.
     let placed = false;
     for (let k = 0; k < 40 && !placed; k++) {
       const x = Math.round(p.x + 3 + (k % 6));
       const z = Math.round(p.z - 3 - Math.floor(k / 6));
       if (h.sim.placeProblem('campfire', x, z, 0)) continue;
       walkTo(h, 'a', x + 2, z);
-      h.sim.handle('a', { type: 'place', slot, x, z, rot: 0 });
+      h.sim.handle('a', { type: 'build', kind: 'campfire', x, z, rot: 0 });
       placed = true;
     }
+    expect(count(p.inv, 'stone')).toBe(6);
     expect(placed).toBe(true);
     const fire = [...h.sim.buildings.values()].find((b) => b.kind === 'campfire');
     expect(fire).toBeDefined();
@@ -429,13 +428,14 @@ describe('monster parts, the Mashbench and the lore', () => {
     h.sim.give(p, 'snap_tooth', 4);
     const slot = (id: string) => p.inv.findIndex((s) => s?.id === id);
     h.sim.handle('a', { type: 'place', slot: slot('workbench'), x: spot.x, z: spot.z, rot: 0 });
-    h.sim.handle('a', { type: 'craft', recipe: 'mashbench' });
-    expect(count(p.inv, 'mashbench')).toBe(1);
     // Jawblades need a Mashbench, not a workbench.
     h.sim.handle('a', { type: 'craft', recipe: 'jawblade' });
     expect(count(p.inv, 'jawblade')).toBe(0);
     expect(h.toasts('a').slice(-1)[0]).toContain('Mashbench');
-    h.sim.handle('a', { type: 'place', slot: slot('mashbench'), x: spot.x, z: spot.z + 5, rot: 0 });
+    // The Mashbench is built straight from its parts.
+    h.sim.handle('a', { type: 'build', kind: 'mashbench', x: spot.x, z: spot.z + 5, rot: 0 });
+    expect([...h.sim.buildings.values()].some((b) => b.kind === 'mashbench')).toBe(true);
+    expect(count(p.inv, 'snap_tooth')).toBe(4);
     walkTo(h, 'a', spot.x + 1.5, spot.z + 3);
     h.sim.handle('a', { type: 'craft', recipe: 'jawblade' });
     expect(count(p.inv, 'jawblade')).toBe(1);
@@ -594,8 +594,8 @@ describe('world events', () => {
     let crate = false;
     let pack = false;
     for (let i = 0; i < 80 && !(crate && pack); i++) {
-      h.sim.nextEvent = h.sim.time;
       h.sim.time = START_TIME + 3 * DAY + 60;
+      h.sim.nextEvent = h.sim.time;
       h.run(1);
       crate ||= [...h.sim.drops.values()].some((d) => d.kind === 'crate');
       pack ||= h.toasts('a').some((t) => t.includes('pack of Husks'));
@@ -883,5 +883,277 @@ describe('island chat', () => {
     expect(says('b')).toHaveLength(1);
     h.sim.handle('a', { type: 'say', text: 'x'.repeat(500) });
     expect(says('b')[1]?.text).toHaveLength(MAX_SAY);
+  });
+});
+
+describe('the build menu', () => {
+  /** A free spot for `kind` near the crash site, with Ann standing next to it. */
+  function spotFor(h: ReturnType<typeof harness>, kind: string, from = 24) {
+    for (let r = from; r < 160; r += 3) {
+      for (let a = 0; a < 16; a++) {
+        const x = SPAWN.x + Math.round(Math.sin((a / 16) * Math.PI * 2) * r);
+        const z = SPAWN.z - 20 + Math.round(Math.cos((a / 16) * Math.PI * 2) * r);
+        if (!h.sim.placeProblem(kind, x, z, 0) && !h.sim.placeProblem('wall_wood', x, z + 3, 0)) {
+          walkTo(h, 'a', x, z + 2.6);
+          return { x, z };
+        }
+      }
+    }
+    throw new Error('no spot');
+  }
+
+  it('builds a piece straight from materials, and gives half back when it comes down', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const at = spotFor(h, 'wall_wood');
+    h.sim.handle('a', { type: 'build', kind: 'wall_wood', ...at, rot: 0 });
+    expect([...h.sim.buildings.values()]).toHaveLength(0);
+    expect(h.toasts('a').slice(-1)[0]).toMatch(/Not enough materials/);
+    h.sim.give(p, 'wood', 8);
+    h.sim.handle('a', { type: 'build', kind: 'wall_wood', ...at, rot: 0 });
+    const wall = [...h.sim.buildings.values()].find((b) => b.kind === 'wall_wood')!;
+    expect(wall).toBeTruthy();
+    expect(count(p.inv, 'wood')).toBe(2);
+    h.sim.handle('a', { type: 'demolish', id: wall.id });
+    expect(h.sim.buildings.size).toBe(0);
+    expect(count(p.inv, 'wood')).toBe(5);
+  });
+
+  it('uses a piece made before the build menu first', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const at = spotFor(h, 'storage');
+    h.sim.give(p, 'storage', 1);
+    h.sim.give(p, 'wood', 8);
+    h.sim.give(p, 'rope', 1);
+    h.sim.handle('a', { type: 'build', kind: 'storage', ...at, rot: 0 });
+    expect(count(p.inv, 'storage')).toBe(0);
+    expect(count(p.inv, 'wood')).toBe(8);
+    const box = [...h.sim.buildings.values()][0]!;
+    expect(box.inv).toHaveLength(12);
+  });
+
+  it('lays floors under things and roofs over them, each only meeting its own layer', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    h.sim.give(p, 'wood', 40);
+    h.sim.give(p, 'stone', 12);
+    const at = spotFor(h, 'floor_wood');
+    for (const kind of ['floor_wood', 'roof_wood', 'table'])
+      h.sim.handle('a', { type: 'build', kind, ...at, rot: 0 });
+    expect([...h.sim.buildings.values()].map((b) => b.kind).sort()).toEqual([
+      'floor_wood',
+      'roof_wood',
+      'table',
+    ]);
+    h.sim.handle('a', { type: 'build', kind: 'floor_stone', ...at, rot: 0 });
+    expect(h.toasts('a').slice(-1)[0]).toBe('Something is already there.');
+    // Floors and roofs don't stop anyone; the table does.
+    expect(h.sim.blockingAt(at.x + 0.9, at.z + 0.9, 0.2)).toBeNull();
+    expect(h.sim.blockingAt(at.x, at.z, 0.2)?.kind).toBe('table');
+  });
+
+  it('cooks only at a pot with a lit campfire next to it', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    h.sim.give(p, 'scrap', 3);
+    h.sim.give(p, 'stone', 8);
+    h.sim.give(p, 'wood', 7);
+    const at = spotFor(h, 'cooking_pot');
+    h.sim.handle('a', { type: 'build', kind: 'cooking_pot', ...at, rot: 0 });
+    expect(h.sim.stationNear(p.x, p.z, 'pot')).toBe(false);
+    h.sim.handle('a', { type: 'build', kind: 'campfire', x: at.x + 2, z: at.z, rot: 0 });
+    expect(h.sim.stationNear(p.x, p.z, 'pot')).toBe(true);
+  });
+});
+
+describe('farming and cooking', () => {
+  it('plants, waters, grows only while wet, and harvests with seeds back', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    h.sim.give(p, 'wood', 4);
+    h.sim.give(p, 'fiber', 8);
+    let at = { x: 0, z: 0 };
+    for (let r = 24; r < 160; r += 3) {
+      const x = SPAWN.x + r;
+      const z = SPAWN.z - 20;
+      if (!h.sim.placeProblem('garden_plot', x, z, 0)) {
+        at = { x, z };
+        break;
+      }
+    }
+    walkTo(h, 'a', at.x, at.z + 2.5);
+    h.sim.handle('a', { type: 'build', kind: 'garden_plot', ...at, rot: 0 });
+    const plot = [...h.sim.buildings.values()].find((b) => b.kind === 'garden_plot')!;
+    const use = () => {
+      h.sim.handle('a', { type: 'use', kind: 'build', id: plot.id });
+      h.run(0.6);
+    };
+    use();
+    expect(h.toasts('a').slice(-1)[0]).toMatch(/Plant seeds/);
+    h.sim.give(p, 'seed_potato', 2);
+    use();
+    expect(plot.crop?.id).toBe('potato');
+    expect(count(p.inv, 'seed_potato')).toBe(1);
+    // Dry soil: nothing grows.
+    h.run(30);
+    expect(plot.crop?.grow).toBe(0);
+    // A full can waters it.
+    h.sim.give(p, 'watering_can', 1);
+    p.held = p.inv.findIndex((s) => s?.id === 'watering_can');
+    use();
+    expect(plot.crop?.wet).toBeGreaterThan(0);
+    expect(p.inv[p.held]?.d).toBe(7);
+    h.run(60);
+    expect(plot.crop?.grow).toBeGreaterThan(0.08);
+    plot.crop!.grow = 1;
+    p.held = 0;
+    use();
+    expect(plot.crop).toBeUndefined();
+    expect(count(p.inv, 'potato')).toBeGreaterThanOrEqual(3);
+    expect(count(p.inv, 'seed_potato')).toBeGreaterThanOrEqual(2);
+  });
+
+  it('fills the watering can at a pool instead of drinking', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const pool = island.pools[0]!;
+    p.x = pool.x + pool.r + 1;
+    p.z = pool.z;
+    h.sim.give(p, 'watering_can', 1);
+    p.held = p.inv.findIndex((s) => s?.id === 'watering_can');
+    p.inv[p.held]!.d = 0;
+    const water = p.water;
+    h.sim.handle('a', { type: 'use', kind: 'pool', id: 0 });
+    expect(p.inv[p.held]?.d).toBe(8);
+    expect(p.water).toBe(water);
+  });
+
+  it('meals fill you up and heal you slowly', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    p.hp = 40;
+    p.food = 20;
+    h.sim.give(p, 'meat_stew', 1);
+    h.sim.handle('a', { type: 'eat', slot: p.inv.findIndex((s) => s?.id === 'meat_stew') });
+    expect(p.food).toBe(80);
+    h.run(30);
+    expect(p.hp).toBeGreaterThan(55);
+  });
+});
+
+describe('weather', () => {
+  it('picks spells by climate and rule, never two storms in a row', () => {
+    const r = rng(3);
+    for (let k = 0; k < 200; k++)
+      expect(nextWeather('tropic', 'off', 'rain', 0, r).kind).toBe('clear');
+    let prev: WeatherKind = 'storm';
+    const seen = new Set<WeatherKind>();
+    for (let k = 0; k < 500; k++) {
+      const w = nextWeather('pines', 'often', prev, k * 100, r);
+      if (prev === 'storm') expect(w.kind).not.toBe('storm');
+      expect(w.until).toBeGreaterThan(k * 100 + 80);
+      seen.add(w.kind);
+      prev = w.kind;
+    }
+    expect(seen.size).toBe(5);
+  });
+
+  it('rain waters plots without a roof and fills collectors faster', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const plot = { id: 900, kind: 'garden_plot', x: 10, z: 200, rot: 0, hp: 100, owner: 'a', v: 0, acc: 0 };
+    h.sim.buildings.set(plot.id, { ...plot, crop: { id: 'corn', grow: 0, wet: 0 } });
+    const roofed = { ...plot, id: 901, x: 40 };
+    h.sim.buildings.set(roofed.id, { ...roofed, crop: { id: 'corn', grow: 0, wet: 0 } });
+    h.sim.buildings.set(902, { ...roofed, id: 902, kind: 'roof_wood' });
+    h.sim.weather = { kind: 'rain', until: h.sim.time + 500 };
+    h.run(2);
+    expect(h.sim.buildings.get(900)?.crop?.wet).toBeGreaterThan(0);
+    expect(h.sim.buildings.get(901)?.crop?.wet).toBe(0);
+    expect(h.sim.raining()).toBe(true);
+  });
+
+  it('sends the weather when it changes and keeps it in the save', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    h.sim.weather = { kind: 'clear', until: h.sim.time + 0.5 };
+    h.run(2);
+    const sent = (h.inbox.get('a') ?? []).filter((m) => m.type === 'weather');
+    expect(sent.length).toBeGreaterThan(0);
+    const save = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())));
+    expect(save?.weather?.kind).toBe(h.sim.weather.kind);
+  });
+});
+
+describe('island animals', () => {
+  function withAnimal(kind: 'boar' | 'goat' | 'fowl' | 'dog') {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a')!;
+    const m = spawnMob(h.sim, kind, p.x + 1.5, p.z, { roamer: true });
+    return { h, p, m };
+  }
+
+  it('tames an animal fed its favourite food, which then follows and gives eggs', () => {
+    const { h, p, m } = withAnimal('fowl');
+    h.sim.give(p, 'berries', 3);
+    p.held = p.inv.findIndex((s) => s?.id === 'berries');
+    h.sim.handle('a', { type: 'use', kind: 'mob', id: m.id });
+    expect(m.fed?.n).toBe(1);
+    expect(m.tame).toBeUndefined();
+    h.run(1);
+    m.x = p.x + 1.5;
+    m.z = p.z;
+    h.sim.handle('a', { type: 'use', kind: 'mob', id: m.id });
+    expect(m.tame?.owner).toBe('a');
+    expect(count(p.inv, 'berries')).toBe(1);
+    expect((h.inbox.get('a') ?? []).some((x) => x.type === 'pets')).toBe(true);
+    // It follows.
+    walkTo(h, 'a', p.x + 20, p.z);
+    h.run(8);
+    expect(Math.hypot(m.x - p.x, m.z - p.z)).toBeLessThan(6);
+    // And lays an egg every so often.
+    m.tame!.next = h.sim.time - 1;
+    m.x = p.x + 1;
+    m.z = p.z;
+    h.run(1);
+    h.sim.handle('a', { type: 'use', kind: 'mob', id: m.id });
+    expect(count(p.inv, 'egg')).toBe(1);
+  });
+
+  it('keeps pets in the save, never despawns or burrows them', () => {
+    const { h, p, m } = withAnimal('goat');
+    m.tame = { owner: 'a', name: 'Mango', mode: 'stay', next: 0 };
+    h.sim.handle('a', { type: 'pos', x: p.x, z: p.z, ry: 0, mv: 0 });
+    p.x += 200;
+    for (let k = 0; k < 3; k++) runDirector(h.sim);
+    expect(h.sim.mobs.has(m.id)).toBe(true);
+    const save = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())))!;
+    expect(save.pets).toEqual([expect.objectContaining({ kind: 'goat', name: 'Mango', mode: 'stay' })]);
+    const h2 = harness();
+    const sim2 = new IslandSim(island, save, () => {}, rng(1));
+    expect([...sim2.mobs.values()].find((x) => x.tame)?.tame?.name).toBe('Mango');
+    void h2;
+  });
+
+  it('a hurt boar fights back; a hurt goat runs', () => {
+    const { h, p, m } = withAnimal('boar');
+    h.sim.handle('a', { type: 'use', kind: 'mob', id: m.id });
+    expect(m.target).toBe('a');
+    expect(m.angryUntil).toBeGreaterThan(h.sim.time);
+    const hp = p.hp;
+    h.run(4);
+    expect(p.hp).toBeLessThan(hp);
+    const goat = withAnimal('goat');
+    goat.h.sim.handle('a', { type: 'use', kind: 'mob', id: goat.m.id });
+    expect(goat.m.st).toBe('flee');
   });
 });

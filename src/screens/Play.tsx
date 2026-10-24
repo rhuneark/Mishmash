@@ -21,18 +21,19 @@ const isPc = () =>
 
 export function Play({
   onStart,
-  onVote,
+  onSuggest,
   onDev,
-  openReports = 0,
+  devCount = 0,
   error,
   newIsland,
   onNewIslandShown,
 }: {
   onStart: (c: PlayChoice) => void;
-  onVote: () => void;
+  onSuggest: () => void;
   /** The owner's Dev area (absent for everyone else). */
   onDev?: () => void;
-  openReports?: number;
+  /** Open reports and new suggestions waiting in the Dev area. */
+  devCount?: number;
   error: string | null;
   /** Open straight on the New island screen (from the win screen). */
   newIsland: boolean;
@@ -168,8 +169,8 @@ export function Play({
                   ❓ How to play
                 </button>
               </div>
-              <button className="menu-btn" onClick={onVote}>
-                🗳️ Vote for updates
+              <button className="menu-btn" onClick={onSuggest}>
+                💡 Suggest an update
               </button>
               <button className="menu-btn jam-btn" onClick={voteJam}>
                 🎃 Vote for us in October Jam
@@ -177,7 +178,7 @@ export function Play({
               {jam !== 'idle' && <JamLink copied={jam === 'copied'} />}
               {onDev && (
                 <button className="menu-btn" onClick={onDev}>
-                  🛠️ Dev{openReports > 0 ? ` · ${openReports} to check` : ''}
+                  🛠️ Dev{devCount > 0 ? ` · ${devCount} to check` : ''}
                 </button>
               )}
             </>

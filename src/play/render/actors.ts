@@ -6,7 +6,28 @@ import { MOB_STATE } from '../../game/sim/protocol';
 import { MAT, box, cone, cyl, ico, mesh, sphere } from './geo';
 import { heldModel } from './items';
 
-export type ActorKind = 'player' | 'husk' | 'snapjaw' | 'puffer' | 'thornback' | 'mother' | 'crab';
+export type ActorKind =
+  | 'player'
+  | 'husk'
+  | 'snapjaw'
+  | 'puffer'
+  | 'thornback'
+  | 'mother'
+  | 'crab'
+  | 'boar'
+  | 'goat'
+  | 'fowl'
+  | 'dog';
+
+/** Four-legged island animals: colours and proportions. */
+const BEASTS: Record<
+  'boar' | 'goat' | 'dog',
+  { body: number; dark: number; len: number; tall: number; leg: number; size: number }
+> = {
+  boar: { body: 0x5a3c2a, dark: 0x3a281c, len: 1.7, tall: 0.75, leg: 0.32, size: 0.42 },
+  goat: { body: 0xe6e0d4, dark: 0x8a8070, len: 1.5, tall: 0.8, leg: 0.5, size: 0.34 },
+  dog: { body: 0xc08a4a, dark: 0x6a4a2a, len: 1.6, tall: 0.75, leg: 0.42, size: 0.3 },
+};
 
 const SHADOW_GEO = new THREE.CircleGeometry(1, 12).rotateX(-Math.PI / 2);
 const SHADOW_MAT = new THREE.MeshBasicMaterial({
@@ -87,7 +108,118 @@ export class Actor {
         this.buildCrab();
         this.shadow.scale.setScalar(0.35);
         break;
+      case 'boar':
+      case 'goat':
+      case 'dog':
+        this.buildBeast(kind, v);
+        this.shadow.scale.setScalar(0.6);
+        break;
+      case 'fowl':
+        this.buildFowl(v);
+        this.shadow.scale.setScalar(0.3);
+        break;
     }
+  }
+
+  /** A boar, goat or dog: a body, a head that can dip to graze, four swinging legs. */
+  private buildBeast(kind: 'boar' | 'goat' | 'dog', v: number): void {
+    const b = BEASTS[kind];
+    const s = b.size;
+    const legTop = b.leg + s * 0.4;
+    const torso = pivot(0, legTop, 0);
+    this.body.add(torso);
+    const coat = v % 3 === 0 ? b.dark : b.body;
+    const parts = [ico(s, 1, coat, { sz: b.len, sy: b.tall })];
+    if (kind === 'boar')
+      for (let k = 0; k < 4; k++)
+        parts.push(cone(0.05, 0.16, 3, 0x2a1c14, { y: s * 0.7, z: 0.25 - k * 0.15, rx: -0.3 }));
+    if (kind === 'dog')
+      parts.push(cyl(0.035, 0.05, 0.45, 4, coat, { y: 0.12, z: -s * b.len - 0.12, rx: -0.9 }));
+    if (kind === 'goat')
+      parts.push(cone(0.06, 0.14, 4, 0xf4f0e8, { y: 0.05, z: -s * b.len - 0.05, rx: -1.6 }));
+    torso.add(mesh(parts));
+    const head = pivot(0, s * 0.35, s * b.len * 0.95);
+    torso.add(head);
+    const hp: THREE.BufferGeometry[] = [];
+    if (kind === 'boar') {
+      hp.push(
+        ico(s * 0.62, 0, b.body, { z: 0.12, sz: 1.2 }),
+        cyl(0.11, 0.13, 0.16, 6, 0x8a5a4a, { z: 0.4, rx: Math.PI / 2 }),
+        cone(0.035, 0.18, 3, 0xf2efe0, { x: 0.1, y: -0.05, z: 0.35, rx: -0.8 }),
+        cone(0.035, 0.18, 3, 0xf2efe0, { x: -0.1, y: -0.05, z: 0.35, rx: -0.8 }),
+        cone(0.07, 0.14, 3, b.dark, { x: 0.13, y: 0.2, z: 0.05 }),
+        cone(0.07, 0.14, 3, b.dark, { x: -0.13, y: 0.2, z: 0.05 }),
+      );
+    } else if (kind === 'goat') {
+      hp.push(
+        box(0.2, 0.22, 0.34, coat, { y: 0.05, z: 0.12 }),
+        cone(0.05, 0.3, 4, 0x6a5a48, { x: 0.07, y: 0.28, z: -0.02, rx: -0.6 }),
+        cone(0.05, 0.3, 4, 0x6a5a48, { x: -0.07, y: 0.28, z: -0.02, rx: -0.6 }),
+        cone(0.04, 0.16, 4, 0xd8d0c0, { y: -0.12, z: 0.24, rx: Math.PI }),
+        box(0.12, 0.04, 0.05, 0x8a8070, { x: 0.14, y: 0.1, z: 0.05 }),
+        box(0.12, 0.04, 0.05, 0x8a8070, { x: -0.14, y: 0.1, z: 0.05 }),
+      );
+    } else {
+      hp.push(
+        box(0.22, 0.2, 0.26, coat, { y: 0.05, z: 0.05 }),
+        box(0.13, 0.11, 0.18, b.body, { y: 0, z: 0.25 }),
+        sphere(0.035, 4, 3, 0x1a1a1a, { y: 0.02, z: 0.34 }),
+        cone(0.06, 0.14, 3, b.dark, { x: 0.08, y: 0.2, z: 0.0 }),
+        cone(0.06, 0.14, 3, b.dark, { x: -0.08, y: 0.2, z: 0.0 }),
+      );
+    }
+    hp.push(
+      box(0.035, 0.035, 0.02, 0x111111, { x: 0.08, y: 0.08, z: kind === 'boar' ? 0.32 : 0.18 }),
+      box(0.035, 0.035, 0.02, 0x111111, { x: -0.08, y: 0.08, z: kind === 'boar' ? 0.32 : 0.18 }),
+    );
+    head.add(mesh(hp));
+    const leg = () =>
+      mesh([
+        cyl(0.045, 0.06, b.leg, 5, coat, { y: -b.leg / 2 }),
+        box(0.08, 0.05, 0.1, 0x2a2420, { y: -b.leg }),
+      ]);
+    const fx = s * 0.5;
+    const fz = s * b.len * 0.55;
+    const legs = [
+      pivot(fx, b.leg, fz, leg()),
+      pivot(-fx, b.leg, fz, leg()),
+      pivot(fx, b.leg, -fz, leg()),
+      pivot(-fx, b.leg, -fz, leg()),
+    ];
+    this.body.add(...legs);
+    Object.assign(this.parts, { torso, head, l0: legs[0], l1: legs[1], l2: legs[2], l3: legs[3] });
+    this.legTop = legTop;
+  }
+
+  /** A jungle fowl: round body, red comb, a fan of tail feathers, two quick legs. */
+  private buildFowl(v: number): void {
+    const torso = pivot(0, 0.32, 0);
+    this.body.add(torso);
+    const plume = [0x8a3a1a, 0xc8642a, 0x3a3a2a][v % 3] as number;
+    torso.add(
+      mesh([
+        sphere(0.17, 6, 5, plume, { sz: 1.25 }),
+        cone(0.12, 0.3, 4, 0x1f4a3a, { y: 0.12, z: -0.2, rx: -0.9 }),
+        cone(0.1, 0.26, 4, 0x2a5a2a, { x: 0.06, y: 0.1, z: -0.2, rx: -0.6 }),
+        box(0.04, 0.12, 0.18, 0x6a2a14, { x: 0.15, z: -0.02 }),
+        box(0.04, 0.12, 0.18, 0x6a2a14, { x: -0.15, z: -0.02 }),
+      ]),
+    );
+    const head = pivot(0, 0.16, 0.18);
+    torso.add(head);
+    head.add(
+      mesh([
+        sphere(0.085, 5, 4, 0xd0a060, { y: 0.06 }),
+        cone(0.03, 0.08, 3, 0xe8b830, { y: 0.05, z: 0.1, rx: Math.PI / 2 }),
+        box(0.03, 0.08, 0.1, 0xd02a1a, { y: 0.16, z: 0.01 }),
+        box(0.025, 0.04, 0.03, 0xd02a1a, { y: -0.01, z: 0.07 }),
+      ]),
+    );
+    const leg = () => mesh([cyl(0.015, 0.02, 0.2, 3, 0xe8b830, { y: -0.1 })]);
+    const legL = pivot(0.06, 0.2, 0, leg());
+    const legR = pivot(-0.06, 0.2, 0, leg());
+    this.body.add(legL, legR);
+    Object.assign(this.parts, { torso, head, l0: legL, l1: legR });
   }
 
   private buildHuman(shirt: number, pants: number, skin: number, husk: boolean, v: number): void {
@@ -502,6 +634,34 @@ export class Actor {
         if (p['core']) p['core'].scale.setScalar(1 + Math.sin(this.t * 4) * 0.08);
         break;
       }
+      case 'boar':
+      case 'goat':
+      case 'dog': {
+        const f = s * (moving ? (speed > 3 ? 0.9 : 0.6) : 0);
+        if (p['l0']) p['l0'].rotation.x = f;
+        if (p['l3']) p['l3'].rotation.x = f;
+        if (p['l1']) p['l1'].rotation.x = -f;
+        if (p['l2']) p['l2'].rotation.x = -f;
+        if (p['torso'])
+          p['torso'].position.y = this.legTop + (moving ? Math.abs(Math.cos(this.walk)) * 0.05 : 0);
+        // Standing still, now and then they dip their heads to graze.
+        const graze = !moving && Math.sin(this.t * 0.7 + this.legTop * 9) > 0.55 ? 0.6 : 0;
+        if (p['head']) {
+          const want =
+            state === MOB_STATE.windup ? -0.35 : state === MOB_STATE.strike ? 0.35 : graze;
+          p['head'].rotation.x += (want - p['head'].rotation.x) * Math.min(1, dt * 6);
+        }
+        break;
+      }
+      case 'fowl': {
+        const f = s * (moving ? 0.9 : 0);
+        if (p['l0']) p['l0'].rotation.x = f;
+        if (p['l1']) p['l1'].rotation.x = -f;
+        if (p['torso']) p['torso'].position.y = 0.32 + (moving ? Math.abs(s) * 0.04 : 0);
+        if (p['head'])
+          p['head'].rotation.x = !moving && Math.sin(this.t * 2.3) > 0.7 ? 0.9 : 0;
+        break;
+      }
       case 'crab': {
         if (p['shell']) {
           p['shell'].position.y = 0.2 + (moving ? Math.abs(s) * 0.04 : 0);
@@ -532,6 +692,7 @@ export class Actor {
 
   private sinkY = 0;
   private emerging = false;
+  private legTop = 0.6;
 }
 
 function torus2(

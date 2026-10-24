@@ -1,11 +1,40 @@
 // The Bloom: one root colony under the island (Project Perennial's "Specimen
 // M"), wearing whatever it grows into. Husks were people once, Thornbacks the
 // station's guard dogs; Snapjaws grow where the dead lay down, Puffers are its
-// seed pods. Their parts feed the Mashbench.
+// seed pods. Their parts feed the Mashbench. And the island's own animals (not
+// the Bloom's): crabs, wild boars, goats, jungle fowl and the station's runaway
+// dogs, which can be hunted, or fed until they trust you.
 
 import type { Drop } from './nodes';
 
-export type MonsterKind = 'husk' | 'snapjaw' | 'puffer' | 'thornback' | 'mother' | 'crab';
+export type MonsterKind =
+  | 'husk'
+  | 'snapjaw'
+  | 'puffer'
+  | 'thornback'
+  | 'mother'
+  | 'crab'
+  | 'boar'
+  | 'goat'
+  | 'fowl'
+  | 'dog';
+
+/** An island animal: what it eats (and how many feedings win it over), how it behaves. */
+export interface AnimalDef {
+  /** Favourite foods: hold one and it comes closer; feed it to tame it. */
+  food: string[];
+  /** Feedings until it trusts you. */
+  feeds: number;
+  /** Runs from people (unless you hold its food). */
+  shy: boolean;
+  /** Fights back when hurt; once tamed it fights the Bloom for you. */
+  fights: boolean;
+  /** Once tamed: something it gives every so often (seconds), collected by using it. */
+  gives?: { item: string; every: number };
+  /** A name for the kind in sentences ("the goat"). */
+  noun: string;
+  icon: string;
+}
 
 export interface MonsterDef {
   kind: MonsterKind;
@@ -31,6 +60,7 @@ export interface MonsterDef {
   fireWeak: number;
   drops: Drop[];
   hostile: boolean;
+  animal?: AnimalDef;
 }
 
 export const MONSTERS: Record<MonsterKind, MonsterDef> = {
@@ -167,7 +197,146 @@ export const MONSTERS: Record<MonsterKind, MonsterDef> = {
     hostile: false,
     drops: [{ item: 'crab_raw', n: 1 }],
   },
+  boar: {
+    kind: 'boar',
+    name: 'Wild boar',
+    hp: 70,
+    walk: 1.3,
+    run: 4.3,
+    damage: 9,
+    reach: 1.6,
+    windup: 0.5,
+    cooldown: 1.3,
+    aggroDay: 0,
+    aggroNight: 0,
+    radius: 0.55,
+    fearsFire: false,
+    rooted: false,
+    fireWeak: 1,
+    hostile: false,
+    drops: [
+      { item: 'meat_raw', n: 2 },
+      { item: 'hide', n: 1 },
+    ],
+    animal: {
+      food: ['potato', 'mushroom', 'berries', 'corn'],
+      feeds: 3,
+      shy: false,
+      fights: true,
+      noun: 'boar',
+      icon: '🐗',
+    },
+  },
+  goat: {
+    kind: 'goat',
+    name: 'Mountain goat',
+    hp: 40,
+    walk: 1.2,
+    run: 4.0,
+    damage: 0,
+    reach: 0,
+    windup: 0,
+    cooldown: 99,
+    aggroDay: 0,
+    aggroNight: 0,
+    radius: 0.45,
+    fearsFire: false,
+    rooted: false,
+    fireWeak: 1,
+    hostile: false,
+    drops: [
+      { item: 'meat_raw', n: 1 },
+      { item: 'hide', n: 1 },
+    ],
+    animal: {
+      food: ['fiber', 'corn', 'berries', 'tomato'],
+      feeds: 3,
+      shy: true,
+      fights: false,
+      gives: { item: 'milk', every: 600 },
+      noun: 'goat',
+      icon: '🐐',
+    },
+  },
+  fowl: {
+    kind: 'fowl',
+    name: 'Jungle fowl',
+    hp: 14,
+    walk: 1.0,
+    run: 3.8,
+    damage: 0,
+    reach: 0,
+    windup: 0,
+    cooldown: 99,
+    aggroDay: 0,
+    aggroNight: 0,
+    radius: 0.3,
+    fearsFire: false,
+    rooted: false,
+    fireWeak: 1,
+    hostile: false,
+    drops: [
+      { item: 'feather', n: 2 },
+      { item: 'meat_raw', n: 1 },
+    ],
+    animal: {
+      food: ['corn', 'berries', 'seed_berry', 'seed_corn'],
+      feeds: 2,
+      shy: true,
+      fights: false,
+      gives: { item: 'egg', every: 300 },
+      noun: 'fowl',
+      icon: '🐔',
+    },
+  },
+  dog: {
+    kind: 'dog',
+    name: 'Stray dog',
+    hp: 60,
+    walk: 1.6,
+    run: 5.2,
+    damage: 12,
+    reach: 1.6,
+    windup: 0.4,
+    cooldown: 1.0,
+    aggroDay: 0,
+    aggroNight: 0,
+    radius: 0.4,
+    fearsFire: false,
+    rooted: false,
+    fireWeak: 1,
+    hostile: false,
+    drops: [],
+    animal: {
+      food: ['meat_raw', 'meat_cooked', 'crab_raw', 'crab_cooked'],
+      feeds: 2,
+      shy: true,
+      fights: true,
+      noun: 'dog',
+      icon: '🐕',
+    },
+  },
 };
+
+/** Names for animals that trust you (picked by their id). */
+export const PET_NAMES = [
+  'Mango',
+  'Biscuit',
+  'Pepper',
+  'Coco',
+  'Pickles',
+  'Maple',
+  'Noodle',
+  'Clover',
+  'Peanut',
+  'Hazel',
+  'Taro',
+  'Sprout',
+  'Juniper',
+  'Basil',
+  'Kiwi',
+  'Waffles',
+];
 
 /** Puffers burst: this radius and poison. */
 export const PUFFER_BURST = { radius: 3, poisonDps: 3, poisonSeconds: 6 };

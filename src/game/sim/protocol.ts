@@ -3,6 +3,7 @@
 
 import type { IslandParts } from '../islands';
 import type { WorldRules } from '../rules';
+import type { WeatherKind } from './weather';
 
 export interface Slot {
   id: string;
@@ -23,6 +24,8 @@ export type C2S =
   | { type: 'equip'; slot: number }
   | { type: 'craft'; recipe: string }
   | { type: 'place'; slot: number; x: number; z: number; rot: number }
+  /** Build mode: put a piece down, paid for from the bag (buildings.ts `cost`). */
+  | { type: 'build'; kind: string; x: number; z: number; rot: number }
   | { type: 'demolish'; id: number }
   | { type: 'move'; from: number; to: number }
   | { type: 'drop'; slot: number }
@@ -43,7 +46,18 @@ export type PlayerNet = [string, number, number, number, number, number, string,
 /** A monster in a tick: [id, kind, x, z, ry, state, hpPct, burning(1/0)]. */
 export type MobNet = [number, number, number, number, number, number, number, number];
 
-export const MOB_KINDS = ['husk', 'snapjaw', 'puffer', 'thornback', 'mother', 'crab'] as const;
+export const MOB_KINDS = [
+  'husk',
+  'snapjaw',
+  'puffer',
+  'thornback',
+  'mother',
+  'crab',
+  'boar',
+  'goat',
+  'fowl',
+  'dog',
+] as const;
 
 /** Monster animation states sent to clients. */
 export const MOB_STATE = {
@@ -70,6 +84,8 @@ export interface BuildingNet {
   v?: number;
   /** Storage contents. */
   inv?: (Slot | null)[];
+  /** Garden plot: [crop index (crops.ts), stage 0-3, wet 1/0, grown %]. */
+  crop?: [number, number, number, number];
 }
 
 export interface DropNet {
@@ -125,6 +141,20 @@ export interface Snapshot {
   island?: IslandParts;
   /** World rules (missing: the defaults). */
   rules?: WorldRules;
+  /** The sky right now (missing: clear). */
+  weather?: WeatherKind;
+  /** Animals that trust someone. */
+  pets?: PetNet[];
+}
+
+/** A tamed animal as players see it (its body moves with the monsters in each tick). */
+export interface PetNet {
+  id: number;
+  name: string;
+  owner: string;
+  mode: 'follow' | 'stay';
+  /** Its egg or milk is ready. */
+  ready: boolean;
 }
 
 export type FxKind =
@@ -154,7 +184,11 @@ export type FxKind =
   /** A supply pod starts falling here (it lands POD_FALL seconds later). */
   | 'podfall'
   /** ...and lands. */
-  | 'land';
+  | 'land'
+  /** A lightning strike (storms). */
+  | 'lightning'
+  /** An arrow, bolt or stone flying from `by` to (x, z); `n`: its speed. */
+  | 'shot';
 
 export type S2C =
   | { type: 'welcome'; you: string; part: number; parts: number; data: string }
@@ -178,6 +212,8 @@ export type S2C =
     }
   | { type: 'rescue'; r: RescueNet }
   | { type: 'rules'; rules: WorldRules }
+  | { type: 'weather'; w: WeatherKind }
+  | { type: 'pets'; list: PetNet[] }
   /** Someone's chat line: `from` is their player id. */
   | { type: 'say'; from: string; name: string; text: string }
   | { type: 'save'; part: number; parts: number; data: string };

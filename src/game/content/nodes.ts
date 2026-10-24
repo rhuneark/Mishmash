@@ -105,6 +105,7 @@ export const NODES: NodeDef[] = [
     drops: [
       { item: 'berries', n: 3 },
       { item: 'fiber', n: 1, chance: 0.5 },
+      { item: 'seed_berry', n: 1, chance: 0.2 },
     ],
   },
   {
@@ -205,4 +206,8 @@ export const LUGGAGE_LOOT: { item: string; n: number; weight: number }[] = [
   { item: 'rope', n: 1, weight: 2 },
   { item: 'scrap', n: 1, weight: 2 },
   { item: 'torch', n: 1, weight: 1 },
+  // Some passengers were bringing seeds home.
+  { item: 'seed_corn', n: 2, weight: 2 },
+  { item: 'seed_potato', n: 2, weight: 2 },
+  { item: 'seed_tomato', n: 2, weight: 2 },
 ];

@@ -1,66 +1,43 @@
 import { describe, expect, it } from 'vitest';
-import { BASE_POLL, countVotes, moveVote, optionForType, tally, voteType, voteTypes } from './poll';
+import { MAX_SUGGESTION, newCount, parseMarks, sentToday, suggestionFromEntry } from './suggest';
 import { MAX_MESSAGE, cleanMessage, messageFromEntry, timeAgo } from './chat';
 
-describe('poll', () => {
-  it('maps options to unique content types and back', () => {
-    const types = voteTypes(BASE_POLL);
-    expect(new Set(types).size).toBe(BASE_POLL.options.length);
-    for (const t of types) expect(t).toMatch(/^[a-z0-9_-]{1,64}$/);
-    expect(optionForType(BASE_POLL, voteType('base', 'arpg'))).toBe('arpg');
-    expect(optionForType(BASE_POLL, 'vote-base-nope')).toBeNull();
-    expect(optionForType(BASE_POLL, 'chat')).toBeNull();
+describe('suggestions', () => {
+  const entry = (over: Record<string, unknown> = {}) => ({
+    id: 's1',
+    authorId: 'pip',
+    authorName: 'Pip',
+    createdAt: 1000,
+    data: { v: 1, text: '  more  boats\nplease ', topic: 'creatures' },
+    ...over,
   });
 
-  it('tallies shares and leaders in poll order', () => {
-    const { rows, total } = tally(BASE_POLL, { arpg: 3, story: 3, puzzle: 2, bogus: 50 });
-    expect(total).toBe(8);
-    expect(rows.map((r) => r.option.id)).toEqual(BASE_POLL.options.map((o) => o.id));
-    expect(rows.find((r) => r.option.id === 'arpg')?.share).toBeCloseTo(3 / 8);
-    expect(rows.filter((r) => r.leading).map((r) => r.option.id)).toEqual(['arpg', 'story']);
-  });
-
-  it('has no leader and no shares without votes, and ignores junk counts', () => {
-    const { rows, total } = tally(BASE_POLL, { arpg: -2, story: Number.NaN });
-    expect(total).toBe(0);
-    expect(rows.every((r) => !r.leading && r.share === 0)).toBe(true);
-  });
-
-  it('counts one vote per person: their newest', () => {
-    const v = (id: string, authorId: string, option: string, createdAt: number) => ({
-      id,
-      authorId,
-      contentType: voteType('base', option),
-      createdAt,
+  it('reads valid entries and drops hidden or malformed ones', () => {
+    expect(suggestionFromEntry(entry())).toEqual({
+      id: 's1',
+      authorId: 'pip',
+      authorName: 'Pip',
+      text: 'more boats please',
+      topic: 'creatures',
+      at: 1000,
     });
-    const { counts, byAuthor, extras } = countVotes(BASE_POLL, [
-      v('a1', 'ann', 'arpg', 1),
-      v('a2', 'ann', 'story', 5),
-      v('a3', 'ann', 'arpg', 3),
-      v('b1', 'bob', 'arpg', 2),
-      v('c1', 'cat', 'puzzle', 4),
-      v('n1', '', 'puzzle', 9),
-      { id: 'x', authorId: 'dan', contentType: 'chat', createdAt: 9 },
-    ]);
-    expect(counts).toEqual({ story: 1, arpg: 1, puzzle: 1 });
-    expect(byAuthor.get('ann')).toEqual({ option: 'story', id: 'a2' });
-    expect(byAuthor.has('dan')).toBe(false);
-    expect(extras.map((e) => e.id).sort()).toEqual(['a1', 'a3', 'n1']);
+    expect(suggestionFromEntry(entry({ data: { text: 'x', topic: 'nope' } }))?.topic).toBe('other');
+    expect(suggestionFromEntry(entry({ status: 'quarantined' }))).toBeNull();
+    expect(suggestionFromEntry(entry({ data: { text: '   ' } }))).toBeNull();
+    expect(suggestionFromEntry(entry({ data: null }))).toBeNull();
+    const long = suggestionFromEntry(entry({ data: { text: 'a'.repeat(900) } }));
+    expect(long?.text).toHaveLength(MAX_SUGGESTION);
   });
 
-  it('breaks a same-time tie between one person’s votes the same way every time', () => {
-    const a = { id: 'p', authorId: 'ann', contentType: voteType('base', 'arpg'), createdAt: 1 };
-    const b = { id: 'q', authorId: 'ann', contentType: voteType('base', 'idle'), createdAt: 1 };
-    expect(countVotes(BASE_POLL, [a, b]).counts).toEqual({ idle: 1 });
-    expect(countVotes(BASE_POLL, [b, a]).counts).toEqual({ idle: 1 });
-  });
-
-  it('moves a vote without going negative', () => {
-    expect(moveVote({ arpg: 1 }, 'arpg', 'story')).toEqual({ arpg: 0, story: 1 });
-    expect(moveVote({}, 'arpg', null)).toEqual({ arpg: 0 });
-    expect(moveVote({ arpg: 1 }, null, 'arpg')).toEqual({ arpg: 2 });
-    const same = { arpg: 1 };
-    expect(moveVote(same, 'arpg', 'arpg')).toBe(same);
+  it('counts what was sent today and what the owner has not seen', () => {
+    const at = (id: string, t: number) => ({ ...suggestionFromEntry(entry({ id }))!, at: t });
+    const day = 86_400_000;
+    const list = [at('a', 10 * day), at('b', 10 * day - 100), at('c', 8 * day)];
+    expect(sentToday(list, 10 * day + 5)).toBe(2);
+    const marks = parseMarks({ seenAt: 9 * day, done: ['b'], starred: [1, 'a'] });
+    expect(marks.starred).toEqual(['a']);
+    expect(newCount(list, marks)).toBe(1);
+    expect(parseMarks('junk')).toEqual({ seenAt: 0, starred: [], done: [] });
   });
 });
 

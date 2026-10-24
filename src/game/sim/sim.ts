@@ -7,13 +7,16 @@ import {
   CAMPFIRE_FUEL_MAX,
   CAMPFIRE_FUEL_PER_WOOD,
   CAMPFIRE_FUEL_START,
+  POT_FIRE_RANGE,
   RAIN_EVERY,
   RAIN_MAX,
   STATION_RANGE,
-  STORAGE_SLOTS,
+  refundOf,
+  slotsOf,
 } from '../content/buildings';
 import { ITEMS, powerFor, type ItemDef } from '../content/items';
 import { LUGGAGE_LOOT, NODE, NODES } from '../content/nodes';
+import { CROPS, CROP_BY_ID, WET_SECONDS, cropForSeed, cropStage } from '../content/crops';
 import { NOTES, PAGES } from '../content/notes';
 import { RESCUE_SECONDS, type PoiDef, type Spot } from '../content/pois';
 import { isClassic, type IslandParts } from '../islands';
@@ -28,7 +31,7 @@ import {
 import { RECIPES, type Station } from '../content/recipes';
 import { hash01 } from '../rng';
 import { MAX_SAY, SAY_GAP, cleanMessage } from '../chat';
-import { HALF, poolNear, type Island } from '../world';
+import { HALF, forNodesNear, poolNear, type Island } from '../world';
 import {
   add,
   cleanInv,
@@ -42,7 +45,9 @@ import {
   type Inv,
 } from './inventory';
 import { FIRST_EVENT, runEvents } from './events';
-import { burrowAll, damageMob, runDirector, updateMobs } from './mobs';
+import { parseWeather, runWeather, type WeatherState } from './weather';
+import { burrowAll, damageMob, runDirector, spawnMob, updateMobs } from './mobs';
+import { MONSTERS, PET_NAMES } from '../content/monsters';
 import { placementProblem } from './place';
 import {
   MOB_KINDS,
@@ -53,6 +58,7 @@ import {
   type DropNet,
   type MeNet,
   type MobNet,
+  type PetNet,
   type PlayerNet,
   type S2C,
   type Slot,
@@ -70,6 +76,7 @@ import {
   CHEST_SLOTS,
   type IslandSave,
   type Mob,
+  type PetState,
   type RescueState,
   type SimPlayer,
 } from './types';
@@ -116,6 +123,8 @@ export class IslandSim {
   nextEvent: number;
   /** World rules (rules.ts), picked when the island was made; its owner may change them. */
   rules: WorldRules;
+  /** The sky (weather.ts). */
+  weather: WeatherState;
   /** Who may change the rules: the solo player, or the host of a co-op room. */
   owner = '';
   readonly parts: IslandParts;
@@ -185,6 +194,13 @@ export class IslandSim {
     this.motherHp = save.motherHp;
     this.rescue = { ...save.rescue };
     this.nextEvent = save.nextEvent ?? this.time + FIRST_EVENT;
+    this.weather = parseWeather(save.weather, this.time);
+    for (const pet of save.pets ?? []) {
+      const m = spawnMob(this, pet.kind, pet.x, pet.z, { hp: pet.hp });
+      m.tame = { owner: pet.owner, name: pet.name, mode: pet.mode, next: pet.next };
+      m.gx = pet.x;
+      m.gz = pet.z;
+    }
     for (const poi of island.pois) {
       for (const spot of poi.spots) {
         this.spots.set(spot.id, { poi, spot, x: poi.x + spot.dx, z: poi.z + spot.dz });
@@ -242,14 +258,14 @@ export class IslandSim {
   /** A building as players see it (storage boxes show the shared chest when connected). */
   net(b: Building): BuildingNet {
     const n = buildingNet(b);
-    if (b.kind === 'storage' && this.rules.sharedChests)
+    if (slotsOf(b.kind) && this.rules.sharedChests)
       n.inv = this.chest.map((s) => (s ? { ...s } : null));
     return n;
   }
 
   /** The inventory a storage box holds (the shared chest when connected). */
   chestOf(b: Building): Inv | null {
-    if (b.kind !== 'storage') return null;
+    if (!slotsOf(b.kind)) return null;
     return this.rules.sharedChests ? this.chest : (b.inv ?? null);
   }
 
@@ -260,7 +276,7 @@ export class IslandSim {
       return;
     }
     for (const o of this.buildings.values())
-      if (o.kind === 'storage') this.broadcast({ type: 'build', b: this.net(o) });
+      if (slotsOf(o.kind)) this.broadcast({ type: 'build', b: this.net(o) });
   }
 
   // -------------------------------------------------------------------------
@@ -341,7 +357,37 @@ export class IslandSim {
       rescue: this.rescueNet(),
       island: { ...this.parts },
       rules: { ...this.rules },
+      weather: this.weather.kind,
+      pets: this.petList(),
     };
+  }
+
+  /** Tamed animals as players see them. */
+  petList(): PetNet[] {
+    const out: PetNet[] = [];
+    for (const m of this.mobs.values()) {
+      if (!m.tame) continue;
+      const gives = MONSTERS[m.kind].animal?.gives;
+      out.push({
+        id: m.id,
+        name: m.tame.name,
+        owner: m.tame.owner,
+        mode: m.tame.mode,
+        ready: !!gives && this.time >= m.tame.next,
+      });
+    }
+    return out;
+  }
+
+  private lastPets = '';
+
+  /** Tells everyone when a pet is tamed, told to stay, has something ready, or is gone. */
+  petsChanged(): void {
+    const list = this.petList();
+    const key = JSON.stringify(list);
+    if (key === this.lastPets) return;
+    this.lastPets = key;
+    this.broadcast({ type: 'pets', list });
   }
 
   rescueNet() {
@@ -397,6 +443,20 @@ export class IslandSim {
       ...(isClassic(this.parts) ? {} : { island: { ...this.parts } }),
       ...(Object.keys(changedRules(this.rules)).length ? { rules: { ...this.rules } } : {}),
       ...(this.chest.some((s) => s) ? { chest: this.chest.map((s) => (s ? { ...s } : null)) } : {}),
+      weather: { kind: this.weather.kind, until: Math.round(this.weather.until) },
+      ...(this.petList().length
+        ? {
+            pets: [...this.mobs.values()]
+              .filter((m) => m.tame)
+              .map((m) => ({
+                ...(m.tame as PetState),
+                kind: m.kind,
+                x: round1(m.x),
+                z: round1(m.z),
+                hp: Math.round(m.hp),
+              })),
+          }
+        : {}),
     };
   }
 
@@ -430,6 +490,8 @@ export class IslandSim {
         return this.onCraft(p, msg.recipe);
       case 'place':
         return this.onPlace(p, msg.slot, msg.x, msg.z, msg.rot);
+      case 'build':
+        return this.onBuild(p, msg.kind, msg.x, msg.z, msg.rot);
       case 'demolish':
         return this.onDemolish(p, msg.id);
       case 'move':
@@ -586,6 +648,8 @@ export class IslandSim {
   private useMob(p: SimPlayer, id: number): void {
     const m = this.mobs.get(id);
     if (!m || m.hp <= 0 || m.st === 'burrow') return;
+    const animal = MONSTERS[m.kind].animal;
+    if (animal && (m.tame || this.feeds(p, m))) return this.usePet(p, m);
     const held = this.held(p);
     const weapon = held?.weapon;
     const reach = (weapon?.reach ?? 1.8) + (MONSTER_RADIUS[m.kind] ?? 0.5) + 0.8;
@@ -595,6 +659,70 @@ export class IslandSim {
     this.fx('swing', p.x, p.z, p.id);
     if (weapon && wear(p.inv, p.held)) this.toast(p.id, `Your ${held?.name ?? 'weapon'} broke.`);
     damageMob(this, m, dmg, p.id, weapon?.burn ?? 0);
+    this.dirty(p);
+  }
+
+  /** Is the player holding something this wild animal eats? */
+  private feeds(p: SimPlayer, m: Mob): boolean {
+    const held = p.inv[p.held];
+    return !!held && !!MONSTERS[m.kind].animal?.food.includes(held.id);
+  }
+
+  /** An animal: feed a wild one (enough feedings and it's yours), or tend your own. */
+  private usePet(p: SimPlayer, m: Mob): void {
+    const animal = MONSTERS[m.kind].animal;
+    if (!animal || dist(p.x, p.z, m.x, m.z) > REACH + 0.6) return;
+    if (!this.cooldownOk(p, 0.6)) return;
+    const tame = m.tame;
+    if (!tame) {
+      const held = p.inv[p.held];
+      if (!held) return;
+      held.n -= 1;
+      if (held.n <= 0) p.inv[p.held] = null;
+      const fed = m.fed && m.fed.by === p.id ? m.fed.n + 1 : 1;
+      m.fed = { by: p.id, n: fed };
+      this.fx('eat', m.x, m.z, p.id);
+      if (fed >= animal.feeds) {
+        const name = PET_NAMES[m.id % PET_NAMES.length] as string;
+        m.tame = {
+          owner: p.id,
+          name,
+          mode: 'follow',
+          next: this.time + (animal.gives?.every ?? 0) / 2,
+        };
+        delete m.fed;
+        m.roamer = false;
+        m.st = 'idle';
+        this.fx('heal', m.x, m.z, p.id);
+        this.toast(p.id, `${animal.icon} The ${animal.noun} trusts you now. Meet ${name}!`);
+        this.petsChanged();
+      } else {
+        this.toast(p.id, `The ${animal.noun} eats from your hand (${fed}/${animal.feeds}).`);
+      }
+      this.dirty(p);
+      return;
+    }
+    if (tame.owner !== p.id) {
+      const owner = this.players.get(tame.owner)?.name ?? 'someone';
+      this.toast(p.id, `${tame.name} belongs to ${owner}.`);
+      return;
+    }
+    const gives = animal.gives;
+    if (gives && this.time >= tame.next) {
+      tame.next = this.time + gives.every;
+      this.give(p, gives.item, 1);
+      this.toast(p.id, `${tame.name} gives you ${ITEMS[gives.item]?.name.toLowerCase() ?? 'something'}.`);
+      this.fx('pickup', m.x, m.z, p.id);
+    } else {
+      tame.mode = tame.mode === 'follow' ? 'stay' : 'follow';
+      m.gx = m.x;
+      m.gz = m.z;
+      this.toast(
+        p.id,
+        tame.mode === 'stay' ? `${tame.name} stays here.` : `${tame.name} follows you.`,
+      );
+    }
+    this.petsChanged();
     this.dirty(p);
   }
 
@@ -620,25 +748,34 @@ export class IslandSim {
       }
       case 'door_wood':
       case 'gate_wood':
+      case 'fence_gate':
         b.v = b.v === 1 ? 0 : 1;
         this.broadcast({ type: 'build', b: this.net(b) });
         return;
       case 'bedroll':
+      case 'bed':
         p.spawn = b.id;
         this.toast(p.id, 'You will wake up here if you fall.');
         this.dirty(p);
         return;
-      case 'rain_collector':
+      case 'rain_collector': {
         if (b.v < 1) {
           this.toast(p.id, 'The collector is empty. Give it time.');
           return;
         }
+        const can = this.heldCan(p);
         b.v -= 1;
-        p.water = Math.min(100, p.water + 30);
+        if (can) {
+          can.d = ITEMS[can.id]?.durability ?? 8;
+          this.toast(p.id, 'Watering can filled.');
+        } else p.water = Math.min(100, p.water + 30);
         this.fx('drink', b.x, b.z, p.id);
         this.broadcast({ type: 'build', b: this.net(b) });
         this.dirty(p);
         return;
+      }
+      case 'garden_plot':
+        return this.usePlot(p, b);
       default:
         return;
     }
@@ -766,9 +903,134 @@ export class IslandSim {
     this.dirty(p);
   }
 
+  /** The watering can in hand, if that's what's held. */
+  private heldCan(p: SimPlayer): Slot | null {
+    const s = p.inv[p.held];
+    return s && ITEMS[s.id]?.can ? s : null;
+  }
+
+  /** The seed to plant: the one in hand, else the first in the bag. */
+  seedFor(p: SimPlayer): Slot | null {
+    const held = p.inv[p.held];
+    if (held && cropForSeed(held.id)) return held;
+    return p.inv.find((s) => s && cropForSeed(s.id)) ?? null;
+  }
+
+  /** A garden plot: plant, water or harvest. */
+  private usePlot(p: SimPlayer, b: Building): void {
+    const crop = b.crop;
+    if (!crop) {
+      const seed = this.seedFor(p);
+      const def = seed ? cropForSeed(seed.id) : undefined;
+      if (!seed || !def) {
+        this.toast(p.id, 'Plant seeds here. Suitcases, supply pods and berry bushes have them.');
+        return;
+      }
+      seed.n -= 1;
+      if (seed.n <= 0) p.inv[p.inv.indexOf(seed)] = null;
+      b.crop = { id: def.id, grow: 0, wet: this.rainingOn(b.x, b.z) ? WET_SECONDS : 0 };
+      this.fx('gather', b.x, b.z, p.id);
+      this.broadcast({ type: 'build', b: this.net(b) });
+      this.dirty(p);
+      return;
+    }
+    const def = CROP_BY_ID[crop.id];
+    if (!def) return;
+    if (crop.grow >= 1) {
+      this.give(p, def.out, yieldOf(this.between(def.yield), this.rules.yield));
+      const seeds = this.between(def.seeds);
+      if (seeds > 0) this.give(p, def.seed, seeds);
+      if (def.regrows) crop.grow = 0.5;
+      else delete b.crop;
+      this.fx('gather', b.x, b.z, p.id);
+      this.broadcast({ type: 'build', b: this.net(b) });
+      this.dirty(p);
+      return;
+    }
+    const can = this.heldCan(p);
+    if (can && (can.d ?? 0) >= 1 && crop.wet < WET_SECONDS * 0.5) {
+      can.d = (can.d ?? 1) - 1;
+      crop.wet = WET_SECONDS;
+      this.fx('drink', b.x, b.z, p.id);
+      this.broadcast({ type: 'build', b: this.net(b) });
+      this.dirty(p);
+      return;
+    }
+    if (can && (can.d ?? 0) < 1) {
+      this.toast(p.id, 'The can is empty. Fill it at a pool or a rain collector.');
+      return;
+    }
+    const pct = Math.floor(crop.grow * 100);
+    this.toast(
+      p.id,
+      crop.wet > 0
+        ? `${def.name}: ${pct}% grown.`
+        : `${def.name}: ${pct}% grown. The soil is dry: water it, or wait for rain.`,
+    );
+  }
+
+  /** A whole number between min and max. */
+  private between([lo, hi]: [number, number]): number {
+    return lo + Math.floor(this.random() * (hi - lo + 1));
+  }
+
+  /** Is a roof over (x, z)? Roofs keep the rain off. */
+  sheltered(x: number, z: number): boolean {
+    for (const b of this.buildings.values()) {
+      if (BUILDINGS[b.kind]?.layer !== 'roof') continue;
+      const f = footprint(b.kind, b.x, b.z, b.rot);
+      if (x >= f.minX && x <= f.maxX && z >= f.minZ && z <= f.maxZ) return true;
+    }
+    return false;
+  }
+
+  /** Does rain fall on (x, z) right now (weather, and no roof)? */
+  rainingOn(x: number, z: number): boolean {
+    return this.raining() && !this.sheltered(x, z);
+  }
+
+  /** Is it raining on the island? */
+  raining(): boolean {
+    return this.weather.kind === 'rain' || this.weather.kind === 'storm';
+  }
+
+  /** Lightning hits (x, z): monsters there burn, a tree there comes down. */
+  strike(x: number, z: number): void {
+    for (const m of [...this.mobs.values()])
+      if (!m.tame && dist(m.x, m.z, x, z) < 3 + (MONSTER_RADIUS[m.kind] ?? 0.5))
+        damageMob(this, m, 60, null, 6);
+    let tree = -1;
+    let best = 3;
+    forNodesNear(this.island, x, z, 3, (id, d2) => {
+      const t = this.island.nodeType[id];
+      if ((t === NODE.palm || t === NODE.jungle || t === NODE.pine) && !this.nodeGone(id)) {
+        const d = Math.sqrt(d2);
+        if (d < best) {
+          best = d;
+          tree = id;
+        }
+      }
+    });
+    if (tree >= 0) {
+      this.nodes.set(tree, { hp: 0, until: this.time + 3 * DAY });
+      this.broadcast({ type: 'node', id: tree, hp: 0, gone: 1 });
+      const tx = this.island.nodeX[tree] as number;
+      const tz = this.island.nodeZ[tree] as number;
+      this.makeBag(tx, tz, [{ id: 'wood', n: 2 }], 'Split wood', this.time + DAY);
+    }
+  }
+
   private usePool(p: SimPlayer): void {
     if (!poolNear(this.island, p.x, p.z, 2.5)) return;
     if (!this.cooldownOk(p, 0.8)) return;
+    const can = this.heldCan(p);
+    if (can) {
+      can.d = ITEMS[can.id]?.durability ?? 8;
+      this.toast(p.id, 'Watering can filled.');
+      this.fx('drink', p.x, p.z, p.id);
+      this.dirty(p);
+      return;
+    }
     p.water = Math.min(100, p.water + 25);
     this.fx('drink', p.x, p.z, p.id);
     this.dirty(p);
@@ -797,16 +1059,17 @@ export class IslandSim {
     const s = p.inv[slot];
     const def = s ? ITEMS[s.id] : undefined;
     if (!p.alive || !s || !def) return;
+    if (!def.food && !def.heal) return;
     if (def.food) {
       p.food = Math.min(100, p.food + def.food.food);
       p.water = Math.min(100, p.water + def.food.water);
       this.fx(def.food.water > def.food.food ? 'drink' : 'eat', p.x, p.z, p.id);
-    } else if (def.heal) {
+    }
+    if (def.heal) {
+      // Meals heal over time; medicine also clears poison.
       p.heals.push({ perSec: def.heal.hp / def.heal.seconds, until: this.time + def.heal.seconds });
-      p.poisonUntil = 0;
+      if (!def.food) p.poisonUntil = 0;
       this.fx('heal', p.x, p.z, p.id);
-    } else {
-      return;
     }
     s.n -= 1;
     if (s.n <= 0) p.inv[slot] = null;
@@ -817,7 +1080,17 @@ export class IslandSim {
     for (const b of this.buildings.values()) {
       if (BUILDINGS[b.kind]?.station !== station) continue;
       if (station === 'fire' && b.v <= 0) continue;
+      if (station === 'pot' && !this.fireUnder(b)) continue;
       if (dist(x, z, b.x, b.z) <= STATION_RANGE) return true;
+    }
+    return false;
+  }
+
+  /** A cooking pot only cooks with a lit campfire next to it. */
+  private fireUnder(pot: Building): boolean {
+    for (const b of this.buildings.values()) {
+      if (b.kind === 'campfire' && b.v > 0 && dist(b.x, b.z, pot.x, pot.z) <= POT_FIRE_RANGE)
+        return true;
     }
     return false;
   }
@@ -832,7 +1105,9 @@ export class IslandSim {
           ? 'Stand next to a lit campfire.'
           : r.station === 'mash'
             ? 'Stand next to a Mashbench.'
-            : 'Stand next to a workbench.',
+            : r.station === 'pot'
+              ? 'Stand by a cooking pot with a lit campfire next to it.'
+              : 'Stand next to a workbench.',
       );
       return;
     }
@@ -841,14 +1116,7 @@ export class IslandSim {
       this.toast(p.id, 'Not enough materials.');
       return;
     }
-    if (from.length > 1) {
-      for (const b of this.buildings.values()) {
-        if (b.kind !== 'storage') continue;
-        this.chestChanged(b);
-        // Connected boxes go out together.
-        if (this.rules.sharedChests) break;
-      }
-    }
+    if (from.length > 1) this.chestsChanged();
     this.give(p, r.out, r.n);
     p.crafted++;
     this.fx('craft', p.x, p.z, p.id);
@@ -877,34 +1145,64 @@ export class IslandSim {
     );
   }
 
+  /** A placeable item from the bag (pieces crafted before the build menu, held ghosts). */
   private onPlace(p: SimPlayer, slot: number, x: number, z: number, rot: number): void {
     const s = p.inv[slot];
     const def = s ? ITEMS[s.id] : undefined;
     if (!p.alive || !s || !def?.place) return;
-    if (dist(p.x, p.z, x, z) > 7) return;
-    const kind = def.place;
-    const r = Math.floor(rot) & 3;
-    const problem = this.placeProblem(kind, x, z, r);
+    if (!this.canPlaceAt(p, def.place, x, z, rot)) return;
+    s.n -= 1;
+    if (s.n <= 0) p.inv[slot] = null;
+    this.putDown(p, def.place, x, z, rot);
+  }
+
+  /** Build mode: a piece paid for from the bag (a made one first, else its materials). */
+  private onBuild(p: SimPlayer, kind: string, x: number, z: number, rot: number): void {
+    const def = BUILDINGS[kind];
+    if (!p.alive || !def || !this.canPlaceAt(p, kind, x, z, rot)) return;
+    const made = p.inv.findIndex((s) => s && ITEMS[s.id]?.place === kind);
+    const slot = made >= 0 ? p.inv[made] : null;
+    if (slot) {
+      slot.n -= 1;
+      if (slot.n <= 0) p.inv[made] = null;
+    } else {
+      const from = this.rules.craftFromChests ? [p.inv, ...this.chests()] : [p.inv];
+      if (!removeFrom(from, def.cost)) {
+        this.toast(p.id, `Not enough materials for the ${def.name.toLowerCase()}.`);
+        this.fx('deny', x, z, p.id);
+        return;
+      }
+      if (from.length > 1) this.chestsChanged();
+    }
+    this.putDown(p, kind, x, z, rot);
+  }
+
+  private canPlaceAt(p: SimPlayer, kind: string, x: number, z: number, rot: number): boolean {
+    if (!Number.isFinite(x) || !Number.isFinite(z) || dist(p.x, p.z, x, z) > 7) return false;
+    const problem = this.placeProblem(kind, x, z, Math.floor(rot) & 3);
     if (problem) {
       this.toast(p.id, problem);
       this.fx('deny', x, z, p.id);
-      return;
+      return false;
     }
-    s.n -= 1;
-    if (s.n <= 0) p.inv[slot] = null;
+    return true;
+  }
+
+  private putDown(p: SimPlayer, kind: string, x: number, z: number, rot: number): void {
     const b: Building = {
       id: this.newId(),
       kind,
       x,
       z,
-      rot: r,
+      rot: Math.floor(rot) & 3,
       hp: BUILDINGS[kind]?.hp ?? 100,
       owner: p.id,
       v: kind === 'campfire' ? CAMPFIRE_FUEL_START : 0,
       acc: 0,
     };
-    if (kind === 'storage') b.inv = new Array<Slot | null>(STORAGE_SLOTS).fill(null);
-    if (kind === 'bedroll' && p.spawn === null) p.spawn = b.id;
+    const slots = slotsOf(kind);
+    if (slots) b.inv = new Array<Slot | null>(slots).fill(null);
+    if (BUILDINGS[kind]?.spawn && p.spawn === null) p.spawn = b.id;
     this.buildings.set(b.id, b);
     this.broadcast({ type: 'build', b: this.net(b) });
     this.fx('build', x, z, p.id);
@@ -915,11 +1213,12 @@ export class IslandSim {
     const b = this.buildings.get(id);
     if (!p.alive || !b || dist(p.x, p.z, b.x, b.z) > REACH + 2) return;
     const def = BUILDINGS[b.kind];
-    const item = Object.values(ITEMS).find((i) => i.place === b.kind);
     this.buildings.delete(id);
     this.broadcast({ type: 'unbuild', id });
     this.fx('break', b.x, b.z, p.id);
-    if (item && def && b.hp >= def.hp * 0.5) this.give(p, item.id, 1);
+    // Half the materials come back, if it wasn't half broken already.
+    if (def && b.hp >= def.hp * 0.5)
+      for (const [item, n] of Object.entries(refundOf(b.kind))) this.give(p, item, n);
     for (const s of b.inv ?? []) if (s) this.give(p, s.id, s.n, s.d);
     for (const q of this.players.values()) if (q.spawn === id) q.spawn = null;
     this.dirty(p);
@@ -982,7 +1281,7 @@ export class IslandSim {
   private onRespawn(p: SimPlayer): void {
     if (p.alive) return;
     const bed = p.spawn !== null ? this.buildings.get(p.spawn) : undefined;
-    if (bed && bed.kind === 'bedroll') {
+    if (bed && BUILDINGS[bed.kind]?.spawn) {
       p.x = bed.x + 1.2;
       p.z = bed.z;
     } else {
@@ -1073,8 +1372,18 @@ export class IslandSim {
   private chests(): Inv[] {
     if (this.rules.sharedChests) return [this.chest];
     const out: Inv[] = [];
-    for (const b of this.buildings.values()) if (b.kind === 'storage' && b.inv) out.push(b.inv);
+    for (const b of this.buildings.values()) if (slotsOf(b.kind) && b.inv) out.push(b.inv);
     return out;
+  }
+
+  /** Crafting or building took from storage: tell everyone what's left. */
+  private chestsChanged(): void {
+    for (const b of this.buildings.values()) {
+      if (!slotsOf(b.kind)) continue;
+      this.chestChanged(b);
+      // Connected boxes go out together.
+      if (this.rules.sharedChests) break;
+    }
   }
 
   /** The nearest blocking building whose footprint a circle at (x, z) overlaps. */
@@ -1161,6 +1470,8 @@ export class IslandSim {
       this.slowAcc -= 1;
       runDirector(this);
       runEvents(this);
+      runWeather(this);
+      this.petsChanged();
       this.discover();
       this.expireDrops();
       this.updateRescue();
@@ -1227,7 +1538,9 @@ export class IslandSim {
       const before = `${Math.round(p.hp)}|${Math.round(p.food)}|${Math.round(p.water)}`;
       const hunger = hungerScale(this.rules.hunger);
       p.food = Math.max(0, p.food - FOOD_DECAY * hunger * dt);
-      p.water = Math.max(0, p.water - WATER_DECAY * hunger * dt);
+      // Out in the rain you drink as you go.
+      const rain = this.rainingOn(p.x, p.z) ? 0.5 : 1;
+      p.water = Math.max(0, p.water - WATER_DECAY * hunger * rain * dt);
       if (p.food <= 0) p.hp -= STARVE * dt;
       if (p.water <= 0) p.hp -= STARVE * dt;
       const poisoned = this.time < p.poisonUntil;
@@ -1269,10 +1582,11 @@ export class IslandSim {
   private updateBuildings(dt: number): void {
     for (const b of this.buildings.values()) {
       if (b.kind === 'campfire' && b.v > 0) {
-        b.v = Math.max(0, b.v - dt);
+        const wet = this.rainingOn(b.x, b.z) ? (this.weather.kind === 'storm' ? 2.2 : 1.6) : 1;
+        b.v = Math.max(0, b.v - dt * wet);
         if (b.v === 0) this.broadcast({ type: 'build', b: this.net(b) });
       } else if (b.kind === 'rain_collector' && b.v < RAIN_MAX) {
-        b.acc += dt;
+        b.acc += dt * (this.rainingOn(b.x, b.z) ? 5 : 1);
         if (b.acc >= RAIN_EVERY) {
           b.acc = 0;
           b.v += 1;
@@ -1280,8 +1594,20 @@ export class IslandSim {
         }
       } else if (BUILDINGS[b.kind]?.trap) {
         this.updateTrap(b, dt);
+      } else if (b.crop) {
+        this.updatePlot(b, b.crop, dt);
       }
     }
+  }
+
+  /** Crops grow while the soil is wet; the rain waters plots without a roof. */
+  private updatePlot(b: Building, crop: NonNullable<Building['crop']>, dt: number): void {
+    const before = cropNet(crop).join();
+    const def = CROP_BY_ID[crop.id];
+    if (this.rainingOn(b.x, b.z)) crop.wet = WET_SECONDS;
+    if (def && crop.grow < 1 && crop.wet > 0) crop.grow = Math.min(1, crop.grow + dt / def.grow);
+    crop.wet = Math.max(0, crop.wet - dt);
+    if (cropNet(crop).join() !== before) this.broadcast({ type: 'build', b: this.net(b) });
   }
 
   /** Snap traps: v is seconds until re-armed (0 = armed). */
@@ -1294,7 +1620,8 @@ export class IslandSim {
       return;
     }
     for (const m of this.mobs.values()) {
-      if (m.kind === 'mother' || m.kind === 'crab' || m.hp <= 0 || m.st === 'burrow') continue;
+      if (m.kind === 'mother' || m.kind === 'crab' || m.tame || m.hp <= 0 || m.st === 'burrow')
+        continue;
       if (Math.abs(m.x - b.x) > 1.2 || Math.abs(m.z - b.z) > 1.2) continue;
       if (dist(m.x, m.z, b.x, b.z) > 0.6 + (MONSTER_RADIUS[m.kind] ?? 0.5)) continue;
       b.v = trap.rearm;
@@ -1323,6 +1650,7 @@ export class IslandSim {
         bomb.radius,
       );
       for (const m of [...this.mobs.values()]) {
+        if (m.tame) continue;
         if (dist(m.x, m.z, boom.x, boom.z) <= bomb.radius + (MONSTER_RADIUS[m.kind] ?? 0.5)) {
           damageMob(this, m, bomb.damage, boom.by, bomb.burn);
         }
@@ -1478,6 +1806,10 @@ export const MONSTER_RADIUS: Record<string, number> = {
   thornback: 0.7,
   mother: 2.6,
   crab: 0.35,
+  boar: 0.55,
+  goat: 0.45,
+  fowl: 0.3,
+  dog: 0.4,
 };
 
 export function buildingNet(b: Building): BuildingNet {
@@ -1492,7 +1824,21 @@ export function buildingNet(b: Building): BuildingNet {
   };
   if (b.v) net.v = Math.round(b.v);
   if (b.inv) net.inv = b.inv.map((s) => (s ? { ...s } : null));
+  if (b.crop) net.crop = cropNet(b.crop);
   return net;
+}
+
+/** [crop index, stage, wet, grown % in fives]: what players see of a plot. */
+export function cropNet(c: NonNullable<Building['crop']>): [number, number, number, number] {
+  return [
+    Math.max(
+      0,
+      CROPS.findIndex((d) => d.id === c.id),
+    ),
+    cropStage(c.grow),
+    c.wet > 0 ? 1 : 0,
+    Math.floor(c.grow * 20) * 5,
+  ];
 }
 
 export function dropNet(d: Drop): DropNet {

@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { HOTBAR } from '../../game/sim/inventory';
 import { clockLabel } from '../../game/sim/time';
+import type { WeatherKind } from '../../game/sim/weather';
 import type { GameClient } from '../client';
 import type { Input } from '../input';
 import type { Sound } from '../audio';
@@ -22,7 +23,7 @@ import { BagSheet, JournalSheet, KeypadSheet, NoteSheet, StorageSheet } from './
 import { QuickWindow } from './QuickPanel';
 import { ChatBox, ChatLog } from './ChatBox';
 import { prefs, usePrefs } from '../prefs';
-import { ITEMS } from '../../game/content/items';
+import { BUILD_CATS, BUILDINGS } from '../../game/content/buildings';
 import type { Quest } from '../../game/objectives';
 import { cameraRig } from '../settings';
 import { DragLayer, ItemIcon, SlotButton, quickUse } from './Slots';
@@ -45,6 +46,22 @@ export function useClient(client: GameClient): number {
 /** A mouse or trackpad: show key hints and PC tips. */
 export const isPc = (): boolean =>
   typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: fine)').matches;
+
+const WEATHER_ICONS: Record<WeatherKind, string> = {
+  clear: '☀️',
+  cloudy: '☁️',
+  rain: '🌧️',
+  storm: '⛈️',
+  fog: '🌫️',
+};
+
+const WEATHER_NAMES: Record<WeatherKind, string> = {
+  clear: 'Clear',
+  cloudy: 'Cloudy',
+  rain: 'Rain',
+  storm: 'Storm',
+  fog: 'Fog',
+};
 
 export function Hud(props: HudProps) {
   const { client, input, sound } = props;
@@ -82,6 +99,12 @@ export function Hud(props: HudProps) {
         {showInfo && settings.clock && (
           <div className="hud-clock">
             {info.night ? (info.bloom ? '🌑' : '🌙') : '☀️'} {clockLabel(client.now())}
+            {client.weather !== 'clear' && (
+              <span className="hud-weather" title={WEATHER_NAMES[client.weather]}>
+                {' '}
+                {WEATHER_ICONS[client.weather]}
+              </span>
+            )}
           </div>
         )}
         {showInfo && settings.stats && (
@@ -426,12 +449,7 @@ function BuildPanel({
 }) {
   const s = usePrefs();
   const piece = client.build?.piece;
-  const name =
-    piece === 'remove'
-      ? 'Take pieces down'
-      : piece
-        ? (ITEMS[piece]?.name ?? '')
-        : 'Nothing to build';
+  const def = piece && piece !== 'remove' ? BUILDINGS[piece] : undefined;
   return (
     <div className="build-panel">
       <div className="build-head">
@@ -445,7 +463,21 @@ function BuildPanel({
           ✕
         </button>
       </div>
-      <div className="build-piece">{name}</div>
+      <div className="build-piece">{def ? def.name : 'Take pieces down (half comes back)'}</div>
+      {def && (
+        <div className="build-cost" aria-label="Cost">
+          {Object.entries(def.cost).map(([id, n]) => {
+            const have = client.craftCount(id);
+            return (
+              <span key={id} className={`build-need${have >= n ? '' : ' short'}`}>
+                <ItemIcon id={id} className="build-need-icon" />
+                {have}/{n}
+              </span>
+            );
+          })}
+        </div>
+      )}
+      {def && <div className="build-desc">{def.desc}</div>}
       <div className="build-tools">
         <button className="round-btn" onClick={() => client.turnGhost(-1)} aria-label="Turn left">
           ⟲
@@ -484,31 +516,51 @@ function BuildPanel({
   );
 }
 
-/** Build mode's bar: the pieces in your bag (and the take-down tool). */
+/** Build mode's menu: a tab per kind of piece, each piece showing if you have what it takes. */
 function BuildBar({ client }: { client: GameClient }) {
-  const pick = client.build?.piece;
-  const pieces = client.buildPieces();
+  const b = client.build;
+  if (!b) return null;
+  const removing = b.piece === 'remove';
   return (
-    <div className="hotbar build-bar" aria-label="Pieces">
-      <button
-        className={`slot${pick === 'remove' ? ' held' : ''}`}
-        onClick={() => client.buildPick('remove')}
-        aria-label="Take down"
-      >
-        <span className="slot-emoji">🗑️</span>
-      </button>
-      {pieces.map((p) => (
+    <div className="build-bar">
+      <div className="build-tabs" role="tablist" aria-label="Build menu">
         <button
-          key={p.id}
-          className={`slot${pick === p.id ? ' held' : ''}`}
-          onClick={() => client.buildPick(p.id)}
-          aria-label={ITEMS[p.id]?.name ?? p.id}
+          role="tab"
+          aria-selected={removing}
+          className={`build-tab${removing ? ' on' : ''}`}
+          onClick={() => client.buildPick('remove')}
+          aria-label="Take down"
+          title="Take down"
         >
-          <ItemIcon id={p.id} className="slot-icon" />
-          <span className="slot-n">{p.n}</span>
+          🗑️
         </button>
-      ))}
-      {pieces.length === 0 && <span className="build-empty">Craft pieces at a workbench</span>}
+        {BUILD_CATS.map((c) => (
+          <button
+            key={c.id}
+            role="tab"
+            aria-selected={!removing && b.cat === c.id}
+            className={`build-tab${!removing && b.cat === c.id ? ' on' : ''}`}
+            onClick={() => client.buildTab(c.id)}
+            aria-label={c.name}
+            title={c.name}
+          >
+            {c.icon}
+          </button>
+        ))}
+      </div>
+      <div className="build-row" aria-label="Pieces">
+        {client.buildPieces(b.cat).map((p) => (
+          <button
+            key={p.kind}
+            className={`slot${b.piece === p.kind ? ' held' : ''}${p.can ? '' : ' poor'}`}
+            onClick={() => client.buildPick(p.kind)}
+            aria-label={BUILDINGS[p.kind]?.name ?? p.kind}
+          >
+            <ItemIcon id={p.kind} className="slot-icon" />
+            {p.made > 0 && <span className="slot-n">{p.made}</span>}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

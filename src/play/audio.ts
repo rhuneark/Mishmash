@@ -35,7 +35,15 @@ type Sfx =
   | 'tap'
   | 'podfall'
   | 'creak'
-  | 'thud';
+  | 'thud'
+  | 'thunder'
+  | 'crack'
+  | 'shoot'
+  | 'grunt'
+  | 'bleat'
+  | 'cluck'
+  | 'bark'
+  | 'dig';
 
 const HEAR = 38;
 
@@ -57,6 +65,7 @@ export class Sound {
   private ambient: { src: AudioBufferSourceNode; gain: GainNode; filter: BiquadFilterNode } | null =
     null;
   private drone: { osc: OscillatorNode; gain: GainNode } | null = null;
+  private rain: GainNode | null = null;
   /** Gains (already curved), 0..1. */
   private vol: Volumes = { master: 0.64, sfx: 0.81, ambience: 0.49, music: 0.3 };
 
@@ -157,6 +166,30 @@ export class Sound {
     osc.connect(dl).connect(dg).connect(this.ambBus);
     osc.start();
     this.drone = { osc, gain: dg };
+    // Rain: hissing noise, silent until the weather turns.
+    const rs = ctx.createBufferSource();
+    rs.buffer = this.noise;
+    rs.loop = true;
+    const rf = ctx.createBiquadFilter();
+    rf.type = 'highpass';
+    rf.frequency.value = 1400;
+    const rg = ctx.createGain();
+    rg.gain.value = 0;
+    rs.connect(rf).connect(rg).connect(this.ambBus);
+    rs.start(0, 0.7);
+    this.rain = rg;
+  }
+
+  /** How hard it rains (0..1). */
+  setRain(level: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.rain) return;
+    this.rain.gain.setTargetAtTime(level * 0.16, ctx.currentTime, 1.2);
+  }
+
+  /** A sound that comes later (thunder after the flash). */
+  playLater(name: Sfx, seconds: number, distance = 0): void {
+    setTimeout(() => this.play(name, distance), Math.max(0, seconds) * 1000);
   }
 
   /** Night (0..1), Bloom nights, how close the Bloom is (0..1) and the rescue. */
@@ -350,6 +383,39 @@ export class Sound {
         o('sine', 80, 30, 0.6, 0.9);
         n(0.6, 600, 'lowpass', 0.6, 0.004);
         n(0.4, 2500, 'bandpass', 0.25, 0.02, 0.8);
+        break;
+      case 'thunder':
+        n(3.2, 160, 'lowpass', 0.9, 0.08);
+        n(1.6, 420, 'lowpass', 0.4, 0.3);
+        o('sine', 55, 28, 2.4, 0.45);
+        break;
+      case 'crack':
+        n(0.35, 3000, 'highpass', 0.9, 0.002);
+        o('square', 120, 40, 0.4, 0.3);
+        break;
+      case 'shoot':
+        o('triangle', 420, 140, 0.16, 0.35);
+        n(0.12, 1800, 'bandpass', 0.35, 0.002, 2);
+        break;
+      case 'grunt':
+        o('sawtooth', 130, 80, 0.25, 0.25);
+        n(0.2, 300, 'lowpass', 0.3, 0.02);
+        break;
+      case 'bleat':
+        o('sawtooth', 520, 470, 0.45, 0.12);
+        o('sine', 780, 700, 0.4, 0.06);
+        break;
+      case 'cluck':
+        o('square', 900, 600, 0.06, 0.1);
+        o('square', 950, 650, 0.06, 0.08, 0.12);
+        break;
+      case 'bark':
+        o('sawtooth', 380, 180, 0.14, 0.3);
+        n(0.12, 900, 'bandpass', 0.3, 0.004, 1.5);
+        break;
+      case 'dig':
+        n(0.25, 500, 'lowpass', 0.6, 0.01);
+        n(0.1, 2200, 'bandpass', 0.2, 0.01, 1);
         break;
     }
   }

@@ -11,6 +11,7 @@ import {
   type Amount,
   type Speed,
   type SpawnRate,
+  type Wildlife,
   type WorldRules,
 } from '../../game/rules';
 import { Toggle } from './Menu';
@@ -155,6 +156,28 @@ export const RULE_GROUPS: { title: string; rows: Row[] }[] = [
           { id: 'normal', label: 'Normal' },
           { id: 'often', label: 'Often' },
         ] satisfies Opt<Often>[],
+      },
+      {
+        key: 'weather',
+        label: 'Rain, storms and fog',
+        desc: 'Rain waters crops and fills collectors; storms bring lightning.',
+        options: [
+          { id: 'off', label: 'Always fair' },
+          { id: 'rare', label: 'Calm' },
+          { id: 'normal', label: 'Normal' },
+          { id: 'often', label: 'Wild' },
+        ] satisfies Opt<Often>[],
+      },
+      {
+        key: 'animals',
+        label: 'Island animals',
+        desc: 'Boars, goats, jungle fowl and wild dogs to hunt or tame.',
+        options: [
+          { id: 'none', label: 'None' },
+          { id: 'few', label: 'Few' },
+          { id: 'normal', label: 'Normal' },
+          { id: 'many', label: 'Many' },
+        ] satisfies Opt<Wildlife>[],
       },
       {
         key: 'markers',

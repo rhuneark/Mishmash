@@ -23,7 +23,8 @@ export function placementProblem(
   z: number,
   rot: number,
 ): string | null {
-  if (!BUILDINGS[kind]) return 'Unknown building.';
+  const def = BUILDINGS[kind];
+  if (!def) return 'Unknown building.';
   const box = footprint(kind, x, z, rot);
   const corners: [number, number][] = [
     [box.minX, box.minZ],
@@ -40,8 +41,10 @@ export function placementProblem(
     hi = Math.max(hi, h);
   }
   if (lo < 0.2) return 'Too close to the water.';
-  if (hi - lo > 1.8) return 'The ground is too steep.';
+  if (hi - lo > (def.layer === 'floor' ? 1.2 : 1.8)) return 'The ground is too steep.';
+  // Floors lie under things and roofs over them: pieces only meet their own layer.
   for (const b of buildings) {
+    if (BUILDINGS[b.kind]?.layer !== def.layer) continue;
     const other = footprint(b.kind, b.x, b.z, b.rot);
     if (boxesOverlap(box, other) && !joins(kind, b.kind, box, other))
       return 'Something is already there.';

@@ -735,8 +735,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   see, flush snapping, roofs that join and come down again, no Bloom spawning in bases, the
   survivor menu with crafting by category, player levels and a skill tree) and v1.20.0 (build
   mode as its own mode for phones: the survivor stands still, tap / drag the piece / drag to
-  look around; the roof switch Auto / On / Off) are private builds until the user asks to
-  publish them.
+  look around; the roof switch Auto / On / Off) were private builds; **v1.20.0 was submitted
+  with the Publish workflow on 2026-10-24 at the user's request** ("publish public"), so all
+  of v1.16–v1.20 goes on Explore once RUN's review passes.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

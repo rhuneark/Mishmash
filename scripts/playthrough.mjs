@@ -984,10 +984,15 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
 
   // Farming: a garden plot, a seed planted (whichever the bag has first), watered from the can.
   // A dry spell, so the can has something to do (rain waters plots by itself).
+  // Bags dropped by earlier steps would be nearer than the plot: clear them away.
   await game(page, () => {
     const sim = window.__game.client.link.sim;
     sim.weather = { kind: 'clear', until: sim.time + 3000 };
     sim.broadcast({ type: 'weather', w: 'clear' });
+    for (const id of [...sim.drops.keys()]) {
+      sim.drops.delete(id);
+      sim.broadcast({ type: 'undrop', id });
+    }
   });
   await openGround(page);
   await give(page, [
@@ -1009,7 +1014,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   });
   const offers = await until(
     page,
-    () => /^Plant .*seeds$/.test(window.__game.client.actionLabel().text),
+    () => window.__game.client.actionLabel().text.startsWith('Plant '),
     `${tag} farm: the plot doesn't offer to plant`,
     // New models compile slowly on the software renderer: frames stall for a while.
     40000,

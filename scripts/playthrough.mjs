@@ -613,12 +613,17 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
       },
       `${tag} build: the take-down tool didn't pick the roof`,
     );
+    const said = await page
+      .locator('.build-panel')
+      .getByText(/1 of 2 here/)
+      .waitFor({ timeout: 10000 })
+      .then(
+        () => true,
+        () => false,
+      );
     check(
-      (await page
-        .locator('.build-panel')
-        .getByText(/1 of 2 here/)
-        .count()) === 1,
-      `${tag} build: the panel doesn't say what's stacked here`,
+      said,
+      `${tag} build: the panel doesn't say what's stacked here (${await page.locator('.build-panel').innerText()})`,
     );
     await pressUntil(
       page,
@@ -1002,13 +1007,21 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await game(page, () => {
     window.__game.client.ry = Math.PI;
   });
-  await until(
+  const offers = await until(
     page,
     () => /^Plant .*seeds$/.test(window.__game.client.actionLabel().text),
     `${tag} farm: the plot doesn't offer to plant`,
     // New models compile slowly on the software renderer: frames stall for a while.
     40000,
   );
+  if (!offers)
+    console.log(
+      `${tag} farm: the action says`,
+      await game(page, () => {
+        const c = window.__game.client;
+        return [c.actionLabel().text, c.x, c.z, c.ry, c.target, c.me.inv.map((s) => s?.id)];
+      }),
+    );
   const planted = () =>
     [...window.__game.client.buildings.values()].some((b) => b.kind === 'garden_plot' && b.crop);
   check(await pressUntil(page, planted), `${tag} farm: nothing planted`);

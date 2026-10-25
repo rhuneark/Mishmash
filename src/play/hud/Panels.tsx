@@ -58,7 +58,7 @@ export function StorageSheet({ client, onClose }: { client: GameClient; onClose:
   return (
     <Sheet title={shared ? '📦 Connected storage' : '📦 Storage box'} onClose={onClose} wide>
       <p className="muted small-text">
-        Tap to move things in or out, or drag them where you want them.{' '}
+        Tap to move things in or out, or hold and drag them where you want them.{' '}
         {shared
           ? 'Every storage box on the island opens this same storage.'
           : 'Everyone on the island can use this box.'}

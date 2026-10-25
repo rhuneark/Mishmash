@@ -10,7 +10,7 @@ import { POD_FALL } from '../game/sim/events';
 import { MOB_STATE } from '../game/sim/protocol';
 import { NIGHT_END, NIGHT_START, daylight, lowTide } from '../game/sim/time';
 import { circleHitsBox, colorFor, footprint } from '../game/sim/types';
-import { BIOME, biomeAt, forNodesNear, heightAt, type Island } from '../game/world';
+import { BIOME, biomeAt, forNodesNear, heightAt, poolNear, type Island } from '../game/world';
 import type { Sound, Sfx } from './audio';
 import {
   RUN,
@@ -19,6 +19,7 @@ import {
   type GameClient,
   type MoveInput,
   type RoofView,
+  type TapPick,
 } from './client';
 import { STAR_ICON, itemIconUrl } from './hud/itemIcons';
 import { buzz } from './prefs';
@@ -218,6 +219,8 @@ export class View {
   private readonly ring: THREE.Mesh;
   /** A red box around the piece the take-down tool has picked. */
   private readonly doomBox: THREE.BoxHelper;
+  /** Where a tap is walking you to. */
+  private readonly goalRing: THREE.Mesh;
   private doomId: number | null = null;
   private readonly lights: THREE.PointLight[] = [];
   private readonly labels: Labels;
@@ -331,6 +334,15 @@ export class View {
     this.doomBox.renderOrder = 4;
     this.doomBox.visible = false;
     this.scene.add(this.doomBox);
+    this.goalRing = this.ring.clone();
+    this.goalRing.material = new THREE.MeshBasicMaterial({
+      color: 0x8fe3ff,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+    this.goalRing.visible = false;
+    this.scene.add(this.goalRing);
     this.labels = new Labels(overlay);
     this.me = this.newPlayer(client.you);
     this.terrain.prime(client.x, client.z, this.terrainRadius);
@@ -1091,6 +1103,7 @@ export class View {
     this.updateGhost();
     this.updateGrid();
     this.updateRing();
+    this.updateGoal();
     this.updateLighting(dt, time);
     // Camera: a little ahead (away from the camera, and where you're heading), so the
     // survivor sits below the HUD's top rows; sprinting and a fight pull it back a touch.
@@ -1479,29 +1492,97 @@ export class View {
    * with the roof switch on.
    */
   pickBuilding(px: number, py: number): number | null {
-    if (!this.w || !this.h) return null;
+    if (!this.rayAt(px, py)) return null;
+    return this.hitBuilding(this.client.roofView === 'on')?.id ?? null;
+  }
+
+  private rayAt(px: number, py: number): boolean {
+    if (!this.w || !this.h) return false;
     tmpV2.set((px / this.w) * 2 - 1, -(py / this.h) * 2 + 1);
     this.raycaster.setFromCamera(tmpV2, this.camera);
-    const roofs = this.client.roofView === 'on';
+    return true;
+  }
+
+  /** The nearest built piece on the current ray. */
+  private hitBuilding(roofs: boolean): { id: number; distance: number } | null {
     const shown = (o: THREE.Object3D | null): boolean => {
       for (let p = o; p; p = p.parent) if (!p.visible) return false;
       return true;
     };
-    let best: number | null = null;
-    let bestD = Infinity;
+    let best: { id: number; distance: number } | null = null;
     for (const [id, b] of this.builds) {
       const g = b.view.group;
       if (!g.visible) continue;
       for (const hit of this.raycaster.intersectObject(g, true)) {
-        if (hit.distance >= bestD) break;
+        if (best && hit.distance >= best.distance) break;
         if (!shown(hit.object)) continue;
         if (hit.object === b.view.roof && (!roofs || this.roofFaded.has(id))) continue;
-        bestD = hit.distance;
-        best = id;
+        best = { id, distance: hit.distance };
         break;
       }
     }
     return best;
+  }
+
+  /**
+   * What a tap on the island points at (touch screens): a creature, a bag, a landmark spot or
+   * a buried X near the finger first (they're small), then the tree, rock or built piece
+   * under it, then water, else the ground.
+   */
+  pickAt(px: number, py: number): TapPick | null {
+    const g = this.groundAt(px, py);
+    if (!g || !this.rayAt(px, py)) return null;
+    const c = this.client;
+    let best: TapPick | null = null;
+    let bestD = Infinity;
+    const near = (p: Omit<TapPick, 'gx' | 'gz'>, up: number, r: number) => {
+      if (Math.hypot(p.x - g.x, p.z - g.z) > 14) return;
+      const v = tmpVec.set(p.x, this.y(p.x, p.z) + up, p.z).project(this.camera);
+      if (v.z > 1) return;
+      const d = Math.hypot(((v.x + 1) / 2) * this.w - px, ((1 - v.y) / 2) * this.h - py);
+      if (d <= r && d < bestD) {
+        bestD = d;
+        best = { ...p, gx: g.x, gz: g.z };
+      }
+    };
+    for (const m of c.mobs.values()) {
+      if (m.dying > 0) continue;
+      const big = m.kind === 'mother';
+      near({ kind: 'mob', id: m.id, x: m.x, z: m.z }, big ? 2.2 : 0.8, big ? 90 : 46);
+    }
+    for (const d of c.drops.values()) near({ kind: 'drop', id: d.id, x: d.x, z: d.z }, 0.3, 36);
+    for (const t of c.treasureMarks()) near({ kind: 'dig', id: t.n, x: t.x, z: t.z }, 0.1, 40);
+    for (const poi of this.island.pois) {
+      if (Math.abs(poi.x - g.x) > 40 || Math.abs(poi.z - g.z) > 40) continue;
+      for (const spot of poi.spots)
+        near({ kind: 'spot', id: spot.id, x: poi.x + spot.dx, z: poi.z + spot.dz }, 0.8, 34);
+    }
+    if (best) return best;
+    const built = this.hitBuilding(false);
+    const node = this.nodes.pick(this.raycaster);
+    if (built && (!node || built.distance <= node.distance)) {
+      const b = c.buildings.get(built.id);
+      if (b) return { kind: 'build', id: b.id, x: b.x, z: b.z, gx: g.x, gz: g.z };
+    }
+    if (node) {
+      const isl = this.island;
+      const x = isl.nodeX[node.id] as number;
+      const z = isl.nodeZ[node.id] as number;
+      return { kind: 'node', id: node.id, x, z, gx: g.x, gz: g.z };
+    }
+    const pool = poolNear(this.island, g.x, g.z, 0.5);
+    if (pool) return { kind: 'pool', id: 0, x: g.x, z: g.z, gx: g.x, gz: g.z };
+    return { kind: 'ground', x: g.x, z: g.z, gx: g.x, gz: g.z };
+  }
+
+  /** Where a tap sent the survivor: a small marker on the ground until it gets there. */
+  private updateGoal(): void {
+    const goal = this.client.goal;
+    const show = !!goal && !goal.focus;
+    this.goalRing.visible = show;
+    if (!goal || !show) return;
+    this.goalRing.position.set(goal.x, this.y(goal.x, goal.z) + 0.06, goal.z);
+    this.goalRing.scale.setScalar(0.45 * (1 + Math.sin(this.t * 7) * 0.08));
   }
 
   private updateRing(): void {

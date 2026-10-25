@@ -1,12 +1,12 @@
 // Item slots everywhere in the HUD: icon, count, durability, and drag and drop
 // between the hotbar, bag, quick panel and storage boxes.
 
-import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import { ITEMS } from '../../game/content/items';
 import { HOTBAR } from '../../game/sim/inventory';
 import type { Slot } from '../../game/sim/protocol';
 import type { GameClient } from '../client';
-import { drag, slotKey, startSlotDrag, type DropTarget, type SlotRef } from './drag';
+import { drag, holdStill, slotKey, startSlotDrag, type DropTarget, type SlotRef } from './drag';
 import { itemIconUrl } from './itemIcons';
 
 export function ItemIcon({ id, className }: { id: string; className?: string }) {
@@ -81,6 +81,8 @@ export function SlotButton(props: {
   title?: string;
 }) {
   const { client, slotRef, slot } = props;
+  const ref = useRef<HTMLButtonElement>(null);
+  useEffect(() => (ref.current ? holdStill(ref.current) : undefined), []);
   const name = slot ? ITEMS[slot.id]?.name : undefined;
   // A bow shows how many arrows it has left.
   const shoots = slot ? ITEMS[slot.id]?.ranged?.ammo : undefined;
@@ -89,6 +91,7 @@ export function SlotButton(props: {
     : null;
   return (
     <button
+      ref={ref}
       className={`slot${props.className ? ` ${props.className}` : ''}`}
       data-slot={slotKey(slotRef)}
       title={props.title ?? name}
@@ -101,7 +104,8 @@ export function SlotButton(props: {
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        props.onContext?.();
+        // A finger held down lifts the item (Android also calls that a context menu).
+        if (!drag.pressing() && !drag.get()) props.onContext?.();
       }}
     >
       <SlotView slot={slot} />

@@ -52,6 +52,65 @@ const give = (page, items) =>
     },
     items,
   );
+/** A finger on a touch screen (raw touch events, so swipes scroll like on a phone). */
+const fingerOn = async (page) => {
+  const cdp = await page.context().newCDPSession(page);
+  const send = (type, x, y) =>
+    cdp.send('Input.dispatchTouchEvent', {
+      type,
+      touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }],
+    });
+  const path = async (x0, y0, x1, y1, steps = 12) => {
+    for (let i = 1; i <= steps; i++) {
+      await send('touchMove', x0 + ((x1 - x0) * i) / steps, y0 + ((y1 - y0) * i) / steps);
+      await page.waitForTimeout(20);
+    }
+  };
+  return {
+    tap: async (x, y) => {
+      await send('touchStart', x, y);
+      await page.waitForTimeout(60);
+      await send('touchEnd', x, y);
+      await page.waitForTimeout(300);
+    },
+    swipe: async (x, y, dy) => {
+      await send('touchStart', x, y);
+      await path(x, y, x, y + dy);
+      await send('touchEnd', x, y + dy);
+      await page.waitForTimeout(500);
+    },
+    /** Press and hold, then drag to (x1, y1). */
+    holdDrag: async (x0, y0, x1, y1) => {
+      await send('touchStart', x0, y0);
+      await page.waitForTimeout(450);
+      await path(x0, y0, x1, y1);
+      await send('touchEnd', x1, y1);
+      await page.waitForTimeout(500);
+    },
+    done: () => cdp.detach(),
+  };
+};
+/** Where a spot on the island shows on screen, and whether the island is what's there. */
+const onIsland = (page, x, up, z) =>
+  game(
+    page,
+    ([x, up, z]) => {
+      const view = window.__view;
+      const cam = view.camera;
+      const y = view.y(x, z) + up;
+      const mul = (e, v) =>
+        [0, 1, 2, 3].map((r) => e[r] * v[0] + e[4 + r] * v[1] + e[8 + r] * v[2] + e[12 + r] * v[3]);
+      const q = mul(
+        cam.projectionMatrix.elements,
+        mul(cam.matrixWorldInverse.elements, [x, y, z, 1]),
+      );
+      const sx = ((q[0] / q[3] + 1) / 2) * innerWidth;
+      const sy = ((1 - q[1] / q[3]) / 2) * innerHeight;
+      const el = document.elementFromPoint(sx, sy);
+      return [sx, sy, /game-canvas|joy-zone/.test(el?.className ?? '')];
+    },
+    [x, up, z],
+  );
 const hold = (page, id, slot) =>
   game(
     page,
@@ -366,6 +425,43 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await menu.getByRole('button', { name: /^Lumberjack, rank 1 of 3/ }).waitFor();
   await noSideScroll('skills');
   await shot('6a-skills');
+  // On a phone the menu scrolls even when the swipe starts on a tile or a slot, and a press
+  // and hold lifts an item to drag it.
+  const finger = await fingerOn(page);
+  await menu.getByRole('tab', { name: /Crafting/ }).click();
+  const tileBox = await menu.locator('.recipe-tile').nth(6).boundingBox();
+  await finger.swipe(tileBox.x + tileBox.width / 2, tileBox.y + tileBox.height / 2, -200);
+  const scrolled = await game(page, () => document.querySelector('.char-body')?.scrollTop ?? 0);
+  check(scrolled > 20, `${tag} menu: a swipe on the crafting grid didn't scroll (${scrolled})`);
+  await menu.getByRole('tab', { name: /Survivor/ }).click();
+  // Enough kinds of things that some sit in the bag, past the hotbar.
+  await give(page, [
+    ['coconut', 1],
+    ['feather', 1],
+    ['hide', 1],
+    ['scrap', 1],
+    ['sap', 1],
+    ['berries', 1],
+  ]);
+  await page.waitForTimeout(400);
+  const lift = await game(page, () => {
+    const inv = window.__game.client.me.inv;
+    const from = inv.findIndex((s, i) => s && i >= 6);
+    return [from, inv[from]?.id];
+  });
+  const fromBox = await menu.locator(`[data-slot="inv:${lift[0]}"]`).boundingBox();
+  const toBox = await menu.locator('[data-slot="inv:5"]').boundingBox();
+  await finger.holdDrag(
+    fromBox.x + fromBox.width / 2,
+    fromBox.y + fromBox.height / 2,
+    toBox.x + toBox.width / 2,
+    toBox.y + toBox.height / 2,
+  );
+  check(
+    (await game(page, () => window.__game.client.me.inv[5]?.id)) === lift[1],
+    `${tag} menu: a press and hold didn't drag ${lift[1]} to the hotbar`,
+  );
+  await finger.done();
   await menu.getByRole('button', { name: 'Close' }).click();
   await menu.waitFor({ state: 'detached' });
   check((await page.locator('.level-badge').count()) === 1, `${tag} hud: no level badge`);
@@ -748,6 +844,59 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   }
   await page.getByRole('button', { name: 'Leave build mode' }).first().click();
   await page.locator('.build-panel').waitFor({ state: 'detached' });
+
+  // On a phone a tap on the ground walks there, and a tap on a tree walks over and chops it
+  // down.
+  {
+    const finger = await fingerOn(page);
+    await openGround(page);
+    const from = await game(page, () => [window.__game.client.x, window.__game.client.z]);
+    const spot = await onIsland(page, from[0] + 3.5, 0, from[1] - 3.5);
+    check(spot[2], `${tag} tap: the spot to walk to is under the HUD`);
+    await finger.tap(spot[0], spot[1]);
+    await until(
+      page,
+      ([x, z]) => Math.hypot(window.__game.client.x - x, window.__game.client.z - z) > 2,
+      `${tag} tap: a tap on the ground didn't walk there`,
+      15000,
+      from,
+    );
+    const tree = await game(page, () => {
+      const c = window.__game.client;
+      const isl = c.island;
+      let best = -1;
+      let bd = 60;
+      for (let id = 0; id < isl.nodeCount; id++) {
+        if (isl.nodeType[id] > 2 || c.nodeGone(id)) continue;
+        const d = Math.hypot(isl.nodeX[id] - c.x, isl.nodeZ[id] - c.z);
+        if (d < bd) {
+          bd = d;
+          best = id;
+        }
+      }
+      return best < 0 ? null : [best, isl.nodeX[best], isl.nodeZ[best]];
+    });
+    check(!!tree, `${tag} tap: no tree near`);
+    if (tree) {
+      // Stand south-west of it (towards the camera) with an axe in the bag.
+      await give(page, [['axe_stone', 1]]);
+      await teleport(page, tree[1] - 4.2, tree[2] + 4.2);
+      await page.waitForTimeout(1500);
+      const at = await onIsland(page, tree[1], 1.2, tree[2]);
+      check(at[2], `${tag} tap: the tree is under the HUD`);
+      const wood = await game(page, () => window.__game.client.count('wood'));
+      await finger.tap(at[0], at[1]);
+      await until(
+        page,
+        (w) => window.__game.client.count('wood') > w,
+        `${tag} tap: a tap on a tree didn't chop it`,
+        30000,
+        wood,
+      );
+      await shot('6d-tap-tree');
+    }
+    await finger.done();
+  }
 
   await game(page, () => clearInterval(window.__calmBuild));
 

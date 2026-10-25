@@ -188,6 +188,27 @@ export interface Target {
   lock?: 'cargo' | 'bunker' | 'wreck';
 }
 
+/** What a tap on the island points at (view.pickAt): something to use, or the ground. */
+export interface TapPick {
+  kind: UseKind | 'ground';
+  id?: number | string;
+  x: number;
+  z: number;
+  /** The ground under the finger (a tap on a wall with nothing to do walks there). */
+  gx: number;
+  gz: number;
+}
+
+/** Tap to move / tap to use (touch screens): where the survivor walks and what it uses. */
+interface Goal {
+  x: number;
+  z: number;
+  focus: { kind: UseKind; id: number | string } | null;
+  /** Closest it has got, and how long since it got closer (gives up when stuck). */
+  best: number;
+  stall: number;
+}
+
 export type Panel =
   'bag' | 'craft' | 'skills' | 'storage' | 'keypad' | 'journal' | 'map' | 'menu' | 'note';
 
@@ -293,6 +314,10 @@ export class GameClient {
   buildLook = { x: 0, z: 0 };
   /** Build mode's roof switch. */
   roofView: RoofView = 'auto';
+  /** Tap to move / tap to use (null: the stick, keys or nothing). */
+  goal: Goal | null = null;
+  /** While using what was tapped, the action button only offers that. */
+  private only: { kind: UseKind; id: number | string; x: number; z: number } | null = null;
   /** Snap to the grid and its cell size (Settings, set by Game). */
   buildPrefs = { snap: true, grid: 2 };
 
@@ -690,6 +715,8 @@ export class GameClient {
   }
 
   private onFxMsg(msg: Extract<S2C, { type: 'fx' }>): void {
+    // Something you tapped can't be used (no axe, no shovel…): stop trying (the toast says why).
+    if (msg.k === 'deny' && msg.by === this.you) this.goal = null;
     if (msg.k === 'death') {
       // The mob closest to the spot plays its death.
       let best: MobMirror | null = null;
@@ -790,6 +817,15 @@ export class GameClient {
         this.panBuild(input.x * BUILD_PAN_SPEED * dt, input.z * BUILD_PAN_SPEED * dt);
       input = { x: 0, z: 0, sprint: false };
     }
+    // A tap on the island: walk there (the stick or keys take over at once).
+    let act = false;
+    this.only = null;
+    if (input.x !== 0 || input.z !== 0 || this.build || !alive) this.goal = null;
+    else if (this.goal && !this.panelBlocksMove()) {
+      const step = this.steer(dt);
+      if (step) input = { ...step, sprint: input.sprint };
+      else act = !!this.goal;
+    }
     const moving = alive && !this.panelBlocksMove() && (input.x !== 0 || input.z !== 0);
     let speed = 0;
     if (moving) {
@@ -835,6 +871,7 @@ export class GameClient {
     const before = this.target;
     this.target = alive ? this.findTarget() : null;
     if (!sameTarget(before, this.target)) this.touch();
+    if (act) this.useGoal();
     if (
       useHeld &&
       alive &&
@@ -1126,6 +1163,115 @@ export class GameClient {
     return stack[this.removePick % stack.length] ?? null;
   }
 
+  /** A tap on the island (touch): walk there, or to what was tapped and use it. */
+  tapAt(p: TapPick): void {
+    if (this.build || !this.me?.alive || this.panelBlocksMove()) return;
+    let focus = p.kind === 'ground' || p.id === undefined ? null : { kind: p.kind, id: p.id };
+    // A wall or floor has nothing to do: walk to where the finger was.
+    if (focus?.kind === 'build') {
+      const b = this.buildings.get(Number(focus.id));
+      if (!b || !this.buildingTarget(b)?.verb) focus = null;
+    }
+    const x = focus ? p.x : p.gx;
+    const z = focus ? p.z : p.gz;
+    this.goal = { x, z, focus, best: Infinity, stall: 0 };
+    this.touch();
+  }
+
+  /** How close the survivor must be to use what it walks to. */
+  private goalReach(g: Goal): number {
+    const f = g.focus;
+    if (!f) return 0.45;
+    switch (f.kind) {
+      case 'node': {
+        const def = NODES[(this.island as Island).nodeType[Number(f.id)] as number];
+        return NODE_REACH + (def?.radius ?? 0.5) - 0.3;
+      }
+      case 'mob': {
+        const m = this.mobs.get(Number(f.id));
+        const held = this.heldItem();
+        if (held?.ranged && this.ammoLeft() > 0) return held.ranged.range * 0.85;
+        return (held?.weapon?.reach ?? 1.8) + (m ? (MONSTER_RADIUS[m.kind] ?? 0.5) : 0.5) + 0.2;
+      }
+      case 'build':
+        return USE_REACH - 0.6;
+      case 'spot':
+        return SPOT_REACH - 0.6;
+      case 'drop':
+        return DROP_REACH - 0.6;
+      case 'dig':
+        return DIG_REACH - 0.5;
+      case 'pool':
+        return 1.6;
+    }
+  }
+
+  /** Walking to the tapped spot: the way to go, or null once there (or given up). */
+  private steer(dt: number): { x: number; z: number } | null {
+    const g = this.goal as Goal;
+    const f = g.focus;
+    // Gone (felled, killed, picked up): done.
+    if (f) {
+      const id = Number(f.id);
+      const gone =
+        (f.kind === 'node' && this.nodeGone(id)) ||
+        (f.kind === 'build' && !this.buildings.has(id)) ||
+        (f.kind === 'drop' && !this.drops.has(id)) ||
+        (f.kind === 'mob' && !(this.mobs.get(id) && (this.mobs.get(id) as MobMirror).dying <= 0));
+      if (gone) {
+        this.goal = null;
+        return null;
+      }
+      if (f.kind === 'mob') {
+        const m = this.mobs.get(id) as MobMirror;
+        g.x = m.x;
+        g.z = m.z;
+      }
+    }
+    const dx = g.x - this.x;
+    const dz = g.z - this.z;
+    const d = Math.hypot(dx, dz);
+    if (d <= this.goalReach(g)) {
+      if (!f) this.goal = null;
+      else this.only = { kind: f.kind, id: f.id, x: g.x, z: g.z };
+      return null;
+    }
+    // Stuck against something: give up.
+    if (d < g.best - 0.15) {
+      g.best = d;
+      g.stall = 0;
+    } else if ((g.stall += dt) > 1.2) {
+      if (f) this.toast("Can't get there.");
+      this.goal = null;
+      return null;
+    }
+    return { x: dx / d, z: dz / d };
+  }
+
+  /** In reach of what was tapped: use it (chop, mine and fight until it's done). */
+  private useGoal(): void {
+    const t = this.target;
+    const g = this.goal;
+    if (!g) return;
+    if (!t) {
+      this.goal = null;
+      return;
+    }
+    const blocked = this.actionLabel().blocked;
+    if (blocked) {
+      this.toast(blocked);
+      this.goal = null;
+      return;
+    }
+    if (this.clock < this.nextUse) return;
+    const again =
+      t.kind === 'node' ||
+      t.kind === 'dig' ||
+      (t.kind === 'mob' && (t.hostile || !!t.shoot || t.verb === 'Hunt'));
+    this.use();
+    if (!again) this.goal = null;
+  }
+
   /** A hostile monster this close to you. */
   private hostileNear(r: number): boolean {
     for (const m of this.mobs.values())
@@ -1290,7 +1436,8 @@ export class GameClient {
   private findTarget(): Target | null {
     // In build mode the action button only builds.
     if (this.build) return null;
-    const shot = this.shotTarget();
+    // Walking to something tapped: a bow only shoots if that's a creature.
+    const shot = this.only && this.only.kind !== 'mob' ? null : this.shotTarget();
     if (shot) return shot;
     const near = this.nearTarget();
     // PC: with a bow in hand, pointing the mouse away from what's near you shoots instead.
@@ -1317,7 +1464,10 @@ export class GameClient {
     };
     let best = null as Target | null;
     let bestScore = Infinity;
+    const only = this.only;
     const offer = (t: Target, s: number) => {
+      // Using what was tapped: nothing else.
+      if (only && !(t.kind === only.kind && t.id === only.id)) return;
       if (s < bestScore) {
         bestScore = s;
         best = t;
@@ -1329,6 +1479,7 @@ export class GameClient {
     let foeScore = Infinity;
     for (const m of this.mobs.values()) {
       if (m.dying > 0 || m.state === MOB_STATE.burrow) continue;
+      if (only && !(only.kind === 'mob' && only.id === m.id)) continue;
       const def = MONSTERS[m.kind];
       const r = reach + (MONSTER_RADIUS[m.kind] ?? 0.5) + 0.5;
       const d = Math.hypot(m.x - x, m.z - z);
@@ -1405,7 +1556,7 @@ export class GameClient {
         score(d.x, d.z) - 0.5,
       );
     }
-    if (!best) {
+    if (!best && (!only || only.kind === 'pool')) {
       const pool = poolNear(island, x, z, 2.2);
       if (pool)
         return {
@@ -1437,7 +1588,8 @@ export class GameClient {
   private shotTarget(): Target | null {
     const bow = this.heldItem()?.ranged;
     if (!bow || this.ammoLeft() <= 0) return null;
-    const aim = this.aim;
+    const tapped = this.only?.kind === 'mob' ? this.mobs.get(Number(this.only.id)) : undefined;
+    const aim = tapped ?? this.aim;
     let best: MobMirror | null = null;
     let bestScore = Infinity;
     const fx = Math.sin(this.ry);

@@ -660,7 +660,9 @@ button:disabled {
   inset: 0;
   overflow: hidden;
   background: #0a0f1e;
-  touch-action: none;
+  /* Not none: Safari applies an ancestor's touch-action to every scroller inside it, so
+     menus and chests couldn't scroll. The island and the stick block gestures themselves. */
+  touch-action: manipulation;
   container-type: size;
 }
 
@@ -670,6 +672,7 @@ button:disabled {
   width: 100%;
   height: 100%;
   display: block;
+  touch-action: none;
 }
 
 .game-labels {
@@ -1987,7 +1990,18 @@ button:disabled {
 }
 
 .slot {
+  /* Swipes scroll the bag or box; a touch drag starts with a press and hold (drag.ts). */
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.hotbar .slot {
   touch-action: none;
+}
+
+.build-row .slot {
+  touch-action: pan-x;
 }
 
 .slot.hot {

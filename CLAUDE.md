@@ -286,6 +286,24 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   Kessler pages, tips), map, bag + crafting sheet, storage box, keypad, pause menu, death and
   win screens. Floating joystick on the left half (touch only: a mouse clicks the island
   through it; gone in build mode).
+- **Tap to move and tap to use** (touch screens, v1.21; the user: "movement should be by
+  either pad or by tap", "tap something on screen to interact"): a quick tap on the island
+  (the canvas, or the stick's area: `Joystick` hands short taps to `input.tap`) goes through
+  `view.pickAt` (a creature, bag, landmark spot or buried X within ~40 px of the finger first,
+  then the built piece or tree/rock the ray hits (`NodeView.pick`, `hitBuilding` without roofs),
+  then a pool, else the ground) to `client.tapAt` → `client.goal`. The client walks there
+  (`steer`, a marker ring on the ground for plain walks; gives up after 1.2 s without getting
+  closer, "Can't get there."), and in reach of what was tapped the action button offers only
+  that (`only` filters `nearTarget`/`shotTarget`) and `useGoal` uses it: chopping, mining,
+  digging, fighting and hunting go on until it's gone; opening, reading, picking up, feeding
+  and drinking happen once. A wall or floor with nothing to do just walks there. The stick or
+  keys cancel it at once; a refusal from the authority (fx `deny` for you: no axe, no shovel)
+  stops it.
+- **Touch scrolling** (v1.21, the user: "can't scroll any menus or chests on phone"): Safari
+  applies an ancestor's `touch-action` to every scroller inside it, so `.game` is
+  `manipulation` (not `none`) and only the canvas, the stick and the action button block
+  gestures. Slots are `pan-y` (`pan-x` in the build bar, `none` in the hotbar), so a swipe that
+  starts on a slot scrolls the bag or box.
 - **Pause menu** (`hud/Menu.tsx`, ☰ or Esc; `client.menuPage`: main / settings / friends /
   howto / island): Resume, Settings, Journal, Map, Play with friends (room code), This island,
   How to play, Save and quit. Solo play pauses while it's open (`link.pause`, also when the app is in the background).
@@ -483,7 +501,11 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   survivor. Big banners show as toasts while it's open. Craft lists refresh when a station
   comes into reach (`stationKey` in `client.update`).
 - **Drag and drop** (`hud/drag.ts`, `Slots.tsx` `SlotButton`/`dropItem`/`DragLayer`):
-  pointer events, so mouse and touch both work. Slots carry `data-slot="inv:N"` / `"box:N"`;
+  pointer events, so mouse and touch both work. On a touch screen a slot in a scrolling list
+  lifts after a press and hold (`HOLD_MS` 280; moving first is a swipe), and `holdStill`
+  (a non-passive touchmove on the slot) keeps the list still while it's dragged; hotbar slots
+  drag at once. Android's long-press context menu doesn't eat or hold the item
+  (`drag.pressing`). Slots carry `data-slot="inv:N"` / `"box:N"`;
   drop on another slot (move/merge/swap; into or out of a storage box at that slot: `store`
   / `take` with `to`, `transfer` in `inventory.ts`) or on the island (canvas) to drop it as a
   bag (not quest items). A tap stays a tap; right-click (PC) eats, holds or sends to the hotbar.
@@ -666,14 +688,16 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # area: star, done, delete, reports; jam link), New island (code,
                             # presets), the game
                             # (walk, read, gather, the survivor menu: crafting by category,
-                            # XP and learning a skill; a campfire from the build menu, night
+                            # XP and learning a skill; touch: a swipe on the crafting grid
+                            # scrolls, a press and hold drags a bag item to the hotbar; a campfire from the build menu, night
                             # fight, death, item
                             # pictures, the small bag window: drag and drop, Mashbench, research page,
                             # auto tool, a supply pod, the bag window's place, isometric and
                             # top-down walking, quests, build mode (grid, corner, post, turn,
                             # snap, take down, a post 10+ m away, a roof off a floor with
                             # roofs On; touch: no stick, a tap picks the roof (On) or the
-                            # floor (Off), a drag looks around and the survivor stays), pause menu, This island (change the spawn
+                            # floor (Off), a drag looks around and the survivor stays; a tap
+                            # on the ground walks there, a tap on a tree chops it), pause menu, This island (change the spawn
                             # rate), a bow shot, planting and watering, feeding a goat, the
                             # bunker sign, HUD settings, settings, rebinding a key, landscape,
                             # save/continue, replace confirm), hub settings and local co-op on
@@ -737,7 +761,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   mode as its own mode for phones: the survivor stands still, tap / drag the piece / drag to
   look around; the roof switch Auto / On / Off) were private builds; **v1.20.0 was submitted
   with the Publish workflow on 2026-10-24 at the user's request** ("publish public"), so all
-  of v1.16–v1.20 goes on Explore once RUN's review passes.
+  of v1.16–v1.20 goes on Explore once RUN's review passes. v1.21.0 (2026-10-25, phone
+  controls: menus and boxes scroll, hold to drag, tap to move, tap to use) is a private build
+  until the user asks to publish it.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

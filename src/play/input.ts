@@ -11,6 +11,8 @@ export class Input {
   sprintToggle = false;
   /** The on-screen action button is held. */
   useButton = false;
+  /** A quick tap in the stick's area (local px): it walks there like a tap on the island. */
+  tap: ((x: number, y: number) => void) | null = null;
   bindings: Bindings = defaultBindings();
   /** Called after the player rebinds keys (Game saves them). */
   onBindingsChanged: ((b: Bindings) => void) | null = null;

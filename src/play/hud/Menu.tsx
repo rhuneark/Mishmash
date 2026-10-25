@@ -246,9 +246,17 @@ export function HowTo({ pc, bloomEvery }: { pc: boolean; bloomEvery: number }) {
   return (
     <ul className="tips">
       <li>
-        Move with the stick on the left{pc ? ' or WASD / arrow keys' : ''}. 🏃 sprints while you
-        have breath.
+        {pc
+          ? 'Move with WASD or the arrow keys (or the stick on a touch screen).'
+          : 'Move with the stick on the left, or tap the ground to walk there.'}{' '}
+        🏃 sprints while you have breath.
       </li>
+      {!pc && (
+        <li>
+          Tap a tree, rock, monster, animal, box or note to walk over and use it: you keep chopping,
+          mining or fighting until it's done.
+        </li>
+      )}
       <li>
         The big button does whatever is in front of you: chop, mine, pick up, attack, open, read
         {pc ? ' (Space, E or left click on the island)' : ''}. Hold it to keep going.
@@ -282,8 +290,8 @@ export function HowTo({ pc, bloomEvery }: { pc: boolean; bloomEvery: number }) {
         under a roof), and in fog the Bloom only sees you up close.
       </li>
       <li>
-        🎒 opens the quick bag and craft panel{pc ? ' (Tab)' : ''}: it stays open while you move and
-        fight. Drag items between slots, or onto the island to drop them.
+        🎒 opens your survivor, bag, crafting and skills{pc ? ' (Tab)' : ''}. Tap an item to use it;
+        {pc ? ' drag' : ' hold and drag'} it to another slot, or onto the island to drop it.
       </li>
       <li>
         Eat and drink before the bars run out. A lit campfire heals you and keeps most of the Bloom

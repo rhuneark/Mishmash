@@ -139,7 +139,7 @@ function QuickBag({ client, pc }: { client: GameClient; pc: boolean }) {
         <p className="quick-hint">
           {pc
             ? 'Drag to the hotbar or the island. Right-click to use.'
-            : 'Drag to the hotbar, or onto the island to drop.'}
+            : 'Hold and drag to the hotbar, or onto the island to drop.'}
         </p>
       )}
     </>

@@ -152,8 +152,9 @@ function SurvivorTab({ client, pc }: { client: GameClient; pc: boolean }) {
         />
       ) : (
         <p className="muted small-text">
-          Tap an item to see it and use it. Drag items between slots, or onto the island to drop
-          them.{pc ? ' Right-click eats, holds or sends it to the hotbar.' : ''}
+          Tap an item to see it and use it. {pc ? 'Drag' : 'Hold and drag'} items between slots, or
+          onto the island to drop them.
+          {pc ? ' Right-click eats, holds or sends it to the hotbar.' : ''}
         </p>
       )}
     </div>

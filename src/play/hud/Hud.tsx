@@ -630,6 +630,8 @@ function Joystick({ input }: { input: Input }) {
   const zone = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
   const pointer = useRef<number | null>(null);
+  /** Where and when the thumb landed, and how far it went (a short tap walks there). */
+  const press = useRef({ x: 0, y: 0, t: 0, far: 0 });
   const R = 46;
   useEffect(
     () => () => {
@@ -647,6 +649,7 @@ function Joystick({ input }: { input: Input }) {
       dx = (dx / d) * R;
       dy = (dy / d) * R;
     }
+    press.current.far = Math.max(press.current.far, d);
     const mag = Math.min(1, d / R);
     const k = mag < 0.15 ? 0 : mag;
     input.joy.x = d > 0 ? (dx / Math.max(d, 1e-6)) * k : 0;
@@ -669,13 +672,19 @@ function Joystick({ input }: { input: Input }) {
         pointer.current = e.pointerId;
         zone.current?.setPointerCapture(e.pointerId);
         const base = toLocal(e.clientX, e.clientY);
+        press.current = { ...base, t: performance.now(), far: 0 };
         setStick({ ...base, dx: 0, dy: 0 });
       }}
       onPointerMove={(e) => {
         if (e.pointerId !== pointer.current || !stick) return;
         move(e, stick);
       }}
-      onPointerUp={(e) => e.pointerId === pointer.current && end()}
+      onPointerUp={(e) => {
+        if (e.pointerId !== pointer.current) return;
+        end();
+        const p = press.current;
+        if (p.far < 12 && performance.now() - p.t < 500) input.tap?.(p.x, p.y);
+      }}
       onPointerCancel={(e) => e.pointerId === pointer.current && end()}
     >
       {stick ? (

@@ -133,6 +133,31 @@ export class NodeView {
     }
   }
 
+  /** The node a ray hits first (a tap on a tree or rock), and how far along the ray. */
+  pick(ray: THREE.Raycaster): { id: number; distance: number } | null {
+    let best: { id: number; distance: number } | null = null;
+    this.meshes.forEach((mesh, type) => {
+      if (!mesh.count) return;
+      // Instances move as the fill changes: the cached bounds go stale.
+      mesh.boundingSphere = null;
+      for (const hit of ray.intersectObject(mesh, false)) {
+        if (best && hit.distance >= best.distance) break;
+        if (hit.instanceId === undefined) continue;
+        let id = -1;
+        for (const [nid, [t, i]] of this.slots)
+          if (t === type && i === hit.instanceId) {
+            id = nid;
+            break;
+          }
+        // See-through trees (between the camera and you) don't catch taps.
+        if (id < 0 || this.faded.has(id)) continue;
+        best = { id, distance: hit.distance };
+        break;
+      }
+    });
+    return best;
+  }
+
   private nodeY(id: number): number {
     let y = this.y[id] as number;
     if (Number.isNaN(y)) {

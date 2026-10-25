@@ -187,12 +187,19 @@ export function Game(props: {
     });
   }, [settings, touch, map]);
 
-  // Build mode on a touch screen (the survivor stands still, there's no stick): tap the
-  // island to put the piece there (or pick what to take down), drag the piece to move it,
-  // drag anywhere else to look around. The mouse aims every frame (the frame loop).
+  // A touch screen: a tap on the island walks there, or to what was tapped and uses it (the
+  // stick's area passes its taps on too). In build mode (the survivor stands still, there's
+  // no stick): tap the island to put the piece there (or pick what to take down), drag the
+  // piece to move it, drag anywhere else to look around. The mouse aims every frame.
   useEffect(() => {
     const el = canvas.current;
     if (!el || !ready) return;
+    const walkTo = (x: number, y: number) => {
+      const pick = viewRef.current?.pickAt(x, y);
+      if (pick) client.tapAt(pick);
+    };
+    input.tap = walkTo;
+    let press: { id: number; x: number; y: number; t: number } | null = null;
     let finger: {
       id: number;
       x0: number;
@@ -214,7 +221,13 @@ export function Game(props: {
       if (at) client.setBuildCursor(at);
     };
     const down = (e: PointerEvent) => {
-      if (e.pointerType === 'mouse' || !client.build || finger) return;
+      if (e.pointerType === 'mouse') return;
+      if (!client.build) {
+        const p = toLocal(e.clientX, e.clientY);
+        press = { id: e.pointerId, x: p.x, y: p.y, t: performance.now() };
+        return;
+      }
+      if (finger) return;
       const view = viewRef.current;
       if (!view) return;
       const p = toLocal(e.clientX, e.clientY);
@@ -250,6 +263,16 @@ export function Game(props: {
       finger.y = p.y;
     };
     const up = (e: PointerEvent) => {
+      if (press && e.pointerId === press.id) {
+        const p = toLocal(e.clientX, e.clientY);
+        const tap =
+          e.type === 'pointerup' &&
+          Math.hypot(p.x - press.x, p.y - press.y) < 12 &&
+          performance.now() - press.t < 500;
+        press = null;
+        if (tap && !client.build) walkTo(p.x, p.y);
+        return;
+      }
       if (!finger || e.pointerId !== finger.id) return;
       if (!finger.moved && e.type === 'pointerup') tap(finger.x0, finger.y0);
       finger = null;
@@ -268,8 +291,9 @@ export function Game(props: {
       el.removeEventListener('pointerleave', leave);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
+      input.tap = null;
     };
-  }, [client, ready]);
+  }, [client, ready, input]);
 
   // Map picture and explored fog for this island.
   useEffect(() => {

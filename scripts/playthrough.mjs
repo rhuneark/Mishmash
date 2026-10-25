@@ -849,7 +849,26 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   // down.
   {
     const finger = await fingerOn(page);
-    await openGround(page);
+    // Away from the crash site's notes and luggage tags (a tap near one reads it).
+    const clear = await game(page, () => {
+      const c = window.__game.client;
+      const view = window.__view;
+      for (let r = 30; r <= 160; r += 10)
+        for (let a = 0; a < 16; a++) {
+          const x = c.x + Math.sin((a / 16) * 6.283) * r;
+          const z = c.z + Math.cos((a / 16) * 6.283) * r;
+          if (view.y(x, z) < 0.6) continue;
+          const spots = c.island.pois.some((p) =>
+            p.spots.some((s) => Math.hypot(p.x + s.dx - x, p.z + s.dz - z) < 18),
+          );
+          const built = [...c.buildings.values()].some((b) => Math.hypot(b.x - x, b.z - z) < 12);
+          if (!spots && !built) return [x, z];
+        }
+      return null;
+    });
+    check(!!clear, `${tag} tap: no clearing away from the crash site`);
+    if (clear) await teleport(page, clear[0], clear[1]);
+    await page.waitForTimeout(1500);
     const from = await game(page, () => [window.__game.client.x, window.__game.client.z]);
     // A spot a few metres away that shows on the island (not under a button or a card).
     let spot = null;
@@ -928,14 +947,14 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
       }
       check(!!at, `${tag} tap: the tree can't be tapped from any side`);
       if (at) {
-        const wood = await game(page, () => window.__game.client.count('wood'));
         await finger.tap(at[0], at[1]);
+        // Chopped: the island counts the damage (the wood comes when it falls).
         await until(
           page,
-          (w) => window.__game.client.count('wood') > w,
+          (id) => window.__game.client.link.sim.nodes.has(id),
           `${tag} tap: a tap on a tree didn't chop it`,
           30000,
-          wood,
+          tree[0],
         );
         await shot('6d-tap-tree');
         // Stop chopping: the next steps teleport.

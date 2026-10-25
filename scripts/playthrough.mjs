@@ -931,6 +931,10 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
         15000,
         from,
       );
+      // Stop there: the next step teleports.
+      await game(page, () => {
+        window.__game.client.goal = null;
+      });
     }
     const tree = await game(page, () => {
       const c = window.__game.client;

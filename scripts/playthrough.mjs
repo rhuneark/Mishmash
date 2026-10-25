@@ -466,6 +466,16 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     ),
     `${tag} menu: the bag slot to drag isn't under the finger`,
   );
+  // (Who closes the menu, if something does: for the report.)
+  await game(page, () => {
+    const c = window.__game.client;
+    window.__closed = [];
+    const open = c.openPanel.bind(c);
+    c.openPanel = (p) => {
+      if (!p) window.__closed.push(new Error().stack.split('\n').slice(2, 5).join(' | '));
+      open(p);
+    };
+  });
   await finger.holdDrag(
     fromBox.x + fromBox.width / 2,
     fromBox.y + fromBox.height / 2,
@@ -477,8 +487,15 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     `${tag} menu: a press and hold didn't drag ${lift[1]} to the hotbar`,
   );
   await finger.done();
-  await menu.getByRole('button', { name: 'Close' }).click();
-  await menu.waitFor({ state: 'detached' });
+  if (await menu.count()) {
+    await menu.getByRole('button', { name: 'Close' }).click();
+    await menu.waitFor({ state: 'detached' });
+  } else {
+    check(
+      false,
+      `${tag} menu: closed during the drag (${await game(page, () => window.__closed)})`,
+    );
+  }
   check((await page.locator('.level-badge').count()) === 1, `${tag} hud: no level badge`);
 
   // Nothing roams while we build (build mode stands you still, and a bite takes you out of it).
@@ -962,7 +979,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
       }
       check(!!at, `${tag} tap: the tree can't be tapped from any side`);
       if (at) {
-        // What the survivor is told meanwhile (for the report if it fails).
+        // What the survivor is told and does meanwhile (for the report if it fails).
         await game(page, () => {
           const c = window.__game.client;
           window.__said = [];
@@ -971,6 +988,20 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
             window.__said.push(text);
             toast(text);
           };
+          const tapAt = c.tapAt.bind(c);
+          c.tapAt = (p) => {
+            window.__said.push(`tap ${p.kind} ${p.id ?? ''}`);
+            tapAt(p);
+          };
+          let last = '';
+          window.__trace = setInterval(() => {
+            const g = c.goal;
+            const now = g
+              ? `goal ${g.focus?.kind ?? 'ground'} there=${!!g.there} d=${Math.hypot(g.x - c.x, g.z - c.z).toFixed(2)} stall=${g.stall.toFixed(1)}`
+              : `no goal, target ${c.target?.verb ?? '-'} ${c.target?.id ?? ''}`;
+            if (now !== last) window.__said.push(now);
+            last = now;
+          }, 100);
         });
         await finger.tap(at[0], at[1]);
         // Chopped: the island counts the damage (the wood comes when it falls).
@@ -981,6 +1012,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
           30000,
           tree[0],
         );
+        await game(page, () => clearInterval(window.__trace));
         if (!chopped)
           console.log(
             `${tag} tap on a tree:`,

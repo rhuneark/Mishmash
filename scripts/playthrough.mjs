@@ -449,8 +449,23 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     const from = inv.findIndex((s, i) => s && i >= 6);
     return [from, inv[from]?.id];
   });
+  // Back to the top of the list, so both slots are where the finger goes.
+  await game(page, () => {
+    const body = document.querySelector('.char-body');
+    if (body) body.scrollTop = 0;
+  });
+  await page.waitForTimeout(300);
   const fromBox = await menu.locator(`[data-slot="inv:${lift[0]}"]`).boundingBox();
   const toBox = await menu.locator('[data-slot="inv:5"]').boundingBox();
+  check(
+    await game(
+      page,
+      ([x, y, key]) =>
+        document.elementFromPoint(x, y)?.closest('[data-slot]')?.dataset.slot === key,
+      [fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2, `inv:${lift[0]}`],
+    ),
+    `${tag} menu: the bag slot to drag isn't under the finger`,
+  );
   await finger.holdDrag(
     fromBox.x + fromBox.width / 2,
     fromBox.y + fromBox.height / 2,
@@ -947,6 +962,16 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
       }
       check(!!at, `${tag} tap: the tree can't be tapped from any side`);
       if (at) {
+        // What the survivor is told meanwhile (for the report if it fails).
+        await game(page, () => {
+          const c = window.__game.client;
+          window.__said = [];
+          const toast = c.toast.bind(c);
+          c.toast = (text) => {
+            window.__said.push(text);
+            toast(text);
+          };
+        });
         await finger.tap(at[0], at[1]);
         // Chopped: the island counts the damage (the wood comes when it falls).
         const chopped = await until(
@@ -966,7 +991,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
                 target: c.target?.verb,
                 held: c.heldItem()?.id,
                 axes: c.count('axe_stone'),
-                toasts: c.toasts.map((t) => t.text),
+                said: window.__said,
               };
             }),
           );

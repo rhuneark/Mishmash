@@ -207,6 +207,8 @@ interface Goal {
   /** Closest it has got, and how long since it got closer (gives up when stuck). */
   best: number;
   stall: number;
+  /** In reach of what was tapped (it stays put while it still is). */
+  there?: boolean;
 }
 
 export type Panel =
@@ -1178,31 +1180,31 @@ export class GameClient {
     this.touch();
   }
 
-  /** How close the survivor must be to use what it walks to. */
+  /** How close the survivor can use what it walks to (it aims a little closer). */
   private goalReach(g: Goal): number {
     const f = g.focus;
     if (!f) return 0.45;
     switch (f.kind) {
       case 'node': {
         const def = NODES[(this.island as Island).nodeType[Number(f.id)] as number];
-        return NODE_REACH + (def?.radius ?? 0.5) - 0.3;
+        return NODE_REACH + (def?.radius ?? 0.5);
       }
       case 'mob': {
         const m = this.mobs.get(Number(f.id));
         const held = this.heldItem();
-        if (held?.ranged && this.ammoLeft() > 0) return held.ranged.range * 0.85;
-        return (held?.weapon?.reach ?? 1.8) + (m ? (MONSTER_RADIUS[m.kind] ?? 0.5) : 0.5) + 0.2;
+        if (held?.ranged && this.ammoLeft() > 0) return held.ranged.range;
+        return (held?.weapon?.reach ?? 1.8) + (m ? (MONSTER_RADIUS[m.kind] ?? 0.5) : 0.5) + 0.5;
       }
       case 'build':
-        return USE_REACH - 0.6;
+        return USE_REACH;
       case 'spot':
-        return SPOT_REACH - 0.6;
+        return SPOT_REACH;
       case 'drop':
-        return DROP_REACH - 0.6;
+        return DROP_REACH;
       case 'dig':
-        return DIG_REACH - 0.5;
+        return DIG_REACH;
       case 'pool':
-        return 1.6;
+        return 2;
     }
   }
 
@@ -1231,16 +1233,25 @@ export class GameClient {
     const dx = g.x - this.x;
     const dz = g.z - this.z;
     const d = Math.hypot(dx, dz);
-    if (d <= this.goalReach(g)) {
+    const reach = this.goalReach(g);
+    const arrive = () => {
       if (!f) this.goal = null;
-      else this.only = { kind: f.kind, id: f.id, x: g.x, z: g.z };
+      else {
+        g.there = true;
+        this.only = { kind: f.kind, id: f.id, x: g.x, z: g.z };
+      }
       return null;
-    }
-    // Stuck against something: give up.
+    };
+    // Walk a little inside reach (things move, the ground slopes); once there, stay while
+    // it's still in reach.
+    if (d <= (f ? reach * 0.85 : reach) || (g.there && d <= reach)) return arrive();
+    g.there = false;
+    // Stuck against something: use it from here if it's in reach, else give up.
     if (d < g.best - 0.15) {
       g.best = d;
       g.stall = 0;
     } else if ((g.stall += dt) > 1.2) {
+      if (f && d <= reach) return arrive();
       if (f) this.toast("Can't get there.");
       this.goal = null;
       return null;

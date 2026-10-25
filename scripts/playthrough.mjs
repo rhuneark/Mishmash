@@ -851,16 +851,36 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     const finger = await fingerOn(page);
     await openGround(page);
     const from = await game(page, () => [window.__game.client.x, window.__game.client.z]);
-    const spot = await onIsland(page, from[0] + 3.5, 0, from[1] - 3.5);
-    check(spot[2], `${tag} tap: the spot to walk to is under the HUD`);
-    await finger.tap(spot[0], spot[1]);
-    await until(
-      page,
-      ([x, z]) => Math.hypot(window.__game.client.x - x, window.__game.client.z - z) > 2,
-      `${tag} tap: a tap on the ground didn't walk there`,
-      15000,
-      from,
-    );
+    // A spot a few metres away that shows on the island (not under a button or a card).
+    let spot = null;
+    for (const [dx, dz] of [
+      [3.5, -3.5],
+      [-3.5, -3.5],
+      [4.5, 0],
+      [-4.5, 0],
+      [0, -4.5],
+      [3, 3],
+      [-3, 3],
+    ]) {
+      const at = await onIsland(page, from[0] + dx, 0, from[1] + dz);
+      // Plain ground: not a note, a bag or a tree that a tap there would walk to and use.
+      const what = at[2] && (await game(page, ([x, y]) => window.__view.pickAt(x, y)?.kind, at));
+      if (what === 'ground') {
+        spot = at;
+        break;
+      }
+    }
+    check(!!spot, `${tag} tap: no plain ground to walk to on screen`);
+    if (spot) {
+      await finger.tap(spot[0], spot[1]);
+      await until(
+        page,
+        ([x, z]) => Math.hypot(window.__game.client.x - x, window.__game.client.z - z) > 2,
+        `${tag} tap: a tap on the ground didn't walk there`,
+        15000,
+        from,
+      );
+    }
     const tree = await game(page, () => {
       const c = window.__game.client;
       const isl = c.island;
@@ -878,22 +898,51 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     });
     check(!!tree, `${tag} tap: no tree near`);
     if (tree) {
-      // Stand south-west of it (towards the camera) with an axe in the bag.
+      // Stand a few metres from it with an axe in the bag, where the tree shows on the island.
       await give(page, [['axe_stone', 1]]);
-      await teleport(page, tree[1] - 4.2, tree[2] + 4.2);
-      await page.waitForTimeout(1500);
-      const at = await onIsland(page, tree[1], 1.2, tree[2]);
-      check(at[2], `${tag} tap: the tree is under the HUD`);
-      const wood = await game(page, () => window.__game.client.count('wood'));
-      await finger.tap(at[0], at[1]);
-      await until(
-        page,
-        (w) => window.__game.client.count('wood') > w,
-        `${tag} tap: a tap on a tree didn't chop it`,
-        30000,
-        wood,
-      );
-      await shot('6d-tap-tree');
+      let at = null;
+      for (const [dx, dz] of [
+        [-4.2, 4.2],
+        [0, 5.5],
+        [-5.5, 0],
+        [4.2, 4.2],
+        [-4.2, -4.2],
+      ]) {
+        await teleport(page, tree[1] + dx, tree[2] + dz);
+        await page.waitForTimeout(1500);
+        const here = await onIsland(page, tree[1], 1.2, tree[2]);
+        const what =
+          here[2] &&
+          (await game(
+            page,
+            ([x, y, id]) => {
+              const p = window.__view.pickAt(x, y);
+              return p?.kind === 'node' && p.id === id;
+            },
+            [here[0], here[1], tree[0]],
+          ));
+        if (what) {
+          at = here;
+          break;
+        }
+      }
+      check(!!at, `${tag} tap: the tree can't be tapped from any side`);
+      if (at) {
+        const wood = await game(page, () => window.__game.client.count('wood'));
+        await finger.tap(at[0], at[1]);
+        await until(
+          page,
+          (w) => window.__game.client.count('wood') > w,
+          `${tag} tap: a tap on a tree didn't chop it`,
+          30000,
+          wood,
+        );
+        await shot('6d-tap-tree');
+        // Stop chopping: the next steps teleport.
+        await game(page, () => {
+          window.__game.client.goal = null;
+        });
+      }
     }
     await finger.done();
   }

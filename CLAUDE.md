@@ -761,9 +761,10 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   mode as its own mode for phones: the survivor stands still, tap / drag the piece / drag to
   look around; the roof switch Auto / On / Off) were private builds; **v1.20.0 was submitted
   with the Publish workflow on 2026-10-24 at the user's request** ("publish public"), so all
-  of v1.16–v1.20 goes on Explore once RUN's review passes. v1.21.0 (2026-10-25, phone
-  controls: menus and boxes scroll, hold to drag, tap to move, tap to use) is a private build
-  until the user asks to publish it.
+  of v1.16–v1.20 goes on Explore once RUN's review passes. **v1.21.0** (2026-10-25, phone
+  controls: menus and boxes scroll, hold to drag, tap to move, tap to use) **was submitted with
+  the Publish workflow the same day at the user's request** ("publish public"), so Explore gets
+  v1.16–v1.21 once RUN's review passes.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

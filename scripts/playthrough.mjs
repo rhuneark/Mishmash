@@ -949,13 +949,27 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
       if (at) {
         await finger.tap(at[0], at[1]);
         // Chopped: the island counts the damage (the wood comes when it falls).
-        await until(
+        const chopped = await until(
           page,
           (id) => window.__game.client.link.sim.nodes.has(id),
           `${tag} tap: a tap on a tree didn't chop it`,
           30000,
           tree[0],
         );
+        if (!chopped)
+          console.log(
+            `${tag} tap on a tree:`,
+            await game(page, () => {
+              const c = window.__game.client;
+              return {
+                goal: c.goal,
+                target: c.target?.verb,
+                held: c.heldItem()?.id,
+                axes: c.count('axe_stone'),
+                toasts: c.toasts.map((t) => t.text),
+              };
+            }),
+          );
         await shot('6d-tap-tree');
         // Stop chopping: the next steps teleport.
         await game(page, () => {

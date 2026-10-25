@@ -224,7 +224,7 @@ export function Game(props: {
       if (e.pointerType === 'mouse') return;
       if (!client.build) {
         const p = toLocal(e.clientX, e.clientY);
-        press = { id: e.pointerId, x: p.x, y: p.y, t: performance.now() };
+        press = { id: e.pointerId, x: p.x, y: p.y, t: e.timeStamp };
         return;
       }
       if (finger) return;
@@ -268,7 +268,7 @@ export function Game(props: {
         const tap =
           e.type === 'pointerup' &&
           Math.hypot(p.x - press.x, p.y - press.y) < 12 &&
-          performance.now() - press.t < 500;
+          e.timeStamp - press.t < 500;
         press = null;
         if (tap && !client.build) walkTo(p.x, p.y);
         return;

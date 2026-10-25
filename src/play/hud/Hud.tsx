@@ -672,7 +672,8 @@ function Joystick({ input }: { input: Input }) {
         pointer.current = e.pointerId;
         zone.current?.setPointerCapture(e.pointerId);
         const base = toLocal(e.clientX, e.clientY);
-        press.current = { ...base, t: performance.now(), far: 0 };
+        // Event times, not the clock: a slow frame mustn't turn a tap into a hold.
+        press.current = { ...base, t: e.timeStamp, far: 0 };
         setStick({ ...base, dx: 0, dy: 0 });
       }}
       onPointerMove={(e) => {
@@ -683,7 +684,7 @@ function Joystick({ input }: { input: Input }) {
         if (e.pointerId !== pointer.current) return;
         end();
         const p = press.current;
-        if (p.far < 12 && performance.now() - p.t < 500) input.tap?.(p.x, p.y);
+        if (p.far < 12 && e.timeStamp - p.t < 500) input.tap?.(p.x, p.y);
       }}
       onPointerCancel={(e) => e.pointerId === pointer.current && end()}
     >

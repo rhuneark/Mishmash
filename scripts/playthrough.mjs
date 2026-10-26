@@ -879,6 +879,10 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     // one straight from the build menu onto the island, look around with the right button.
     await page.locator('.build-bar').getByRole('tab', { name: 'Walls' }).click();
     await page.locator('.build-bar').getByRole('button', { name: 'Wooden post' }).click();
+    // Let the panel settle on the piece first: the spots must be clear of it.
+    await page.locator('.build-panel').getByText('Wooden post').first().waitFor();
+    await page.waitForTimeout(800);
+    const panelBox = await page.locator('.build-panel').boundingBox();
     const free = await game(page, () => {
       const c = window.__game.client;
       const sim = c.link.sim;
@@ -897,7 +901,19 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     const visible = [];
     for (const [x, z] of free) {
       const at = await onScreen([x, 0.05, z]);
-      if (at[2] && at[1] > 120 && at[1] < height - 160)
+      const underPanel =
+        at[0] > panelBox.x - 30 &&
+        at[0] < panelBox.x + panelBox.width + 30 &&
+        at[1] > panelBox.y - 30 &&
+        at[1] < panelBox.y + panelBox.height + 30;
+      if (
+        at[2] &&
+        !underPanel &&
+        at[0] > 30 &&
+        at[0] < width - 30 &&
+        at[1] > 120 &&
+        at[1] < height - 160
+      )
         visible.push({ x, z, sx: at[0], sy: at[1] });
     }
     const apart = (a, b) => Math.hypot(a.x - b.x, a.z - b.z) >= 4;
@@ -1533,7 +1549,11 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     `${tag} auto tool: didn't switch back to the torch`,
   );
 
-  // A Verdance supply pod comes down nearby; its loot is picked up like a bag.
+  // A Verdance supply pod comes down nearby; its loot is picked up like a bag. (The
+  // sponsored pod from the in-flight channel may still lie by the crash site.)
+  const podsBefore = await game(page, () =>
+    [...window.__game.client.drops.values()].filter((d) => d.kind === 'pod').map((d) => d.id),
+  );
   await game(page, () => {
     const c = window.__game.client;
     const sim = c.link.sim;
@@ -1542,26 +1562,40 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   });
   await until(
     page,
-    () => [...window.__game.client.drops.values()].some((d) => d.kind === 'pod'),
+    (before) =>
+      [...window.__game.client.drops.values()].some(
+        (d) => d.kind === 'pod' && !before.includes(d.id),
+      ),
     `${tag} events: no supply pod landed`,
     20000,
+    podsBefore,
   );
   await shot('9e-pod');
-  const pod = await game(page, () => {
-    const d = [...window.__game.client.drops.values()].find((d) => d.kind === 'pod');
-    return [d.x, d.z];
-  });
+  const pod = await game(
+    page,
+    (before) => {
+      const d = [...window.__game.client.drops.values()].find(
+        (d) => d.kind === 'pod' && !before.includes(d.id),
+      );
+      return [d.x, d.z, d.id];
+    },
+    podsBefore,
+  );
   await teleport(page, pod[0] + 1.2, pod[1]);
   await until(
     page,
-    () => window.__game.client.target?.kind === 'drop',
+    (id) => window.__game.client.target?.kind === 'drop' && window.__game.client.target.id === id,
     `${tag} events: the pod isn't in reach`,
+    15000,
+    pod[2],
   );
   await pressUse(page);
   await until(
     page,
-    () => ![...window.__game.client.drops.values()].some((d) => d.kind === 'pod'),
+    (id) => !window.__game.client.drops.has(id),
     `${tag} events: couldn't empty the pod`,
+    15000,
+    pod[2],
   );
 
   // A bow shoots the Husk it's aimed at, and counts its arrows.

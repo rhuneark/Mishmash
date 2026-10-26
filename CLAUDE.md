@@ -815,7 +815,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   of v1.16–v1.20 goes on Explore once RUN's review passes. **v1.21.0** (2026-10-25, phone
   controls: menus and boxes scroll, hold to drag, tap to move, tap to use) **was submitted with
   the Publish workflow the same day at the user's request** ("publish public"), so Explore gets
-  v1.16–v1.21 once RUN's review passes.
+  v1.16–v1.21 once RUN's review passes. v1.22.0 (2026-10-26: a multiplayer code for every
+  island, PC drag and drop in build mode, the in-flight channel's rewarded ads) is a private
+  build.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

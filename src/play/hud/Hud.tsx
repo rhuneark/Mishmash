@@ -19,12 +19,13 @@ import { keyHint, type Action, type Bindings } from '../keys';
 import type { Fog } from './map';
 import { FullMap, MiniMap } from './MapView';
 import { PauseMenu } from './Menu';
-import { JournalSheet, KeypadSheet, NoteSheet, StorageSheet } from './Panels';
+import { JournalSheet, KeypadSheet, NoteSheet, ScreenSheet, StorageSheet } from './Panels';
 import { CharacterMenu } from './Character';
 import { QuickWindow } from './QuickPanel';
 import { ChatBox, ChatLog } from './ChatBox';
 import { prefs, usePrefs } from '../prefs';
 import { BUILD_CATS, BUILDINGS } from '../../game/content/buildings';
+import { REWARDS } from '../../game/ads';
 import type { Quest } from '../../game/objectives';
 import { cameraRig } from '../settings';
 import { DragLayer, ItemIcon, SlotButton, quickUse } from './Slots';
@@ -278,7 +279,7 @@ export function Hud(props: HudProps) {
         </div>
       </div>
       {build ? (
-        <BuildBar client={client} />
+        <BuildBar client={client} input={input} />
       ) : (
         <Hotbar client={client} hints={keys ? input.bindings : null} />
       )}
@@ -288,6 +289,7 @@ export function Hud(props: HudProps) {
       )}
       {panel === 'storage' && <StorageSheet client={client} onClose={close} />}
       {panel === 'keypad' && <KeypadSheet client={client} onClose={close} />}
+      {panel === 'screen' && <ScreenSheet client={client} onClose={close} />}
       {panel === 'journal' && <JournalSheet client={client} onClose={close} />}
       {panel === 'note' && (
         <NoteSheet client={client} onClose={() => client.openPanel(client.noteBack ?? null)} />
@@ -534,11 +536,11 @@ function BuildPanel({
       <div className="build-tip">
         {removing
           ? pc
-            ? 'Click a piece to take it down; the wheel picks the next one. WASD looks around.'
+            ? 'Click a piece to take it down; the wheel picks the next one. Drag or WASD looks around.'
             : 'Tap a piece to pick it. Drag to look around.'
           : pc
-            ? 'Point anywhere: the wheel turns it, click places it. WASD looks around.'
-            : 'Tap or drag it into place. Drag the island to look around.'}
+            ? 'Drag it into place and let go, or click. Wheel / right click turns it; right-drag looks around.'
+            : 'Tap or drag it into place, or drag one up from the menu. Drag the island to look around.'}
         {removing && client.roofView !== 'on' && ' Roofs: 🏠 On.'}
       </div>
     </div>
@@ -553,7 +555,60 @@ const ROOF_HELP: Record<RoofView, string> = {
 };
 
 /** Build mode's menu: a tab per kind of piece, each piece showing if you have what it takes. */
-function BuildBar({ client }: { client: GameClient }) {
+/**
+ * A piece in the build menu dragged onto the island: it follows the pointer and goes down
+ * where it's let go (over anything but the island: just picked). On a touch screen a
+ * sideways swipe still scrolls the row.
+ */
+function dragPiece(e: ReactPointerEvent, client: GameClient, input: Input, kind: string): void {
+  if (e.button !== 0) return;
+  const pid = e.pointerId;
+  const start = toLocal(e.clientX, e.clientY);
+  const mouse = e.pointerType === 'mouse';
+  let dragging = false;
+  const onIsland = (ev: PointerEvent) =>
+    !!(document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.classList.contains(
+      'game-canvas',
+    );
+  const aim = (ev: PointerEvent) => {
+    if (!onIsland(ev)) return false;
+    const p = toLocal(ev.clientX, ev.clientY);
+    const at = input.ground?.(p.x, p.y);
+    if (at) client.setBuildCursor(at);
+    return !!at;
+  };
+  const move = (ev: PointerEvent) => {
+    if (ev.pointerId !== pid) return;
+    if (!dragging) {
+      const p = toLocal(ev.clientX, ev.clientY);
+      const dx = p.x - start.x;
+      const dy = p.y - start.y;
+      if (Math.hypot(dx, dy) < 8) return;
+      if (!mouse && Math.abs(dx) > Math.abs(dy)) {
+        quit();
+        return;
+      }
+      dragging = true;
+      if (client.build?.piece !== kind) client.buildPick(kind);
+    }
+    aim(ev);
+  };
+  const quit = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', end);
+    window.removeEventListener('pointercancel', end);
+  };
+  const end = (ev: PointerEvent) => {
+    if (ev.pointerId !== pid) return;
+    quit();
+    if (dragging && ev.type === 'pointerup' && aim(ev)) client.placeBuild();
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
+}
+
+function BuildBar({ client, input }: { client: GameClient; input: Input }) {
   const b = client.build;
   if (!b) return null;
   const removing = b.piece === 'remove';
@@ -590,6 +645,7 @@ function BuildBar({ client }: { client: GameClient }) {
             key={p.kind}
             className={`slot${b.piece === p.kind ? ' held' : ''}${p.can ? '' : ' poor'}`}
             onClick={() => client.buildPick(p.kind)}
+            onPointerDown={(e) => dragPiece(e, client, input, p.kind)}
             aria-label={BUILDINGS[p.kind]?.name ?? p.kind}
           >
             <ItemIcon id={p.kind} className="slot-icon" />
@@ -715,6 +771,20 @@ function DeathScreen({ client }: { client: GameClient }) {
         <button className="btn primary" onClick={() => client.respawn()}>
           {me?.spawnSet ? 'Wake up at your bedroll' : 'Wake up at the crash site'}
         </button>
+        {client.rewardReady('wind') ? (
+          <button
+            className="btn ad-btn"
+            disabled={client.adBusy !== null}
+            onClick={() => void client.watchAd('wind')}
+          >
+            <span>
+              {client.adBusy === 'wind' ? 'Playing…' : `${REWARDS.wind.icon} ${REWARDS.wind.name}`}
+            </span>
+            <span className="ad-sub">Watch an ad: get up right here, with your bag</span>
+          </button>
+        ) : (
+          <p className="muted small-text">Second wind is used for today.</p>
+        )}
       </div>
     </div>
   );

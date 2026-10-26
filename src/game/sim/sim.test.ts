@@ -377,6 +377,14 @@ describe('island sim', () => {
     expect(parseIslandSave({ nonsense: true })).toBeNull();
   });
 
+  it("keeps the island's multiplayer code in its saves", () => {
+    const coded = new IslandSim(island, { ...newSave(1), code: 'ABC234' }, () => {}, rng(1));
+    const back = parseIslandSave(JSON.parse(JSON.stringify(coded.serialize())));
+    expect(back?.code).toBe('ABC234');
+    expect(parseIslandSave({ ...newSave(1), code: 'nope' })?.code).toBeUndefined();
+    expect(parseIslandSave(newSave(1))?.code).toBeUndefined();
+  });
+
   it('discovers landmarks when a player walks near them', () => {
     const h = harness();
     h.sim.join('a', 'Ann');
@@ -1516,5 +1524,108 @@ describe('levels and skills on the island', () => {
     m.z = p.z;
     h.sim.handle('a', { type: 'use', kind: 'mob', id: m.id });
     expect(MONSTERS.husk.hp - m.hp).toBeCloseTo(5 * 1.3, 3);
+  });
+});
+
+describe('the in-flight channel and Second wind (ads)', () => {
+  it('drops a sponsored pod near you from a seatback screen, once a day', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a');
+    const screen = h.sim.spots.get('crash_screen');
+    if (!p || !screen) throw new Error();
+    // Away from a screen nothing happens.
+    p.x = screen.x + 40;
+    p.z = screen.z;
+    h.sim.handle('a', { type: 'reward', kind: 'drop' });
+    expect(h.sim.falling).toHaveLength(0);
+    p.x = screen.x;
+    p.z = screen.z + 1;
+    h.sim.handle('a', { type: 'reward', kind: 'drop' });
+    expect(h.sim.falling).toHaveLength(1);
+    expect(h.sim.falling[0]?.sponsor).toBe(true);
+    expect(p.ads.drop).toBe(Math.floor(h.sim.time / DAY));
+    h.sim.handle('a', { type: 'reward', kind: 'drop' });
+    expect(h.sim.falling).toHaveLength(1);
+    h.run(POD_FALL + 1.5);
+    expect([...h.sim.drops.values()].some((d) => d.label === 'Verdance AirDrop pod')).toBe(true);
+    // A new day, a new sponsor.
+    h.sim.time += DAY;
+    h.sim.handle('a', { type: 'reward', kind: 'drop' });
+    expect(h.sim.falling).toHaveLength(1);
+  });
+
+  it('finds the nearest place nobody has found yet with Island Explorer', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a');
+    const screen = h.sim.spots.get('crash_screen');
+    if (!p || !screen) throw new Error();
+    p.x = screen.x;
+    p.z = screen.z + 1;
+    const before = [...h.sim.flags].filter((f) => f.startsWith('seen:')).length;
+    h.sim.handle('a', { type: 'reward', kind: 'guide' });
+    const seen = [...h.sim.flags].filter((f) => f.startsWith('seen:'));
+    expect(seen.length).toBe(before + 1);
+    expect(seen.some((f) => f.startsWith('seen:marker'))).toBe(false);
+    expect(h.toasts('a').some((t) => t.includes('Island Explorer visits'))).toBe(true);
+    h.sim.handle('a', { type: 'reward', kind: 'guide' });
+    expect([...h.sim.flags].filter((f) => f.startsWith('seen:')).length).toBe(before + 1);
+  });
+
+  it('plays the channel on a seatback screen someone built', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a');
+    if (!p) throw new Error();
+    expect(BUILDINGS['seat_screen']?.screen).toBe(true);
+    p.x = 60;
+    p.z = 60;
+    h.sim.handle('a', { type: 'reward', kind: 'guide' });
+    expect(p.ads.guide).toBeUndefined();
+    h.sim.buildings.set(999, {
+      id: 999,
+      kind: 'seat_screen',
+      x: 61.5,
+      z: 60,
+      rot: 0,
+      hp: 60,
+      owner: 'a',
+      v: 0,
+      acc: 0,
+    });
+    h.sim.handle('a', { type: 'reward', kind: 'guide' });
+    expect(p.ads.guide).toBe(Math.floor(h.sim.time / DAY));
+  });
+
+  it('gets you up where you fell, with your bag, once a day', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a');
+    if (!p) throw new Error();
+    p.inv[3] = { id: 'wood', n: 9 };
+    const husk = spawnMob(h.sim, 'husk', p.x + 2, p.z, { roamer: true });
+    const at = { x: p.x, z: p.z };
+    // Alive: no second wind.
+    h.sim.handle('a', { type: 'reward', kind: 'wind' });
+    expect(p.ads.wind).toBeUndefined();
+    h.sim.hurtPlayer(p, 500, p.x, p.z, false);
+    expect(p.alive).toBe(false);
+    expect(count(p.inv, 'wood')).toBe(0);
+    h.sim.handle('a', { type: 'reward', kind: 'wind' });
+    expect(p.alive).toBe(true);
+    expect(p.hp).toBe(50);
+    expect({ x: p.x, z: p.z }).toEqual(at);
+    expect(count(p.inv, 'wood')).toBe(9);
+    expect([...h.sim.drops.values()].some((d) => d.label === "Ann's bag")).toBe(false);
+    expect(Math.hypot(husk.x - p.x, husk.z - p.z)).toBeGreaterThan(4);
+    expect(husk.heldUntil).toBeGreaterThan(h.sim.time);
+    // The same day it's spent: the next fall is a normal one.
+    h.sim.hurtPlayer(p, 500, p.x, p.z, false);
+    h.sim.handle('a', { type: 'reward', kind: 'wind' });
+    expect(p.alive).toBe(false);
+    // Kept with the survivor in the save.
+    const back = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())));
+    expect(back?.players['a']?.ads?.wind).toBe(Math.floor(h.sim.time / DAY));
   });
 });

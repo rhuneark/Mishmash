@@ -1,6 +1,6 @@
-// Co-op: the island authority runs in a RUN room (src/server/IslandRoom.ts).
-// The host uploads their island save; the room sends it back every minute so
-// the host keeps the progress.
+// Co-op: the island authority runs in a RUN room (src/server/IslandRoom.ts), found
+// by the island's multiplayer code. The host uploads their island save; the room
+// sends it back every minute so the host keeps the progress.
 
 import * as run from '../sdk/run';
 import { PartBuffer, splitParts, type C2S, type S2C } from '../game/sim/protocol';
@@ -12,6 +12,7 @@ export type RoomOpen =
 
 export class RoomLink implements Link {
   readonly mode: LinkMode;
+  /** The island's multiplayer code. */
   readonly code: string;
   readonly playerId: string;
   private readonly conn: run.RoomConn;
@@ -22,11 +23,12 @@ export class RoomLink implements Link {
   private constructor(
     conn: run.RoomConn,
     mode: LinkMode,
+    code: string,
     private readonly onSave: (save: IslandSave) => void,
   ) {
     this.conn = conn;
     this.mode = mode;
-    this.code = conn.code;
+    this.code = code;
     this.playerId = conn.playerId;
     conn.onMessage((raw) => {
       const msg = raw as S2C;
@@ -49,21 +51,24 @@ export class RoomLink implements Link {
     });
   }
 
-  /** Opens your island to friends: creates a room and loads your save into it. */
-  static async host(save: IslandSave, onSave: (save: IslandSave) => void): Promise<RoomOpen> {
-    const res = await run.createRoom('island');
+  /** Opens your island to friends: its room (by its code) gets your save. */
+  static async host(
+    save: IslandSave & { code: string },
+    onSave: (save: IslandSave) => void,
+  ): Promise<RoomOpen> {
+    const res = await run.islandRoom('island', save.code);
     if (!res.ok) return res;
-    const link = new RoomLink(res.room, 'host', onSave);
+    const link = new RoomLink(res.room, 'host', save.code, onSave);
     const parts = splitParts(JSON.stringify(save));
     parts.forEach((data, part) => res.room.send({ type: 'init', part, parts: parts.length, data }));
     return { ok: true, link };
   }
 
-  /** Joins a friend's island by its room code. */
+  /** Joins a friend's island by its multiplayer code (waits there until it's open). */
   static async join(code: string): Promise<RoomOpen> {
-    const res = await run.joinRoom(code);
+    const res = await run.islandRoom('island', code);
     if (!res.ok) return res;
-    return { ok: true, link: new RoomLink(res.room, 'guest', () => {}) };
+    return { ok: true, link: new RoomLink(res.room, 'guest', code, () => {}) };
   }
 
   send(msg: C2S): void {

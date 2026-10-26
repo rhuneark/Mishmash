@@ -797,6 +797,15 @@ export const PIECE_ICONS: Record<string, string> = {
     `<path d="M15 13 L33 13 L30 8.5 L18 8.5 Z" fill="#6d737a" ${O}/>` +
     `<path d="M12 37 L36 37 L38 43 L10 43 Z" fill="#6d737a" ${O}/>` +
     `<path d="M14 40 L34 40" stroke="#9a9ea4" stroke-width="1.4"/>`,
+  seat_screen:
+    `<path d="M21 34 L27 34 L27 41 L21 41 Z" fill="#6d737a" ${O}/>` +
+    `<path d="M14 41 L34 41 L36 44 L12 44 Z" fill="#3a3a3a" ${O}/>` +
+    `<rect x="5" y="7" width="38" height="28" rx="3" fill="#2b2f38" ${O}/>` +
+    `<rect x="9" y="11" width="30" height="20" rx="1.5" fill="#5ab4ff" ${T}/>` +
+    `<path d="M9 25 L17 19 L23 24 L29 18 L39 26 L39 31 L9 31 Z" fill="#3f8fd6"/>` +
+    `<path d="M15 15 L33 15" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>` +
+    `<path d="M21 19.5 L21 25.5 L26.5 22.5 Z" fill="#ffffff" ${T}/>` +
+    `<circle cx="39.5" cy="32.5" r="1" fill="#7dff8a"/>`,
   // Farm and kitchen
   garden_plot: tile(
     '#a0703f',

@@ -13,6 +13,10 @@ export class Input {
   useButton = false;
   /** A quick tap in the stick's area (local px): it walks there like a tap on the island. */
   tap: ((x: number, y: number) => void) | null = null;
+  /** The island point under a screen point (local px), for dragging build pieces. */
+  ground: ((x: number, y: number) => { x: number; z: number } | null) | null = null;
+  /** Mouse presses on the island the game handles itself (build mode's drag and drop). */
+  claim: ((e: PointerEvent) => boolean) | null = null;
   bindings: Bindings = defaultBindings();
   /** Called after the player rebinds keys (Game saves them). */
   onBindingsChanged: ((b: Bindings) => void) | null = null;
@@ -30,7 +34,7 @@ export class Input {
     this.useButton = false;
   };
   private readonly mouseDown = (e: PointerEvent) => {
-    if (e.pointerType !== 'mouse' || !this.onWorld(e.target)) return;
+    if (e.pointerType !== 'mouse' || !this.onWorld(e.target) || this.claim?.(e)) return;
     this.press(`Mouse${e.button}`, true);
   };
   private readonly mouseUp = (e: PointerEvent) => {

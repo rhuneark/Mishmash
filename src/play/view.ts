@@ -1358,7 +1358,10 @@ export class View {
             open ||
             (spot.kind === 'generator' && c.flags.has('bunker_power')) ||
             ((spot.kind === 'note' || spot.kind === 'tag') && c.notes.has(spot.id));
-          s.halo.visible = !done || spot.kind === 'beacon';
+          s.halo.visible =
+            spot.kind === 'screen'
+              ? c.rewardReady('drop') || c.rewardReady('guide')
+              : !done || spot.kind === 'beacon';
           s.halo.scale.setScalar(1 + Math.sin(this.t * 3) * 0.08);
         }
         if (s.light) {
@@ -1370,6 +1373,9 @@ export class View {
             );
           if (spot.kind === 'beacon')
             s.light.visible = c.rescue.phase === 'calling' ? Math.sin(this.t * 8) > 0 : true;
+          // The emergency battery is nearly flat: the screen flickers.
+          if (spot.kind === 'screen')
+            s.light.visible = Math.sin(this.t * 11) + Math.sin(this.t * 3.7) > -1.6;
         }
       }
     }

@@ -111,6 +111,33 @@ export function islandName(s: IslandSpec): string {
 }
 
 // ---------------------------------------------------------------------------
+// Multiplayer codes: every island gets its own (kept in the save), and friends join the
+// island with it whenever its owner has it open.
+
+/** Letters and digits that can't be mixed up (no I, L, O, 0 or 1). */
+export const JOIN_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export const JOIN_LEN = 6;
+
+export function newJoinCode(random: () => number): string {
+  let code = '';
+  for (let i = 0; i < JOIN_LEN; i++) code += JOIN_CHARS[Math.floor(random() * JOIN_CHARS.length)];
+  return code;
+}
+
+/** A typed or saved code as stored ("abc-2xy" → "ABC2XY"); null if it can't be one. */
+export function cleanJoinCode(text: string): string | null {
+  const code = text.toUpperCase().replace(/[\s-]/g, '');
+  if (code.length !== JOIN_LEN) return null;
+  for (const c of code) if (!JOIN_CHARS.includes(c)) return null;
+  return code;
+}
+
+/** How a code is shown: "ABC-2XY". */
+export function showJoinCode(code: string): string {
+  return `${code.slice(0, 3)}-${code.slice(3)}`;
+}
+
+// ---------------------------------------------------------------------------
 // Layout: the landmarks (and the peak and the marsh) of the classic island, turned
 // and mirrored. Quarter turns and mirrors map the 2 m height grid onto itself, so a
 // turned island stays exact.

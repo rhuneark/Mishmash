@@ -225,10 +225,10 @@ const until = async (page, fn, what, ms = 15000, arg) => {
  */
 async function newIsland(page, tag, code, preset, noSideScroll) {
   await page.locator('.new-island').waitFor();
-  await page.getByLabel('Island code').fill('NOT A CODE');
+  await page.getByLabel('Map code').fill('NOT A CODE');
   await page.getByRole('button', { name: 'Use', exact: true }).click();
-  await page.getByText("That isn't an island code.").waitFor();
-  await page.getByLabel('Island code').fill(code);
+  await page.getByText("That isn't a map code.").waitFor();
+  await page.getByLabel('Map code').fill(code);
   await page.getByRole('button', { name: 'Use', exact: true }).click();
   await until(
     page,
@@ -300,7 +300,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await teleport(page, -3, 256.6);
   await until(
     page,
-    () => window.__game.client.target?.kind === 'spot',
+    () => window.__game.client.target?.id === 'crash_note',
     `${tag} game: no note in reach`,
   );
   await pressUse(page);
@@ -873,6 +873,116 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
       `${tag} build: the survivor moved in build mode`,
     );
     await cdp.detach();
+
+    // PC: drag and drop with the mouse. Grab the piece and let go to build it there, drag
+    // one straight from the build menu onto the island, look around with the right button.
+    await page.locator('.build-bar').getByRole('tab', { name: 'Walls' }).click();
+    await page.locator('.build-bar').getByRole('button', { name: 'Wooden post' }).click();
+    const free = await game(page, () => {
+      const c = window.__game.client;
+      const sim = c.link.sim;
+      const out = [];
+      for (let dz = -10; dz <= 10; dz += 2)
+        for (let dx = -10; dx <= 10; dx += 2) {
+          const x = 2 * Math.round((c.x + c.buildLook.x + dx) / 2);
+          const z = 2 * Math.round((c.z + c.buildLook.z + dz) / 2);
+          const d = Math.hypot(x - c.x, z - c.z);
+          if (d < 3 || d > 18 || sim.placeProblem('post_wood', x, z, 0)) continue;
+          if ([...sim.buildings.values()].some((b) => Math.hypot(b.x - x, b.z - z) < 2.5)) continue;
+          out.push([x, z]);
+        }
+      return out;
+    });
+    const visible = [];
+    for (const [x, z] of free) {
+      const at = await onScreen([x, 0.05, z]);
+      if (at[2] && at[1] > 120 && at[1] < height - 160)
+        visible.push({ x, z, sx: at[0], sy: at[1] });
+    }
+    const apart = (a, b) => Math.hypot(a.x - b.x, a.z - b.z) >= 4;
+    const pa = visible[0];
+    const pb = visible.find((v) => pa && apart(v, pa));
+    const pc = visible.find((v) => pa && pb && apart(v, pa) && apart(v, pb));
+    check(!!pc, `${tag} build: no three open spots on screen for the mouse (${visible.length})`);
+    const postAt = ([x, z]) =>
+      [...window.__game.client.buildings.values()].some(
+        (b) => b.kind === 'post_wood' && Math.hypot(b.x - x, b.z - z) < 0.01,
+      );
+    if (pa && pb && pc) {
+      await page.mouse.move(pa.sx, pa.sy, { steps: 3 });
+      await until(
+        page,
+        ([x, z]) => {
+          const g = window.__game.client.ghost;
+          return !!g && Math.hypot(g.x - x, g.z - z) < 0.01;
+        },
+        `${tag} build: the piece didn't follow the mouse`,
+        15000,
+        [pa.x, pa.z],
+      );
+      await page.mouse.down();
+      await page.mouse.move(pb.sx, pb.sy, { steps: 12 });
+      await page.waitForTimeout(500);
+      await page.mouse.up();
+      await until(
+        page,
+        postAt,
+        `${tag} build: a dragged piece wasn't built where it was dropped`,
+        15000,
+        [pb.x, pb.z],
+      );
+      check(
+        !(await game(page, postAt, [pa.x, pa.z])),
+        `${tag} build: a post went down where the drag began`,
+      );
+      // From the build menu straight onto the island.
+      const tile = await page
+        .locator('.build-bar')
+        .getByRole('button', { name: 'Wooden post' })
+        .boundingBox();
+      await page.mouse.move(tile.x + tile.width / 2, tile.y + tile.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(tile.x + tile.width / 2, tile.y - 40, { steps: 4 });
+      await page.mouse.move(pc.sx, pc.sy, { steps: 12 });
+      await page.waitForTimeout(500);
+      await page.mouse.up();
+      await until(
+        page,
+        postAt,
+        `${tag} build: a piece dragged from the menu wasn't built where it was dropped`,
+        15000,
+        [pc.x, pc.z],
+      );
+      // The right button: a drag looks around, a click turns the piece.
+      const look2 = await game(page, () => ({ ...window.__game.client.buildLook }));
+      await page.mouse.move(pa.sx, pa.sy);
+      await page.mouse.down({ button: 'right' });
+      await page.mouse.move(pa.sx + 70, pa.sy - 50, { steps: 10 });
+      await page.mouse.up({ button: 'right' });
+      await page.waitForTimeout(300);
+      const look3 = await game(page, () => ({ ...window.__game.client.buildLook }));
+      check(
+        Math.hypot(look3.x - look2.x, look3.z - look2.z) > 1,
+        `${tag} build: a right-drag didn't look around`,
+      );
+      const rot1 = await game(page, () => window.__game.client.build.rot);
+      await page.mouse.click(pa.sx, pa.sy, { button: 'right' });
+      await until(
+        page,
+        (r) => window.__game.client.build.rot === (r + 1) % 4,
+        `${tag} build: a right click didn't turn the piece`,
+        5000,
+        rot1,
+      );
+      check(
+        (await game(page, () => [window.__game.client.x, window.__game.client.z])).every(
+          (v, i) => Math.abs(v - stood[i]) < 0.01,
+        ),
+        `${tag} build: the mouse moved the survivor`,
+      );
+      await shot('6d-mouse-build');
+      await page.locator('.build-panel .build-title').hover();
+    }
   }
   await page.getByRole('button', { name: 'Leave build mode' }).first().click();
   await page.locator('.build-panel').waitFor({ state: 'detached' });
@@ -1084,6 +1194,31 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   });
   await page.getByText('The Bloom took you').waitFor();
   await shot('8-dead');
+  // Second wind (an ad the player picks): up where you fell, with your bag.
+  const fell = await game(page, () => [window.__game.client.x, window.__game.client.z]);
+  await page.getByRole('button', { name: /Second wind/ }).click();
+  await page.getByRole('button', { name: 'Close Ad' }).click();
+  await until(page, () => window.__game.client.me.alive, `${tag} game: no second wind`);
+  const wind = await game(page, () => {
+    const c = window.__game.client;
+    return {
+      at: [c.x, c.z],
+      bag: [...c.link.sim.drops.values()].some((d) => d.label.endsWith("'s bag")),
+      held: c.me.inv.some((s) => s?.id === 'machete'),
+    };
+  });
+  check(
+    Math.hypot(wind.at[0] - fell[0], wind.at[1] - fell[1]) < 0.5,
+    `${tag} game: second wind didn't wake you where you fell`,
+  );
+  check(!wind.bag && wind.held, `${tag} game: second wind didn't give the bag back`);
+  // Once a day: the next fall is the usual one.
+  await game(page, () => {
+    const c = window.__game.client;
+    const sim = c.link.sim;
+    sim.hurtPlayer(sim.players.get(c.you), 500, c.x, c.z);
+  });
+  await page.getByText('Second wind is used for today.').waitFor();
   await page.getByRole('button', { name: /Wake up/ }).click();
   await until(page, () => window.__game.client.me.alive, `${tag} game: no respawn`);
   await until(
@@ -1097,6 +1232,61 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     sim.time = 600 * 3 + 200;
     window.__calm = setInterval(() => sim.mobs.clear(), 100);
   });
+
+  // The in-flight channel: a seatback screen by the crash site plays an ad the player picks,
+  // a sponsored supply pod near you, then Island Explorer.
+  {
+    const screen = await game(page, () => {
+      const s = window.__game.client.link.sim.spots.get('crash_screen');
+      return [s.x, s.z - 1.2];
+    });
+    await teleport(page, screen[0], screen[1]);
+    await until(
+      page,
+      () => window.__game.client.actionLabel().text.includes('seatback screen'),
+      `${tag} ads: the screen isn't offered (${await game(page, () => window.__game.client.actionLabel().text)})`,
+    );
+    await pressUse(page);
+    await page.getByText('In-flight channel').waitFor();
+    await noSideScroll('in-flight channel');
+    await shot('8b-screen');
+    const channel = (name) => page.locator('.channel', { hasText: name });
+    await channel('Sponsor drop')
+      .getByRole('button', { name: /Watch an ad/ })
+      .click();
+    await page.getByRole('button', { name: 'Close Ad' }).click();
+    await until(
+      page,
+      () =>
+        window.__game.client.link.sim.falling.some((f) => f.sponsor) ||
+        [...window.__game.client.link.sim.drops.values()].some(
+          (d) => d.label === 'Verdance AirDrop pod',
+        ),
+      `${tag} ads: no sponsored pod`,
+    );
+    await page.getByText(/in-flight sponsor sent a Verdance AirDrop pod/).waitFor();
+    await pressUse(page);
+    await channel('Sponsor drop').getByText('Watched today').waitFor();
+    const seen = () =>
+      [...window.__game.client.link.sim.flags].filter((f) => f.startsWith('seen:')).length;
+    const seen0 = await game(page, seen);
+    await channel('Island Explorer')
+      .getByRole('button', { name: /Watch an ad/ })
+      .click();
+    await page.getByRole('button', { name: 'Close Ad' }).click();
+    await until(
+      page,
+      (n) => {
+        const flags = window.__game.client.link.sim.flags;
+        return [...flags].filter((f) => f.startsWith('seen:')).length > n;
+      },
+      `${tag} ads: Island Explorer found nothing`,
+      15000,
+      seen0,
+    );
+    await page.getByText(/Island Explorer visits/).waitFor();
+    await game(page, () => window.__game.client.openPanel(null));
+  }
 
   // The quick bag stays open while you move; drag items between slots and onto the island.
   await give(page, [
@@ -1745,16 +1935,29 @@ async function playCoop() {
   const spec = 'OV-W3M-31337';
   await newIsland(host.page, 'co-op', spec, 'Relaxed');
   await host.page.locator('.hud').waitFor({ timeout: 60000 });
+  // Every island has its own multiplayer code, there from the start (solo too).
+  const code = await game(host.page, () => window.__game.client.link.code);
+  check(/^[A-HJKMNP-Z2-9]{6}$/.test(code), `co-op: no island code (${code})`);
+  const shown = `${code.slice(0, 3)}-${code.slice(3)}`;
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByRole('button', { name: /Save and quit/ }).click();
-  await host.page.getByRole('button', { name: /Play with friends/ }).click();
-  await host.page.locator('.hud').waitFor({ timeout: 60000 });
-  const code = await game(host.page, () => window.__game.client.link.code);
-  check(/^[A-Z0-9]{4,}$/.test(code), `co-op: no room code (${code})`);
+  await host.page
+    .getByRole('button', { name: new RegExp(`Play with friends.*${shown}`) })
+    .waitFor();
+  // A friend can come first: they wait on the island until the host opens it.
   const friend = await open();
   await friend.page.getByRole('button', { name: /Join a friend/ }).click();
-  await friend.page.locator('#room-code').fill(code);
+  await friend.page.locator('#room-code').fill(shown.toLowerCase());
   await friend.page.getByRole('button', { name: 'Join', exact: true }).click();
+  await friend.page
+    .getByText('Waiting for your friend to open the island')
+    .waitFor({ timeout: 30000 });
+  await host.page.getByRole('button', { name: /Play with friends/ }).click();
+  await host.page.locator('.hud').waitFor({ timeout: 60000 });
+  check(
+    (await game(host.page, () => window.__game.client.link.code)) === code,
+    'co-op: hosting changed the island code',
+  );
   await friend.page.locator('.hud').waitFor({ timeout: 60000 });
   await until(
     host.page,
@@ -1807,7 +2010,27 @@ async function playCoop() {
     );
   }
   await host.page.getByRole('button', { name: 'Menu' }).click();
-  await host.page.getByText(code).first().waitFor();
+  await host.page.getByText(shown).first().waitFor();
+  await host.page.getByRole('button', { name: /Close the island and quit/ }).click();
+  await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 15000 });
+  // The host left: the friend is told and goes back to the title.
+  await friend.page.getByText('Island closed').waitFor({ timeout: 15000 });
+  await friend.page.screenshot({ path: `${SHOTS}/coop-closed.png` });
+  await friend.page.getByRole('button', { name: 'Back to the title' }).click();
+  await friend.page.getByRole('button', { name: /Join a friend/ }).waitFor({ timeout: 15000 });
+  // Opened again, the island has the same code and the friend gets back in with it.
+  await host.page.getByRole('button', { name: /Play with friends/ }).click();
+  await host.page.locator('.hud').waitFor({ timeout: 60000 });
+  await friend.page.getByRole('button', { name: /Join a friend/ }).click();
+  await friend.page.locator('#room-code').fill(code);
+  await friend.page.getByRole('button', { name: 'Join', exact: true }).click();
+  await friend.page.locator('.hud').waitFor({ timeout: 60000 });
+  await until(
+    host.page,
+    () => window.__game.client.others.size === 1,
+    'co-op: the friend never got back in',
+  );
+  await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByRole('button', { name: /Close the island and quit/ }).click();
   await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 15000 });
   for (const who of [host, friend]) {

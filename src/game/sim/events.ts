@@ -151,10 +151,10 @@ function announce(sim: IslandSim, x: number, z: number, what: (where: string) =>
 /** Once a second (IslandSim.tick). */
 export function runEvents(sim: IslandSim): void {
   for (let i = sim.falling.length - 1; i >= 0; i--) {
-    const f = sim.falling[i] as { x: number; z: number; at: number };
+    const f = sim.falling[i] as { x: number; z: number; at: number; sponsor?: boolean };
     if (sim.time < f.at) continue;
     sim.falling.splice(i, 1);
-    landPod(sim, f.x, f.z);
+    landPod(sim, f.x, f.z, f.sponsor);
   }
   const scale = eventScale(sim.rules.events);
   if (sim.time < sim.nextEvent || scale === 0) return;
@@ -206,7 +206,43 @@ function pod(sim: IslandSim, p: SimPlayer): boolean {
   return true;
 }
 
-function landPod(sim: IslandSim, x: number, z: number): void {
+/**
+ * The in-flight channel's sponsor (ads.ts): a Verdance AirDrop pod comes down close to the
+ * one who watched, with better things in it and fewer of the Bloom woken by its crash.
+ */
+export function sponsorPod(sim: IslandSim, p: SimPlayer): boolean {
+  const spot = findSpot(sim, p.x, p.z, 14, 30, (x, z) => {
+    const h = heightAt(sim.island, x, z);
+    return h > 0.4 && clear(sim, x, z);
+  });
+  if (!spot) return false;
+  sim.falling.push({ x: spot.x, z: spot.z, at: sim.time + POD_FALL, sponsor: true });
+  sim.fx('podfall', spot.x, spot.z);
+  announce(
+    sim,
+    spot.x,
+    spot.z,
+    (where) => `📺 ${p.name}'s in-flight sponsor sent a Verdance AirDrop pod, ${where}.`,
+  );
+  return true;
+}
+
+export const SPONSOR_LOOT: LootRow[] = [
+  { id: 'scrap', min: 2, max: 4, chance: 1 },
+  { id: 'medkit', min: 1, max: 1, chance: 0.9 },
+  { id: 'ration', min: 1, max: 2, chance: 0.9 },
+  { id: 'water_bottle', min: 1, max: 2, chance: 0.9 },
+  { id: 'bandage', min: 2, max: 3, chance: 0.5 },
+  { id: 'firebomb', min: 1, max: 2, chance: 0.5 },
+  { id: 'arrow', min: 6, max: 10, chance: 0.35 },
+  { id: 'torch', min: 1, max: 1, chance: 0.35 },
+  { id: 'seed_berry', min: 2, max: 3, chance: 0.3 },
+  { id: 'seed_tomato', min: 2, max: 3, chance: 0.3 },
+  // The sponsor's "collectible": a message in a bottle (the treasure chain).
+  { id: 'bottle', min: 1, max: 1, chance: 0.3 },
+];
+
+function landPod(sim: IslandSim, x: number, z: number, sponsor = false): void {
   sim.fx('land', x, z, undefined, undefined, 4);
   for (const p of players(sim)) {
     if (dist(p.x, p.z, x, z) < 2.2) sim.hurtPlayer(p, 30, x, z, false);
@@ -214,15 +250,17 @@ function landPod(sim: IslandSim, x: number, z: number): void {
   sim.makeBag(
     x,
     z,
-    rollLoot(POD_LOOT, sim.random),
-    'Verdance supply pod',
+    rollLoot(sponsor ? SPONSOR_LOOT : POD_LOOT, sim.random),
+    sponsor ? 'Verdance AirDrop pod' : 'Verdance supply pod',
     sim.time + 2 * DAY,
     'pod',
   );
   // The crash wakes whatever sleeps nearby: they guard the pod until someone comes.
   const info = sim.info();
   const n = Math.round(
-    (2 + Math.min(3, Math.floor(info.day / 3))) * monsterScale(sim.rules.monsters),
+    (sponsor
+      ? 1 + Math.min(1, Math.floor(info.day / 4))
+      : 2 + Math.min(3, Math.floor(info.day / 3))) * monsterScale(sim.rules.monsters),
   );
   const kinds: MonsterKind[] = info.day >= 4 ? ['husk', 'husk', 'puffer', 'thornback'] : ['husk'];
   for (let k = 0; k < n; k++) {

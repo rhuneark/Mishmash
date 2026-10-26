@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { CLASSIC, specCode, type IslandSpec } from '../game/islands';
+import {
+  CLASSIC,
+  JOIN_LEN,
+  cleanJoinCode,
+  showJoinCode,
+  specCode,
+  type IslandSpec,
+} from '../game/islands';
 import type { IslandSave } from '../game/sim/types';
 import { JAM_URL, copyText } from '../app/links';
 import * as run from '../sdk/run';
@@ -11,7 +18,9 @@ import { NewIslandScreen } from './NewIsland';
 import { STEPS } from './Intro';
 
 export type PlayChoice =
-  { kind: 'solo'; fresh: NewIsland | null } | { kind: 'host' } | { kind: 'join'; code: string };
+  | { kind: 'solo'; fresh: NewIsland | null }
+  | { kind: 'host'; fresh: NewIsland | null }
+  | { kind: 'join'; code: string };
 
 /** The island behind the title when there's no save yet (autumn, for October). */
 const SHOWCASE: IslandSpec = { seed: 7207, ...CLASSIC, climate: 'autumn' };
@@ -68,7 +77,7 @@ export function Play({
       <NewIslandScreen
         replacing={info && { day: info.day, name: info.name }}
         onBack={() => setView('title')}
-        onStart={(fresh) => onStart({ kind: 'solo', fresh })}
+        onStart={(fresh, friends) => onStart({ kind: friends ? 'host' : 'solo', fresh })}
       />
     );
   }
@@ -117,37 +126,45 @@ export function Play({
                   🏝️ New island
                 </button>
               )}
-              <button className="menu-btn" onClick={() => onStart({ kind: 'host' })}>
-                👥 Play with friends
+              <button
+                className="menu-btn title-friends"
+                onClick={() => (info ? onStart({ kind: 'host', fresh: null }) : setView('new'))}
+              >
+                <span>👥 Play with friends</span>
+                {info?.code && (
+                  <span className="title-continue-sub">
+                    Open {info.name} · code {showJoinCode(info.code)}
+                  </span>
+                )}
               </button>
               {joining ? (
                 <form
                   className="card join"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    if (code.trim().length >= 4) onStart({ kind: 'join', code });
+                    if (cleanJoinCode(code)) onStart({ kind: 'join', code });
                   }}
                 >
                   <label className="label" htmlFor="room-code">
-                    Your friend's island code
+                    Your friend's island code (it's on their ☰ menu › Play with friends)
                   </label>
                   <input
                     id="room-code"
                     className="code-input"
                     value={code}
-                    maxLength={8}
+                    maxLength={JOIN_LEN + 1}
                     autoCapitalize="characters"
                     autoComplete="off"
                     onChange={(e) =>
-                      setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))
+                      setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))
                     }
-                    placeholder="ABC123"
+                    placeholder="ABC-234"
                   />
                   <div className="row">
                     <button
                       className="btn small primary"
                       type="submit"
-                      disabled={code.trim().length < 4}
+                      disabled={!cleanJoinCode(code)}
                     >
                       Join
                     </button>

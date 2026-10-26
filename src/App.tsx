@@ -70,7 +70,7 @@ export default function App() {
       choice.kind === 'solo'
         ? await startSolo(choice.fresh)
         : choice.kind === 'host'
-          ? await startHost()
+          ? await startHost(choice.fresh)
           : await startJoin(choice.code);
     setStarting(false);
     if (!res.ok) {
@@ -95,7 +95,7 @@ export default function App() {
         <Game
           client={game}
           onLeave={() => void leave()}
-          onHost={() => void leave().then(() => start({ kind: 'host' }))}
+          onHost={() => void leave().then(() => start({ kind: 'host', fresh: null }))}
           onNewIsland={() =>
             void leave().then(() => {
               setWantNew(true);

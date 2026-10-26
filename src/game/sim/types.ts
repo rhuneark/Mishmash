@@ -1,10 +1,11 @@
 // Authority-side state and the island save format.
 
+import { parseRewardDays, type RewardDays } from '../ads';
 import { parsePerks, type Perks } from '../skills';
 import { BUILDINGS, slotsOf } from '../content/buildings';
 import { CROP_BY_ID } from '../content/crops';
 import { MONSTERS, type MonsterKind } from '../content/monsters';
-import { isClassic, parseParts, type IslandParts } from '../islands';
+import { cleanJoinCode, isClassic, parseParts, type IslandParts } from '../islands';
 import { parseRules, type WorldRules } from '../rules';
 import { cleanInv, type Inv } from './inventory';
 import type { RescueNet, Slot } from './protocol';
@@ -43,6 +44,10 @@ export interface SimPlayer {
   xp: number;
   /** Skill ranks learned. */
   perks: Perks;
+  /** The island day each ad reward was last used (ads.ts). */
+  ads: RewardDays;
+  /** The bag they left when they last fell (Second wind gives it back). */
+  lastBag: number | null;
 }
 
 export interface Building {
@@ -161,6 +166,8 @@ export interface PlayerSave {
   /** Missing in saves from before levels: 0 XP, no perks. */
   xp?: number;
   perks?: Perks;
+  /** Ad rewards used (ads.ts); missing: none yet. */
+  ads?: RewardDays;
 }
 
 export interface IslandSave {
@@ -189,6 +196,8 @@ export interface IslandSave {
   weather?: { kind: string; until: number };
   /** Animals that trust someone. */
   pets?: PetSave[];
+  /** The island's multiplayer code (islands.ts `newJoinCode`); older saves get one on load. */
+  code?: string;
 }
 
 export function newSave(seed: number, parts?: IslandParts, rules?: WorldRules): IslandSave {
@@ -227,6 +236,8 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
   const rules = d['rules'] ? parseRules(d['rules']) : undefined;
   const infinite = rules?.infiniteStacks ?? false;
   const save = newSave(seed, parts, rules);
+  const code = cleanJoinCode(str(d['code'], ''));
+  if (code) save.code = code;
   if (Array.isArray(d['chest'])) save.chest = cleanInv(d['chest'], infinite, CHEST_SLOTS);
   save.time = Math.max(0, num(d['time'], START_TIME));
   save.nextId = Math.max(1, Math.floor(num(d['nextId'], 1)));
@@ -311,6 +322,8 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
         (save.players[pid] as PlayerSave).xp = xp;
         (save.players[pid] as PlayerSave).perks = parsePerks(pv['perks'], xp);
       }
+      const ads = parseRewardDays(pv['ads']);
+      if (Object.keys(ads).length) (save.players[pid] as PlayerSave).ads = ads;
     }
   }
   if (Array.isArray(d['flags']))

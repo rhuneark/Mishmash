@@ -53,13 +53,15 @@ export function NewIslandScreen({
   /** The saved island a new one replaces. */
   replacing: { day: number; name: string } | null;
   onBack: () => void;
-  onStart: (fresh: NewIsland) => void;
+  /** `friends`: open it to friends right away (its multiplayer code is made with it). */
+  onStart: (fresh: NewIsland, friends: boolean) => void;
 }) {
   const [spec, setSpec] = useState<IslandSpec>(rollSpec);
   const [rules, setRules] = useState<WorldRules>({ ...DEFAULT_RULES });
   const [code, setCode] = useState('');
   const [codeBad, setCodeBad] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [friends, setFriends] = useState(false);
   const set = (patch: Partial<IslandSpec>) => setSpec((s) => ({ ...s, ...patch }));
   const name = islandName(spec);
 
@@ -72,13 +74,14 @@ export function NewIslandScreen({
     }
   };
 
-  const start = () => {
+  const start = (withFriends: boolean) => {
     if (replacing && !confirm) {
+      setFriends(withFriends);
       setConfirm(true);
       return;
     }
     const { seed, ...parts } = spec;
-    onStart({ seed, parts, rules });
+    onStart({ seed, parts, rules }, withFriends);
   };
 
   return (
@@ -160,11 +163,11 @@ export function NewIslandScreen({
               }}
             >
               <span className="set-text">
-                <span className="set-label">Have an island code?</span>
+                <span className="set-label">Have a map code?</span>
                 <span className="set-desc">
                   {codeBad
-                    ? "That isn't an island code. It looks like AU-R2M-48213."
-                    : 'Make the same island as a friend (it is under Menu › This island).'}
+                    ? "That isn't a map code. It looks like AU-R2M-48213."
+                    : 'Make the same map as a friend (it is under Menu › This island).'}
                 </span>
                 <span className="island-code-input">
                   <input
@@ -174,7 +177,7 @@ export function NewIslandScreen({
                     autoCapitalize="characters"
                     autoComplete="off"
                     placeholder="AU-R2M-48213"
-                    aria-label="Island code"
+                    aria-label="Map code"
                     onChange={(e) => {
                       setCode(e.target.value.toUpperCase());
                       setCodeBad(false);
@@ -203,7 +206,7 @@ export function NewIslandScreen({
                 This replaces {replacing.name} (day {replacing.day}). Sure?
               </p>
               <div className="row">
-                <button className="btn small primary" onClick={start}>
+                <button className="btn small primary" onClick={() => start(friends)}>
                   Replace it
                 </button>
                 <button className="btn small" onClick={() => setConfirm(false)}>
@@ -212,9 +215,14 @@ export function NewIslandScreen({
               </div>
             </div>
           ) : (
-            <button className="menu-btn primary" onClick={start}>
-              ✈️ Start on {name}
-            </button>
+            <>
+              <button className="menu-btn primary" onClick={() => start(false)}>
+                ✈️ Start on {name}
+              </button>
+              <button className="menu-btn" onClick={() => start(true)}>
+                👥 Start with friends
+              </button>
+            </>
           )}
         </div>
       </div>

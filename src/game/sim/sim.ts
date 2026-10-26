@@ -54,7 +54,8 @@ import {
   wear,
   type Inv,
 } from './inventory';
-import { FIRST_EVENT, rollLoot, runEvents } from './events';
+import { FIRST_EVENT, compass, rollLoot, runEvents, sponsorPod } from './events';
+import { isRewardKind, islandDay, rewardReady } from '../ads';
 import { parseWeather, runWeather, type WeatherState } from './weather';
 import { burrowAll, damageMob, runDirector, spawnMob, updateMobs } from './mobs';
 import { MONSTERS, PET_NAMES } from '../content/monsters';
@@ -110,6 +111,8 @@ const REGEN = 0.15;
 const FIRE_HEAL = 1;
 const FIRE_HEAL_RANGE = 5;
 const REACH = 3.2;
+/** Second wind's flash throws the Bloom this far back from you. */
+const SECOND_WIND_RANGE = 10;
 const HAND_DAMAGE = 5;
 const MAX_SPEED = 9;
 const VIEW = 70;
@@ -139,10 +142,12 @@ export class IslandSim {
   weather: WeatherState;
   /** Who may change the rules: the solo player, or the host of a co-op room. */
   owner = '';
+  /** The island's multiplayer code (kept in the save). */
+  readonly code: string | undefined;
   readonly parts: IslandParts;
   /** The storage every box opens when the rules connect them. */
   readonly chest: Inv;
-  readonly falling: { x: number; z: number; at: number }[] = [];
+  readonly falling: { x: number; z: number; at: number; sponsor?: boolean }[] = [];
   readonly snapDeadUntil = new Map<number, number>();
   readonly snapMob = new Map<number, number>();
   lights: Light[] = [];
@@ -168,6 +173,7 @@ export class IslandSim {
     this.random = random;
     this.time = save.time;
     this.nextId = save.nextId;
+    this.code = save.code;
     this.rules = parseRules(save.rules);
     this.parts = island.spec;
     this.chest = cleanInv(save.chest, this.rules.infiniteStacks, CHEST_SLOTS);
@@ -205,6 +211,8 @@ export class IslandSim {
         lastSay: -99,
         xp: p.xp ?? 0,
         perks: { ...(p.perks ?? {}) },
+        ads: { ...(p.ads ?? {}) },
+        lastBag: null,
       });
     }
     for (const f of save.flags) this.flags.add(f);
@@ -335,6 +343,8 @@ export class IslandSim {
         lastSay: -99,
         xp: 0,
         perks: {},
+        ads: {},
+        lastBag: null,
       };
       this.players.set(id, p);
     } else if (name) {
@@ -437,6 +447,7 @@ export class IslandSim {
         crafted: p.crafted,
         escaped: p.escaped,
         ...(p.xp ? { xp: p.xp, perks: { ...p.perks } } : {}),
+        ...(Object.keys(p.ads).length ? { ads: { ...p.ads } } : {}),
       };
     }
     return {
@@ -465,6 +476,7 @@ export class IslandSim {
       ...(Object.keys(changedRules(this.rules)).length ? { rules: { ...this.rules } } : {}),
       ...(this.chest.some((s) => s) ? { chest: this.chest.map((s) => (s ? { ...s } : null)) } : {}),
       weather: { kind: this.weather.kind, until: Math.round(this.weather.until) },
+      ...(this.code ? { code: this.code } : {}),
       ...(this.petList().length
         ? {
             pets: [...this.mobs.values()]
@@ -539,6 +551,8 @@ export class IslandSim {
         return;
       case 'respawn':
         return this.onRespawn(p);
+      case 'reward':
+        return this.onReward(p, msg.kind);
       case 'say':
         return this.onSay(p, msg.text);
       default:
@@ -1642,6 +1656,115 @@ export class IslandSim {
     this.dirty(p);
   }
 
+  /**
+   * An ad the player chose to watch to the end (ads.ts): the in-flight channel at a seatback
+   * screen (a sponsor drop or Island Explorer), or Second wind when they've fallen. Each
+   * once per island day.
+   */
+  private onReward(p: SimPlayer, kind: string): void {
+    if (!isRewardKind(kind) || p.escaped || !rewardReady(p.ads, kind, this.time)) return;
+    if (kind === 'wind') {
+      if (p.alive) return;
+      p.ads.wind = islandDay(this.time);
+      this.secondWind(p);
+      return;
+    }
+    if (!p.alive || !this.screenNear(p)) return;
+    if (kind === 'guide') {
+      const poi = this.unfound(p);
+      if (!poi) {
+        this.toast(p.id, "📺 Island Explorer: you've already been everywhere it goes.");
+        return;
+      }
+      p.ads.guide = islandDay(this.time);
+      this.flags.add(`seen:${poi.id}`);
+      const d = Math.round(dist(p.x, p.z, poi.x, poi.z) / 10) * 10;
+      this.toast(
+        p.id,
+        `📺 Island Explorer visits ${poi.name}, ${d} m ${compass(poi.x - p.x, poi.z - p.z)}. It's on your map.`,
+      );
+      this.fx('unlock', p.x, p.z, p.id);
+      this.broadcastProgress();
+    } else {
+      if (!sponsorPod(this, p)) {
+        this.toast(
+          p.id,
+          "📺 The sponsor couldn't find a clear spot near you. Try somewhere more open.",
+        );
+        return;
+      }
+      p.ads.drop = islandDay(this.time);
+    }
+    this.dirty(p);
+  }
+
+  /** A seatback screen in reach: the crash site's, or one someone built. */
+  private screenNear(p: SimPlayer): boolean {
+    for (const s of this.spots.values())
+      if (s.spot.kind === 'screen' && dist(p.x, p.z, s.x, s.z) <= REACH + 1.5) return true;
+    for (const b of this.buildings.values())
+      if (BUILDINGS[b.kind]?.screen && dist(p.x, p.z, b.x, b.z) <= REACH + 1.5) return true;
+    return false;
+  }
+
+  /** The nearest landmark or secret site nobody has found (survey markers stay a puzzle). */
+  private unfound(p: SimPlayer): PoiDef | null {
+    let best: PoiDef | null = null;
+    for (const poi of this.island.pois) {
+      if (this.flags.has(`seen:${poi.id}`) || poi.id.startsWith('marker')) continue;
+      if (!best || dist(p.x, p.z, poi.x, poi.z) < dist(p.x, p.z, best.x, best.z)) best = poi;
+    }
+    return best;
+  }
+
+  /** Second wind: up again where they fell, with their bag, and the Bloom thrown back. */
+  private secondWind(p: SimPlayer): void {
+    const bag = p.lastBag !== null ? this.drops.get(p.lastBag) : undefined;
+    if (bag) {
+      const left: Slot[] = [];
+      for (const s of bag.items) {
+        const rest = add(p.inv, s.id, s.n, s.d, this.rules.infiniteStacks);
+        if (rest > 0) left.push({ ...s, n: rest });
+      }
+      if (left.length) bag.items = left;
+      else {
+        this.drops.delete(bag.id);
+        this.broadcast({ type: 'undrop', id: bag.id });
+      }
+    }
+    p.lastBag = null;
+    p.alive = true;
+    p.hp = 50;
+    p.food = Math.max(p.food, 30);
+    p.water = Math.max(p.water, 30);
+    p.poisonUntil = 0;
+    p.heals = [];
+    p.lastPos = this.time;
+    for (const m of this.mobs.values()) {
+      if (m.tame || !MONSTERS[m.kind].hostile) continue;
+      const d = dist(p.x, p.z, m.x, m.z);
+      if (d > SECOND_WIND_RANGE) continue;
+      // Thrown back and dazzled for a moment.
+      const push = Math.min((SECOND_WIND_RANGE - d) / Math.max(d, 0.5), 3);
+      const nx = m.x + (m.x - p.x) * push;
+      const nz = m.z + (m.z - p.z) * push;
+      if (!hitCollider(this.island, nx, nz, 0.6)) {
+        m.x = nx;
+        m.z = nz;
+      }
+      m.heldUntil = Math.max(m.heldUntil, this.time + 4);
+      if (m.target === p.id) m.target = null;
+    }
+    this.fx('lightning', p.x, p.z, p.id);
+    this.fx('heal', p.x, p.z, p.id);
+    this.send(p.id, { type: 'event', e: 'respawn' });
+    this.broadcast({
+      type: 'toast',
+      text: `🚁 A Verdance med-drone got ${p.name} back on their feet.`,
+    });
+    this.dirty(p);
+  }
+
   // -------------------------------------------------------------------------
   // Shared helpers used by monsters.
 
@@ -1666,10 +1789,11 @@ export class IslandSim {
     label: string,
     until: number,
     kind?: 'crate' | 'pod',
-  ): void {
+  ): number {
     const d: Drop = { id: this.newId(), x, z, items, label, until, ...(kind ? { kind } : {}) };
     this.drops.set(d.id, d);
     this.broadcast({ type: 'drop', d: dropNet(d) });
+    return d.id;
   }
 
   /** `bloom`: the Bloom did it (the difficulty rule scales it). */
@@ -1708,7 +1832,9 @@ export class IslandSim {
       if (rule !== 'delete') items.push(s);
       p.inv[i] = null;
     });
-    if (items.length) this.makeBag(p.x, p.z, items, `${p.name}'s bag`, this.time + 2 * DAY);
+    p.lastBag = items.length
+      ? this.makeBag(p.x, p.z, items, `${p.name}'s bag`, this.time + 2 * DAY)
+      : null;
     p.heals = [];
     this.fx('death', p.x, p.z, p.id);
     this.send(p.id, { type: 'event', e: 'dead' });
@@ -2167,6 +2293,7 @@ export class IslandSim {
       deaths: p.deaths,
       xp: p.xp,
       perks: p.perks,
+      ads: p.ads,
     };
     const key = JSON.stringify(me);
     if (this.lastMe.get(p.id) === key) return;

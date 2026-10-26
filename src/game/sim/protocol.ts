@@ -5,6 +5,7 @@ import type { IslandParts } from '../islands';
 import type { WorldRules } from '../rules';
 import type { WeatherKind } from './weather';
 import type { Perks } from '../skills';
+import type { RewardDays } from '../ads';
 
 export interface Slot {
   id: string;
@@ -40,6 +41,8 @@ export type C2S =
   | { type: 'take'; id: number; slot: number; to?: number }
   | { type: 'code'; code: string }
   | { type: 'respawn' }
+  /** The player watched an ad to the end (ads.ts): its reward, if they may have it. */
+  | { type: 'reward'; kind: string }
   /** The island's owner changes the world rules (others are ignored). */
   | { type: 'rules'; rules: unknown }
   /** A chat line to everyone on the island (co-op). */
@@ -127,6 +130,8 @@ export interface MeNet {
   deaths: number;
   xp: number;
   perks: Perks;
+  /** The island day each ad reward was last used. */
+  ads: RewardDays;
 }
 
 export interface RescueNet {
@@ -209,6 +214,8 @@ export const SHOTS = ['arrow', 'fire_arrow', 'bolt', 'stone'] as const;
 export type S2C =
   | { type: 'welcome'; you: string; part: number; parts: number; data: string }
   | { type: 'wait'; text: string }
+  /** Co-op: the island isn't open (any more) for you; the room lets you go. */
+  | { type: 'closed'; text: string }
   | { type: 'tick'; t: number; p: PlayerNet[]; m: MobNet[] }
   | { type: 'me'; me: MeNet }
   | { type: 'players'; list: PlayerInfo[] }

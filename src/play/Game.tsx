@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import * as run from '../sdk/run';
+import { showJoinCode } from '../game/islands';
 import { appEvents } from '../app/appEvents';
 import { Sound } from './audio';
 import type { GameClient } from './client';
@@ -74,6 +75,8 @@ export function Game(props: {
   const viewRef = useRef<View | null>(null);
   /** The mouse over the island (build mode aims the piece at it every frame). */
   const mouseAt = useRef<{ x: number; y: number } | null>(null);
+  /** Build mode: a mouse button is down on the island (dragging the piece or the view). */
+  const mouseHeld = useRef(false);
   const [input] = useState(() => new Input());
   const [map, setMap] = useState<{ fog: Fog; image: HTMLCanvasElement } | null>(null);
   const ready = client.phase === 'ready';
@@ -190,7 +193,10 @@ export function Game(props: {
   // A touch screen: a tap on the island walks there, or to what was tapped and uses it (the
   // stick's area passes its taps on too). In build mode (the survivor stands still, there's
   // no stick): tap the island to put the piece there (or pick what to take down), drag the
-  // piece to move it, drag anywhere else to look around. The mouse aims every frame.
+  // piece to move it, drag anywhere else to look around. The mouse aims every frame; in build
+  // mode it drags and drops: grab the piece and let go to build it there (a click builds it
+  // where it is), drag with the right button (or take-down's left) to look around, and a
+  // right click turns the piece.
   useEffect(() => {
     const el = canvas.current;
     if (!el || !ready) return;
@@ -199,6 +205,17 @@ export function Game(props: {
       if (pick) client.tapAt(pick);
     };
     input.tap = walkTo;
+    input.ground = (x, y) => viewRef.current?.groundAt(x, y) ?? null;
+    input.claim = (e) => !!client.build && e.button <= 2;
+    let mouse: {
+      button: number;
+      x0: number;
+      y0: number;
+      x: number;
+      y: number;
+      grab: { x: number; z: number } | null;
+      moved: boolean;
+    } | null = null;
     let press: { id: number; x: number; y: number; t: number } | null = null;
     let finger: {
       id: number;
@@ -221,7 +238,25 @@ export function Game(props: {
       if (at) client.setBuildCursor(at);
     };
     const down = (e: PointerEvent) => {
-      if (e.pointerType === 'mouse') return;
+      if (e.pointerType === 'mouse') {
+        const view = viewRef.current;
+        if (!client.build || !view || mouse || e.button > 2) return;
+        const p = toLocal(e.clientX, e.clientY);
+        const at = view.groundAt(p.x, p.y);
+        const cur = client.ghost;
+        const grab =
+          e.button === 0 &&
+          at &&
+          cur &&
+          client.build.piece !== 'remove' &&
+          Math.hypot(at.x - cur.x, at.z - cur.z) < 1.6
+            ? { x: cur.x - at.x, z: cur.z - at.z }
+            : null;
+        mouse = { button: e.button, x0: p.x, y0: p.y, x: p.x, y: p.y, grab, moved: false };
+        mouseHeld.current = true;
+        el.setPointerCapture?.(e.pointerId);
+        return;
+      }
       if (!client.build) {
         const p = toLocal(e.clientX, e.clientY);
         press = { id: e.pointerId, x: p.x, y: p.y, t: e.timeStamp };
@@ -242,7 +277,22 @@ export function Game(props: {
     };
     const move = (e: PointerEvent) => {
       if (e.pointerType === 'mouse') {
-        mouseAt.current = toLocal(e.clientX, e.clientY);
+        const p = toLocal(e.clientX, e.clientY);
+        mouseAt.current = p;
+        const view = viewRef.current;
+        if (!mouse || !view || !client.build) return;
+        if (!mouse.moved && Math.hypot(p.x - mouse.x0, p.y - mouse.y0) < 6) return;
+        mouse.moved = true;
+        if (mouse.grab) {
+          const at = view.groundAt(p.x, p.y);
+          if (at) client.setBuildCursor({ x: at.x + mouse.grab.x, z: at.z + mouse.grab.z });
+        } else {
+          const a = view.groundAt(mouse.x, mouse.y);
+          const b = view.groundAt(p.x, p.y);
+          if (a && b) client.panBuild(a.x - b.x, a.z - b.z);
+        }
+        mouse.x = p.x;
+        mouse.y = p.y;
         return;
       }
       const view = viewRef.current;
@@ -263,6 +313,19 @@ export function Game(props: {
       finger.y = p.y;
     };
     const up = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') {
+        const m = mouse;
+        if (!m || (e.type === 'pointerup' && e.button !== m.button)) return;
+        mouse = null;
+        mouseHeld.current = false;
+        if (!client.build || e.type !== 'pointerup') return;
+        if (m.button === 0) {
+          // Let go of the piece (or a click): build it there. Taking down: a click takes it.
+          if (client.build.piece !== 'remove') client.placeBuild();
+          else if (!m.moved) client.use();
+        } else if (m.button === 2 && !m.moved) client.turnGhost(1);
+        return;
+      }
       if (press && e.pointerId === press.id) {
         const p = toLocal(e.clientX, e.clientY);
         const tap =
@@ -292,8 +355,17 @@ export function Game(props: {
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       input.tap = null;
+      input.ground = null;
+      input.claim = null;
+      mouseHeld.current = false;
     };
   }, [client, ready, input]);
+
+  // Hosting: say which code friends join with.
+  useEffect(() => {
+    if (ready && client.link.mode === 'host')
+      client.toast(`Your island is open: friends join with ${showJoinCode(client.link.code)}.`);
+  }, [client, ready]);
 
   // Map picture and explored fog for this island.
   useEffect(() => {
@@ -345,7 +417,7 @@ export function Game(props: {
       // Build mode: the piece stays under the mouse; taking down, the piece the mouse is on
       // (picked again only when it moves to another, so the wheel can step down the stack).
       const m = mouseAt.current;
-      if (client.build && m) {
+      if (client.build && m && !mouseHeld.current) {
         const id = client.build.piece === 'remove' ? view.pickBuilding(m.x, m.y) : null;
         if (id === null || (id !== hover && !client.pickPiece(id))) {
           const at = view.groundAt(m.x, m.y);
@@ -506,9 +578,24 @@ export function Game(props: {
         <div className="game-loading">
           <div className="loading-island">🏝️</div>
           <div className="loading-text">{client.waitText}</div>
+          {client.link.mode === 'guest' && (
+            <div className="muted">Island code {showJoinCode(client.link.code)}</div>
+          )}
           <button className="btn ghost" onClick={props.onLeave}>
             Cancel
           </button>
+        </div>
+      )}
+      {client.closed && (
+        <div className="overlay closed">
+          <div className="overlay-card">
+            <div className="overlay-icon">🏝️</div>
+            <h2>Island closed</h2>
+            <p>{client.closed}</p>
+            <button className="btn primary" onClick={props.onLeave}>
+              Back to the title
+            </button>
+          </div>
         </div>
       )}
     </div>

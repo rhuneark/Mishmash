@@ -11,7 +11,7 @@ export type LinkMode = 'solo' | 'host' | 'guest';
 
 export interface Link {
   readonly mode: LinkMode;
-  /** Room code friends use to join (co-op only). */
+  /** The island's multiplayer code (friends join with it once it's open). */
   readonly code: string;
   send(msg: C2S): void;
   onMessage(cb: (msg: S2C) => void): void;
@@ -29,7 +29,7 @@ const AUTOSAVE_MS = 30_000;
 /** Solo play: the authority runs right here; the world pauses with the app. */
 export class LocalLink implements Link {
   readonly mode = 'solo' as const;
-  readonly code = '';
+  readonly code: string;
   private readonly sim: IslandSim;
   private handler: ((msg: S2C) => void) | null = null;
   private queue: S2C[] = [];
@@ -45,6 +45,7 @@ export class LocalLink implements Link {
     private readonly onSave: (save: IslandSave) => Promise<void> | void,
   ) {
     this.playerId = playerId;
+    this.code = save.code ?? '';
     this.sim = new IslandSim(
       island,
       save,

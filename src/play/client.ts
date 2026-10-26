@@ -18,6 +18,8 @@ import { NODES } from '../game/content/nodes';
 import { CROPS, cropForSeed } from '../game/content/crops';
 import { type PoiDef, type Spot } from '../game/content/pois';
 import { CLASSIC, specCode, type IslandSpec } from '../game/islands';
+import { REWARDS, rewardReady, type RewardKind } from '../game/ads';
+import * as run from '../sdk/run';
 import { DEFAULT_RULES, parseRules, type WorldRules } from '../game/rules';
 import { RECIPES, type Station } from '../game/content/recipes';
 import {
@@ -212,7 +214,16 @@ interface Goal {
 }
 
 export type Panel =
-  'bag' | 'craft' | 'skills' | 'storage' | 'keypad' | 'journal' | 'map' | 'menu' | 'note';
+  | 'bag'
+  | 'craft'
+  | 'skills'
+  | 'storage'
+  | 'keypad'
+  | 'journal'
+  | 'map'
+  | 'menu'
+  | 'note'
+  | 'screen';
 
 /** Pages of the pause menu. */
 export type MenuPage = 'main' | 'settings' | 'friends' | 'howto' | 'island';
@@ -265,6 +276,10 @@ export class GameClient {
   you = '';
   phase: 'connecting' | 'building' | 'ready' = 'connecting';
   waitText = 'Connecting…';
+  /** Co-op: the room let you go (the island isn't open, or its host left). */
+  closed: string | null = null;
+  /** An ad is playing for this reward (ads.ts). */
+  adBusy: RewardKind | null = null;
   status: 'ok' | 'reconnecting' | 'lost' = 'ok';
 
   // Mirror of the island.
@@ -461,6 +476,11 @@ export class GameClient {
         this.pending = [];
         for (const m of queued) this.receive(m);
       }, 60);
+      return;
+    }
+    if (msg.type === 'closed') {
+      this.closed = msg.text;
+      this.touch();
       return;
     }
     if (!this.island) {
@@ -1309,6 +1329,44 @@ export class GameClient {
     return this.build ? this.buildPoint(this.ghost?.kind ?? 'wall_wood') : null;
   }
 
+  /** You may have this ad reward today (each once per island day). */
+  rewardReady(kind: RewardKind): boolean {
+    return !!this.me && rewardReady(this.me.ads ?? {}, kind, this.time);
+  }
+
+  /**
+   * Plays a rewarded ad the player chose; only one watched to the end asks the authority for
+   * its reward. Solo play waits while it plays.
+   */
+  async watchAd(kind: RewardKind): Promise<void> {
+    if (this.adBusy || !this.rewardReady(kind)) return;
+    this.adBusy = kind;
+    this.touch();
+    const solo = this.link.mode === 'solo';
+    if (solo) this.link.pause();
+    const res = await run.showRewardedAd(REWARDS[kind].adId, REWARDS[kind].name);
+    if (solo) this.link.resume();
+    this.adBusy = null;
+    run.track('ad_reward', { kind, result: res });
+    if (res === 'earned') {
+      this.send({ type: 'reward', kind });
+      if (kind !== 'wind' && this.panel === 'screen') this.openPanel(null);
+    } else
+      this.toast(
+        res === 'unavailable'
+          ? 'No ad is ready right now. Ads play in the RUN app on phones; try again in a bit.'
+          : 'The ad stopped early, so no reward this time.',
+      );
+    this.touch();
+  }
+
+  /** Build mode: puts the piece down where it is now (a click, a drop or the action button). */
+  placeBuild(): void {
+    if (!this.build || this.build.piece === 'remove') return;
+    this.updateGhost();
+    this.use();
+  }
+
   /** Build mode: moves the camera (kept within reach of you). */
   panBuild(dx: number, dz: number): void {
     if (!this.build) return;
@@ -1655,6 +1713,8 @@ export class GameClient {
       building: b.id,
     };
     const name = BUILDINGS[b.kind]?.name ?? b.kind;
+    if (BUILDINGS[b.kind]?.screen)
+      return { ...base, verb: 'Watch', name: 'the seatback screen', panel: 'screen' };
     switch (b.kind) {
       case 'campfire': {
         const fuel = this.fuel(b);
@@ -1806,6 +1866,8 @@ export class GameClient {
         return this.rescue.phase === 'landed'
           ? { ...base, verb: 'Board', name: 'the helicopter!' }
           : null;
+      case 'screen':
+        return { ...base, verb: 'Watch', name: 'the seatback screen', panel: 'screen' };
     }
     void poi;
     return null;
@@ -1819,6 +1881,8 @@ export class GameClient {
       return this.carrying().has('radio') ? -4 : 2.5;
     }
     if (spot.kind === 'antenna') return this.towerClear() ? -2 : 2.5;
+    // The in-flight channel never gets in the way of the notes and tags around it.
+    if (spot.kind === 'screen') return 0.5;
     return -1;
   }
 

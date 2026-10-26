@@ -13,11 +13,15 @@ import { POIS, SPAWN, TOWER_VINES } from './content/pois';
 import { NODE } from './content/nodes';
 import {
   CLASSIC,
+  JOIN_CHARS,
   TERRAINS,
+  cleanJoinCode,
   islandName,
+  newJoinCode,
   parseSpecCode,
   place,
   randomParts,
+  showJoinCode,
   specCode,
   turnDirections,
   unplace,
@@ -195,6 +199,26 @@ describe('islands from parts', () => {
     expect(parseSpecCode(specCode(spec))).toEqual(spec);
     expect(parseSpecCode('nonsense')).toBeNull();
     expect(islandName(spec)).toMatch(/^\w+ \w+$/);
+  });
+
+  it('gives islands multiplayer codes that are easy to type', () => {
+    const random = rng(7);
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      const code = newJoinCode(random);
+      expect(code).toHaveLength(6);
+      for (const c of code) expect(JOIN_CHARS).toContain(c);
+      expect(cleanJoinCode(code)).toBe(code);
+      expect(cleanJoinCode(showJoinCode(code).toLowerCase())).toBe(code);
+      seen.add(code);
+    }
+    expect(seen.size).toBe(200);
+    expect(showJoinCode('ABC234')).toBe('ABC-234');
+    expect(cleanJoinCode(' abc 234 ')).toBe('ABC234');
+    // Letters and digits that look alike aren't used, so they can't be typed wrong.
+    expect(cleanJoinCode('ABC0I1')).toBeNull();
+    expect(cleanJoinCode('ABC23')).toBeNull();
+    expect(cleanJoinCode('AU-R2M-48213')).toBeNull();
   });
 });
 

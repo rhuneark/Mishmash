@@ -50,6 +50,8 @@ export interface BuildingDef {
   slots?: number;
   /** You wake up here after you fall (bedroll, bed). */
   spawn?: boolean;
+  /** Plays MX207's in-flight channel (ads.ts: the player's choice of a rewarded ad). */
+  screen?: boolean;
   /** One line for the build menu. */
   desc: string;
 }
@@ -423,6 +425,18 @@ const list: BuildingDef[] = [
     cat: 'furniture',
     cost: { scrap: 1, sap: 1, cloth: 1 },
     desc: 'Bloom sap burns slow and bright. A light for indoors.',
+  },
+  {
+    id: 'seat_screen',
+    name: 'Seatback screen',
+    hp: 60,
+    w: 0.9,
+    d: 0.5,
+    blocks: true,
+    cat: 'furniture',
+    cost: { scrap: 4, rope: 1 },
+    screen: true,
+    desc: 'Salvaged from MX207. The in-flight channel still comes in: a sponsor drop or Island Explorer, once a day each.',
   },
   // Farm and kitchen
   {

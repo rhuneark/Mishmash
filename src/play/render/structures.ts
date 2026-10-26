@@ -595,6 +595,26 @@ export function buildingModel(kind: string): BuildingView {
       group.add(glow);
       break;
     }
+    case 'seat_screen': {
+      group.add(
+        mesh([
+          box(0.5, 0.08, 0.36, 0x3a3a3a, { y: 0.04 }),
+          box(0.08, 0.7, 0.08, 0x6d737a, { y: 0.42 }),
+          box(0.9, 0.62, 0.12, 0x2b2f38, { y: 1.05 }),
+          box(0.94, 0.06, 0.16, 0x1b1d24, { y: 1.38 }),
+        ]),
+      );
+      // The channel's glow (the in-flight logo on a blue screen).
+      const glow = mesh(
+        [
+          box(0.76, 0.48, 0.02, 0x5ab4ff, { y: 1.05, z: 0.07 }),
+          box(0.3, 0.06, 0.021, 0xffffff, { y: 1.1, z: 0.08 }),
+        ],
+        MAT.glow,
+      );
+      group.add(glow);
+      break;
+    }
     case 'garden_plot': {
       group.add(
         mesh([
@@ -703,6 +723,23 @@ function spotModel(spot: Spot): SpotView {
       light = mesh([sphere(0.05, 5, 4, 0xff3030, { y: 1.3, z: 0.05 })], MAT.glow);
       group.add(light);
       h = halo(0xff8060, 0.7);
+      break;
+    case 'screen':
+      // A row of seats thrown clear of the fuselage; one screen still glows.
+      group.add(
+        mesh([
+          box(1.5, 0.12, 0.6, 0x3a3f4a, { y: 0.35, ry: 0.2 }),
+          box(1.5, 0.8, 0.14, 0x30353f, { y: 0.8, z: -0.3, ry: 0.2, rx: -0.15 }),
+          box(0.08, 0.35, 0.5, 0x6d737a, { x: -0.7, y: 0.17, ry: 0.2 }),
+          box(0.08, 0.35, 0.5, 0x6d737a, { x: 0.7, y: 0.17, ry: 0.2 }),
+        ]),
+      );
+      light = mesh(
+        [box(0.34, 0.24, 0.02, 0x5ab4ff, { x: 0.3, y: 0.95, z: -0.2, ry: 0.2, rx: -0.15 })],
+        MAT.glow,
+      );
+      group.add(light);
+      h = halo(0x7cc4ff, 0.9);
       break;
     case 'generator':
       light = mesh([sphere(0.07, 5, 4, 0xff3030, { y: 1.05, z: -0.72 })], MAT.glow);

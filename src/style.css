@@ -1875,6 +1875,62 @@ button:disabled {
   -webkit-user-select: text;
 }
 
+/* The in-flight channel (seatback screens: rewarded ads the player picks) */
+
+.channels {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.channel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #3f6f9a;
+  border-radius: 12px;
+  background: linear-gradient(160deg, #13304d, #1b2340);
+  box-shadow: inset 0 0 18px rgba(90, 180, 255, 0.18);
+}
+
+.channel.used {
+  border-color: var(--line);
+  background: var(--panel-2);
+  box-shadow: none;
+}
+
+.channel p {
+  margin: 0;
+}
+
+.channel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+
+.channel-icon {
+  font-size: 24px;
+}
+
+.ad-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border-color: #5ab4ff;
+  background: #173352;
+}
+
+.ad-sub {
+  font-size: 14px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
 .crew {
   display: flex;
   flex-wrap: wrap;
@@ -2908,7 +2964,8 @@ button:disabled {
   background: var(--accent);
 }
 
-.title-continue {
+.title-continue,
+.title-friends {
   display: flex;
   flex-direction: column;
   align-items: center;

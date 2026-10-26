@@ -520,21 +520,22 @@ function roomFail(err: unknown): RoomResult {
   return { ok: false, reason: 'error' };
 }
 
-export async function createRoom(type: string): Promise<RoomResult> {
-  await ready();
-  try {
-    return { ok: true, room: wrapRoom(await RundotGameAPI.realtime.createRoom(type)) };
-  } catch (err) {
-    return roomFail(err);
-  }
-}
-
-export async function joinRoom(code: string): Promise<RoomResult> {
+/**
+ * The room of an island, found by its multiplayer code (the island's own, kept in its
+ * save): the host and friends both land in it, and the first one there makes it. Who
+ * hosts is the room's call (IslandRoom: whoever uploads the island).
+ */
+export async function islandRoom(type: string, island: string): Promise<RoomResult> {
   await ready();
   try {
     return {
       ok: true,
-      room: wrapRoom(await RundotGameAPI.realtime.joinRoomByCode(code.trim().toUpperCase())),
+      room: wrapRoom(
+        await RundotGameAPI.realtime.joinOrCreateRoom(type, {
+          criteria: { island },
+          createOptions: { maxPlayers: 4 },
+        }),
+      ),
     };
   } catch (err) {
     return roomFail(err);
@@ -566,6 +567,26 @@ export function maskText(text: string): Promise<string | null> {
     if (out === text) return null;
     const again = await RundotGameAPI.ugc.checkTextAsync(out);
     return again?.clean === false ? null : out;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Ads: rewarded videos the player chooses to watch (never interstitials). The reward is
+// only given when the SDK says it was earned.
+
+export type AdOutcome = 'earned' | 'not-earned' | 'unavailable';
+
+export async function showRewardedAd(
+  placementId: string,
+  placementName: string,
+): Promise<AdOutcome> {
+  return call<AdOutcome>('rewardedAd', 'unavailable', async () => {
+    if (!(await RundotGameAPI.ads.isRewardedAdReadyAsync())) return 'unavailable';
+    const earned = await RundotGameAPI.ads.showRewardedAdAsync({
+      adDisplayId: placementId,
+      adDisplayName: placementName,
+    });
+    return earned === true ? 'earned' : 'not-earned';
   });
 }
 

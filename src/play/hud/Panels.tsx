@@ -8,6 +8,7 @@ import { POIS } from '../../game/content/pois';
 import { SECRETS, TREASURES, bunkerCode } from '../../game/content/secrets';
 import { knownCode, objectives, tagsFound } from '../../game/objectives';
 import type { GameClient } from '../client';
+import { REWARDS, type RewardKind } from '../../game/ads';
 import { keyHint } from '../keys';
 import { SlotButton } from './Slots';
 
@@ -100,6 +101,59 @@ export function StorageSheet({ client, onClose }: { client: GameClient; onClose:
 
 /** Survey marker plates found so far (the bunker code). */
 const MARKER_SPOTS = ['marker_a_plate', 'marker_b_plate', 'marker_c_plate', 'marker_d_plate'];
+
+/**
+ * A seatback screen of MX207 (the crash site's, or one someone built): the in-flight
+ * channel. Each channel is a rewarded ad the player picks, once per island day (ads.ts).
+ */
+export function ScreenSheet({ client, onClose }: { client: GameClient; onClose: () => void }) {
+  const unfound = (client.island?.pois ?? []).some(
+    (p) => !client.flags.has(`seen:${p.id}`) && !p.id.startsWith('marker'),
+  );
+  const channels: RewardKind[] = ['drop', 'guide'];
+  return (
+    <Sheet title="📺 In-flight channel" onClose={onClose}>
+      <p className="muted small-text">
+        MX207's seatback screens still run on the emergency battery. Between the ads, they pick up
+        more than they should. Each channel plays one ad you choose to watch, once a day.
+      </p>
+      <div className="channels">
+        {channels.map((kind) => {
+          const r = REWARDS[kind];
+          const ready = client.rewardReady(kind);
+          const none = kind === 'guide' && !unfound;
+          return (
+            <div key={kind} className={`channel${ready && !none ? '' : ' used'}`}>
+              <div className="channel-head">
+                <span className="channel-icon">{r.icon}</span>
+                <b>{r.name}</b>
+              </div>
+              <p className="small-text">{r.desc}</p>
+              {none ? (
+                <p className="muted small-text">You've already found every place it visits.</p>
+              ) : ready ? (
+                <button
+                  className="btn primary"
+                  disabled={client.adBusy !== null}
+                  onClick={() => void client.watchAd(kind)}
+                >
+                  {client.adBusy === kind ? 'Playing…' : '▶ Watch an ad'}
+                </button>
+              ) : (
+                <p className="muted small-text">Watched today. New episode tomorrow.</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {client.link.mode !== 'solo' && (
+        <p className="muted small-text">
+          The island keeps going while you watch: find a safe spot.
+        </p>
+      )}
+    </Sheet>
+  );
+}
 
 export function KeypadSheet({ client, onClose }: { client: GameClient; onClose: () => void }) {
   const [code, setCode] = useState('');

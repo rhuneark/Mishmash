@@ -3,7 +3,13 @@
 // shared with the hub's Play tab.
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { CLIMATE_NAMES, TERRAIN_NAMES, islandName, specCode } from '../../game/islands';
+import {
+  CLIMATE_NAMES,
+  TERRAIN_NAMES,
+  islandName,
+  showJoinCode,
+  specCode,
+} from '../../game/islands';
 import { bloomOrdinal, type WorldRules } from '../../game/rules';
 import { clockLabel } from '../../game/sim/time';
 import type { Sound } from '../audio';
@@ -122,7 +128,7 @@ function MainPage(props: { client: GameClient; onClose: () => void; onLeave: () 
           🗺️ Map
         </button>
         <button className="menu-btn" onClick={go('friends')}>
-          👥 {solo ? 'Play with friends' : `Friends · ${client.link.code}`}
+          👥 {solo ? 'Play with friends' : `Friends · ${showJoinCode(client.link.code)}`}
         </button>
         <button className="menu-btn" onClick={go('island')}>
           🏝️ This island
@@ -149,13 +155,20 @@ function MainPage(props: { client: GameClient; onClose: () => void; onLeave: () 
 
 function Friends({ client, onHost }: { client: GameClient; onHost: () => void }) {
   const mode = client.link.mode;
+  const code = client.link.code ? showJoinCode(client.link.code) : '';
   if (mode === 'solo')
     return (
       <>
         <p className="small-text">
-          Open your island so up to 3 friends can join with a code. Your island and progress come
-          along, and you keep everything when they leave.
+          Every island has its own multiplayer code. Open your island and up to 3 friends can join
+          with it, today or any time you open it again. Your island and progress come along, and you
+          keep everything when they leave.
         </p>
+        {code && (
+          <div className="room-code" aria-label={`Multiplayer code ${code}`}>
+            {code}
+          </div>
+        )}
         <button className="btn primary" onClick={onHost}>
           👥 Open my island to friends
         </button>
@@ -163,8 +176,14 @@ function Friends({ client, onHost }: { client: GameClient; onHost: () => void })
     );
   return (
     <>
-      <p className="small-text">Friends join from Play › Join a friend with this code:</p>
-      <div className="room-code">{client.link.code}</div>
+      <p className="small-text">
+        {mode === 'host'
+          ? "Your island is open. Friends join from the title's Join a friend with its code:"
+          : "This island's multiplayer code:"}
+      </p>
+      <div className="room-code" aria-label={`Multiplayer code ${code}`}>
+        {code}
+      </div>
       <div className="crew">
         {client.players.map((p) => (
           <span
@@ -202,12 +221,18 @@ function IslandPage({ client }: { client: GameClient }) {
           <span>{TERRAIN_NAMES[spec.terrain]}</span>
           <span>{layout}</span>
         </div>
+        {client.link.code && (
+          <div className="island-code">
+            Multiplayer code <b>{showJoinCode(client.link.code)}</b>
+          </div>
+        )}
         <div className="island-code">
-          Island code <b>{specCode(spec)}</b>
+          Map code <b>{specCode(spec)}</b>
         </div>
         <p className="muted small-text">
-          Type this code on the New island screen to make the same island again. Friends who join
-          play by this island's rules{owner ? '; you can change them here.' : '.'}
+          Friends join this island with its multiplayer code. The map code makes the same map on the
+          New island screen. Friends who join play by this island's rules
+          {owner ? '; you can change them here.' : '.'}
         </p>
       </div>
       {draft ? (
@@ -268,7 +293,8 @@ export function HowTo({ pc, bloomEvery }: { pc: boolean; bloomEvery: number }) {
       <li>Pick what you hold from the hotbar{pc ? ' (1–6 or the mouse wheel)' : ''}.</li>
       <li>
         🔨 opens build mode{pc ? ' (V)' : ''}: pick a piece from the tabs (walls, floors, roofs,
-        furniture, farming, fire and light) and put it down. It's paid for straight from your bag;
+        furniture, farming, fire and light) and put it down: drag it where you want it and let go,
+        or drag one straight from the menu onto the island. It's paid for straight from your bag;
         taking a piece down gives half back.
       </li>
       <li>
@@ -316,6 +342,16 @@ export function HowTo({ pc, bloomEvery }: { pc: boolean; bloomEvery: number }) {
       <li>
         Find the three parts of the emergency radio and call for rescue. The journal says where to
         go.
+      </li>
+      <li>
+        📺 A seatback screen by the crash site (or one you build) still gets MX207's in-flight
+        channel. If you choose to watch an ad, its sponsor drops a supply pod near you, or Island
+        Explorer finds a place you haven't been. Fallen? Second wind gets you up where you fell,
+        with your bag. Each once a day, and only when you pick it.
+      </li>
+      <li>
+        👥 Every island has its own multiplayer code. Open it to friends from ☰ › Play with
+        friends; they join with the code, today or whenever you open it again.
       </li>
       {pc && <li>Every key can be changed under Settings › Controls.</li>}
     </ul>

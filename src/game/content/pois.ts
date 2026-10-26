@@ -9,7 +9,8 @@ export type SpotKind =
   | 'generator' // the bunker's generator (fuelled with sap)
   | 'antenna' // up the radio tower, behind the vines
   | 'beacon' // where the emergency radio is used
-  | 'heli'; // the rescue helicopter (only once it lands)
+  | 'heli' // the rescue helicopter (only once it lands)
+  | 'screen'; // a seatback screen still on the emergency battery: the in-flight channel (ads.ts)
 
 export interface Spot {
   id: string;
@@ -73,6 +74,7 @@ export const POIS: PoiDef[] = [
     ],
     spots: [
       { id: 'crash_note', kind: 'note', dx: -3, dz: 4.5, note: 'boarding' },
+      { id: 'crash_screen', kind: 'screen', dx: -6, dz: -4.2 },
       { id: 'tag_0', kind: 'tag', dx: 13, dz: 9, note: 'tag', digit: 0 },
       { id: 'tag_1', kind: 'tag', dx: -16, dz: -9, note: 'tag', digit: 1 },
       { id: 'tag_2', kind: 'tag', dx: 21, dz: -13, note: 'tag', digit: 2 },

@@ -32,12 +32,13 @@ update to the user with this link)
   slowly around the crash site (`play/TitleScene.ts`: the game's own terrain, nodes, grass and
   landmarks, 30 fps, gives the WebGL context back on unmount; no save: an autumn showcase
   island). Buttons: Continue (island name · Day N) or Start surviving, New island, Play with
-  friends (host my island), Join a friend (room code), ⚙️ Settings (the game's settings panel
+  friends (opens your island; shows its multiplayer code), Join a friend (that code), ⚙️ Settings (the game's settings panel
   without the key list), ❓ How to play, 💡 Suggest an update, 🎃 Vote for us in October Jam,
   and for the owner only 🛠️ Dev (· N to check: new suggestions + messages with open reports). **New island** (`screens/NewIsland.tsx`): map preview, name and code, 🎲
-  Surprise me / Same kind, new island, climate, terrain, layout (quarter turns + mirror), an
-  island code box, then the world rules (`hud/RulesPanel.tsx`); starting asks before it
-  replaces a save. The win screen's New island lands here too (`App` `wantNew`).
+  Surprise me / Same kind, new island, climate, terrain, layout (quarter turns + mirror), a
+  map code box (the `specCode`; called "map code" in the UI since v1.22 so it isn't mixed up
+  with the multiplayer code), then the world rules (`hud/RulesPanel.tsx`); Start on X or 👥
+  Start with friends (hosts it right away); starting asks before it replaces a save. The win screen's New island lands here too (`App` `wantNew`).
 - **October Jam button** (`app/links.ts`): RUN runs the game in a sandbox without
   `allow-popups` and the SDK has no call to open an outside page (preflight fails on
   `window.open` as critical), so the button copies `JAM_URL`
@@ -349,7 +350,13 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   1.6 m of the ghost) to move it; **drag anywhere else** to look around (the ground under the
   finger stays under it). On PC the piece follows the mouse (`view.groundAt`, re-aimed every
   frame; in take-down the piece under the mouse, picked again only when it changes so the wheel
-  can step down the stack) and WASD looks around. The picked piece gets a red box
+  can step down the stack) and WASD looks around. **Drag and drop on PC too** (v1.22, the user:
+  "drag and drop UI should be on PC as well"): in build mode the mouse on the island is the
+  game's (`input.claim`, not the action binding): grab the piece and let go to build it there
+  (a click builds it where it is; `client.placeBuild`), a left drag in take-down or a right
+  drag looks around, a right click turns the piece. **From the build menu**: drag a piece's tile
+  onto the island (mouse, or a finger moving up: a sideways swipe still scrolls the row) and it
+  goes down where it's let go (`Hud.tsx` `dragPiece`, `input.ground`). The picked piece gets a red box
   (`doomBox`). Pieces go **anywhere on the grid you can see**:
   within `BUILD_RANGE` 22 m of you (`setBuildCursor`; the authority allows `BUILD_REACH` 24,
   the take-down 25; the user asked for v1.19: "place things anywhere inside the grid, not just
@@ -380,7 +387,8 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   **Pieces**: campfire, workbench, Mashbench, storage box, bedroll, torch post, heart lantern;
   wooden/short/window/scrap walls, door, gate, posts, fences and fence gate, stone walls and
   pillar, thorn wall; wooden/stone floors, rug, thatch and wooden roofs; table, chair, bed
-  (`spawn`, like the bedroll), shelf (8 `slots`), big chest (24), lamp; garden plot, cooking
+  (`spawn`, like the bedroll), shelf (8 `slots`), big chest (24), lamp, seatback screen (the
+  in-flight channel); garden plot, cooking
   pot (station `pot`, needs a lit campfire within `POT_FIRE_RANGE` 3 m), rain collector;
   spikes, spike pit (floor layer, `thorns`), snap trap.
 - **Farming and cooking** (`content/crops.ts`, `sim.ts` `usePlot`/`updatePlot`): a garden plot
@@ -455,6 +463,28 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   `dug:N`. The journal lists treasure maps; the quest list shows one secret card at a time
   (`secretQuest`: treasure, then the wreck, then the bunker), and only after "The first night"
   is done, so there are never more than two cards.
+- **Ads: the in-flight channel** (`game/ads.ts`, v1.22; the user: "we need to include ads,
+  but make the ads super unique in the sense they do something unique and don't ruin the
+  game"). Only rewarded videos the player picks (`run.showRewardedAd`; never interstitials),
+  each framed as part of the island and doing something nothing else does, **once per island
+  day per survivor** (`REWARDS`, `rewardReady`, `PlayerSave.ads` = the day each was last used,
+  `MeNet.ads`): MX207's seatback screens still run on the emergency battery: the crash site has
+  one (spot kind `screen`, `crash_screen`, on the far side of the fuselage from the spawn and
+  ranked below notes and tags so it never gets in the way of the first steps; it flickers, and
+  its halo shows while a channel is left today) and players can build one (`seat_screen`, furniture, 4 scrap + 1 rope, `screen: true`).
+  Using one opens the **📺 In-flight channel** sheet (`Panels.tsx` `ScreenSheet`): **📦 Sponsor
+  drop** (a Verdance AirDrop pod comes down 14–30 m from you: `events.ts` `sponsorPod`,
+  `SPONSOR_LOOT`, only 1–2 of the Bloom woken; announced to everyone) and **🧭 Island
+  Explorer** (the nearest landmark or secret site nobody has found goes on the map,
+  `seen:<poi>`, with distance and direction; survey markers stay a puzzle). On the death screen
+  **🚁 Second wind**: a Verdance med-drone gets you up where you fell, with your bag back
+  (`SimPlayer.lastBag`), 50 health, and its flash throws the Bloom within 10 m back and holds
+  them 4 s. The client asks the authority (C2S `reward {kind}`) only when the SDK says the
+  ad was earned; `IslandSim.onReward` checks the day, a screen in reach (or being dead for
+  Second wind). Solo play waits while an ad plays; in co-op the island keeps going (the sheet
+  says so). Outside the RUN app (desktop, or no ad ready) the player is told no ad is ready;
+  the local mock shows a "Close Ad" overlay. New reward: a `RewardKind` + `REWARDS` entry and
+  its case in `onReward`.
 - **Item pictures** (`hud/itemIcons.ts`): every item is a small SVG (48×48, flat colours,
   dark outline) shown as a data-URL `<img>` (`Slots.tsx` `ItemIcon`). Not emoji: newer emoji
   (wood, rock, rope…) are empty boxes on older phones and Windows. `itemIcons.test.ts`
@@ -524,11 +554,26 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   fair weather, no pets). The player key is the
   RUN profile id (the same id the room uses), so your survivor is the same solo and hosting.
 - **Co-op** (`play/roomLink.ts`, `server/IslandRoom.ts`, `rundot/realtime.config.json`, room
-  type `island`, 4 players, reconnect 60 s). The host creates a room and uploads their island
-  save (`init` parts); the room runs `IslandSim` at 10 Hz and sends the save back to the host
-  every 60 s and when they leave (`bye`), so the host keeps the progress; friends join with
-  the room code and their survivor lives in the host's save. Realtime needs a RUN sign-in (the
-  SDK prompts). `npm run dev` runs a local room server (port 9001).
+  type `island`, 4 players, reconnect 60 s). **Every island has its own multiplayer code**
+  (v1.22, the user: "any island should be able to be multiplayer, and should have a unique
+  Island multiplayer code to join"): 6 characters from `JOIN_CHARS` (no I/L/O/0/1), made with
+  the island (`islands.ts` `newJoinCode`, `IslandSave.code`; older saves get one in
+  `session.loadIsland`), shown as "ABC-234" (`showJoinCode`; `cleanJoinCode` reads typed ones)
+  on the title's Play with friends button, the pause menu (Friends · code, This island) and
+  the host's toast. RUN's room codes are random per room, so the island's room is found by
+  `run.islandRoom` = `realtime.joinOrCreateRoom('island', { criteria: { island: code } })`:
+  the host and friends land in the same room, whoever comes first makes it. **Who hosts is the
+  room's call**: the first to upload the island (`init` parts) hosts it; nobody takes over an
+  open island (another `init` is told `TAKEN` and let go). Friends who come first wait ("Waiting
+  for your friend to open the island…", `HOST_WAIT_MS` 120 s, then `NOBODY`). The room runs
+  `IslandSim` at 10 Hz and sends the save back to the host every 60 s and when they leave
+  (`bye`), so the host keeps the progress; friends' survivors live in the host's save. When
+  the host leaves, the room tells everyone (S2C `closed {text}`: the client's "Island closed"
+  overlay, Back to the title), lets them go and waits for the island to open again (same code,
+  same room while it lasts). Opening from solo: ☰ › Play with friends, the title, or Start with
+  friends on the New island screen. Realtime needs a RUN sign-in (the SDK prompts). `npm run
+  dev` runs a local room server (port 9001; it never disposes rooms and matches criteria the
+  same way). Ask the user to try hosting and joining by code on the live build.
 - **Dev hook**: in dev builds `window.__game = { client, input }` (the playthrough uses it;
   solo `client.link.sim` is the authority itself).
 
@@ -606,6 +651,7 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
   islands.ts         island parts: layout turns/mirror, climates, terrain styles, codes, names
   rules.ts           world rules (7 Days style), presets, what they mean in numbers
   objectives.ts      the escape checklist from flags/notes/inventory
+  ads.ts             the in-flight channel: rewarded ads the player picks, once a day each
   skills.ts          levels, XP table and the skill tree (branches, perks, tiers)
   content/           items, recipes, nodes, buildings, crops, monsters, landmarks (pois),
                      secrets (bunker, wreck, markers, treasure), notes
@@ -700,9 +746,14 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # on the ground walks there, a tap on a tree chops it), pause menu, This island (change the spawn
                             # rate), a bow shot, planting and watering, feeding a goat, the
                             # bunker sign, HUD settings, settings, rebinding a key, landscape,
-                            # save/continue, replace confirm), hub settings and local co-op on
-                            # a made island with Relaxed rules (island chat: log, bubble,
-                            # badge, Enter, mute);
+                            # save/continue, replace confirm; PC build drag and drop: grab and
+                            # drop a piece, drag one from the menu, right-drag looks, right
+                            # click turns; ads: Second wind on the death screen, the crash
+                            # site's in-flight channel: sponsor drop, Island Explorer), hub
+                            # settings and local co-op on a made island with Relaxed rules by
+                            # its multiplayer code (a friend waits for the host, island chat:
+                            # log, bubble, badge, Enter, mute; the host leaves: Island closed;
+                            # reopened with the same code);
                             # must print "clean"
 ```
 

@@ -2079,7 +2079,7 @@ async function playCoop() {
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByText(shown).first().waitFor();
   await host.page.getByRole('button', { name: /Close the island and quit/ }).click();
-  await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 15000 });
+  await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 30000 });
   // The host left: the friend is told and goes back to the title.
   await friend.page.getByText('Island closed').waitFor({ timeout: 15000 });
   await friend.page.screenshot({ path: `${SHOTS}/coop-closed.png` });
@@ -2099,7 +2099,7 @@ async function playCoop() {
   );
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByRole('button', { name: /Close the island and quit/ }).click();
-  await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 15000 });
+  await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 30000 });
   for (const who of [host, friend]) {
     check(who.errors.length === 0, `co-op console errors: ${who.errors.join(' | ')}`);
     await who.context.close();

@@ -425,6 +425,13 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await menu.getByRole('button', { name: /^Lumberjack, rank 1 of 3/ }).waitFor();
   await noSideScroll('skills');
   await shot('6a-skills');
+  // Nothing roams from here through building: the menu checks below take a while with the
+  // survivor standing still (the island doesn't wait while the survivor menu is open), and
+  // build mode stands you still too (a bite takes you out of it).
+  await game(page, () => {
+    const sim = window.__game.client.link.sim;
+    window.__calmBuild = setInterval(() => sim.mobs.clear(), 100);
+  });
   // On a phone the menu scrolls even when the swipe starts on a tile or a slot, and a press
   // and hold lifts an item to drag it.
   const finger = await fingerOn(page);
@@ -497,12 +504,6 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     );
   }
   check((await page.locator('.level-badge').count()) === 1, `${tag} hud: no level badge`);
-
-  // Nothing roams while we build (build mode stands you still, and a bite takes you out of it).
-  await game(page, () => {
-    const sim = window.__game.client.link.sim;
-    window.__calmBuild = setInterval(() => sim.mobs.clear(), 100);
-  });
 
   // Build a campfire: pick it in build mode, and it's paid for straight from the bag.
   await teleport(page, 12, 272);

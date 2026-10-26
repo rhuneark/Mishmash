@@ -58,7 +58,11 @@ export default class IslandRoom extends GameRoom<Msg> {
         return;
       }
       case 'bye':
-        if (sender.id === this.hostId) this.sendSave();
+        // The host is closing the island: their last save, then everyone else goes (their
+        // socket only drops after this; the room hears of it a reconnect window later).
+        if (sender.id !== this.hostId) return;
+        this.sendSave();
+        this.close(sender.id);
         return;
       case 'hello':
         if (this.sim) {
@@ -97,8 +101,9 @@ export default class IslandRoom extends GameRoom<Msg> {
     this.kick(id, text);
   }
 
-  /** The host left: everyone goes, and the room waits for the island to open again. */
-  private close(): void {
+  /** The host left (`host`: is leaving now): everyone else goes, and the room waits for the
+   * island to open again. */
+  private close(host?: string): void {
     this.sim = null;
     this.hostId = '';
     this.init = new PartBuffer();
@@ -106,7 +111,7 @@ export default class IslandRoom extends GameRoom<Msg> {
     this.pending.clear();
     for (const id of [...this.players.keys()]) {
       this.clock.clear(`wait:${id}`);
-      this.letGo(id, HOST_LEFT);
+      if (id !== host) this.letGo(id, HOST_LEFT);
     }
   }
 

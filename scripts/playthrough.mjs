@@ -1034,7 +1034,11 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     }
     check(!!spot, `${tag} tap: no plain ground to walk to on screen`);
     if (spot) {
-      await finger.tap(spot[0], spot[1]);
+      // Headless frames stall now and then and a stalled tap reads as a hold: tap again.
+      for (let k = 0; k < 4; k++) {
+        await finger.tap(spot[0], spot[1]);
+        if (await game(page, () => !!window.__game.client.goal)) break;
+      }
       await until(
         page,
         ([x, z]) => Math.hypot(window.__game.client.x - x, window.__game.client.z - z) > 2,
@@ -1067,15 +1071,8 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
       // Stand a few metres from it with an axe in the bag, where the tree shows on the island.
       await give(page, [['axe_stone', 1]]);
       let at = null;
-      for (const [dx, dz] of [
-        [-4.2, 4.2],
-        [0, 5.5],
-        [-5.5, 0],
-        [4.2, 4.2],
-        [-4.2, -4.2],
-      ]) {
-        await teleport(page, tree[1] + dx, tree[2] + dz);
-        await page.waitForTimeout(1500);
+      let stand = null;
+      const aim = async () => {
         const here = await onIsland(page, tree[1], 1.2, tree[2]);
         const what =
           here[2] &&
@@ -1087,8 +1084,20 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
             },
             [here[0], here[1], tree[0]],
           ));
-        if (what) {
-          at = here;
+        return what ? here : null;
+      };
+      for (const [dx, dz] of [
+        [-4.2, 4.2],
+        [0, 5.5],
+        [-5.5, 0],
+        [4.2, 4.2],
+        [-4.2, -4.2],
+      ]) {
+        await teleport(page, tree[1] + dx, tree[2] + dz);
+        await page.waitForTimeout(1500);
+        at = await aim();
+        if (at) {
+          stand = [tree[1] + dx, tree[2] + dz];
           break;
         }
       }
@@ -1118,7 +1127,30 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
             last = now;
           }, 100);
         });
-        await finger.tap(at[0], at[1]);
+        // A stalled headless frame can turn the tap into a hold, or the camera can still be
+        // settling: aim again from the same spot and tap until it's walking to the tree.
+        for (let k = 0; k < 4 && at; k++) {
+          await finger.tap(at[0], at[1]);
+          const going = await game(
+            page,
+            (id) => {
+              const g = window.__game.client.goal;
+              return !!g && g.focus?.kind === 'node' && g.focus.id === id;
+            },
+            tree[0],
+          );
+          if (
+            going ||
+            (await game(page, (id) => window.__game.client.link.sim.nodes.has(id), tree[0]))
+          )
+            break;
+          await game(page, () => {
+            window.__game.client.goal = null;
+          });
+          await teleport(page, stand[0], stand[1]);
+          await page.waitForTimeout(1500);
+          at = (await aim()) ?? at;
+        }
         // Chopped: the island counts the damage (the wood comes when it falls).
         const chopped = await until(
           page,

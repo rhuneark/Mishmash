@@ -3,12 +3,12 @@ import { NODE } from './content/nodes';
 import { RECIPES } from './content/recipes';
 import { BUILDINGS } from './content/buildings';
 import { emptyInv, add } from './sim/inventory';
-import { TUTORIAL, TUT_DONE, hasFood, parseTut, type TutView } from './tutorial';
+import { TUTORIAL, TUT_DONE, TUT_VERSION, hasFood, parseTut, type TutView } from './tutorial';
 
 function view(items: [string, number][] = [], extra: Partial<TutView> = {}): TutView {
   const inv = emptyInv();
   for (const [id, n] of items) add(inv, id, n);
-  return { inv, notes: new Set(), built: new Set(), did: new Set(), ...extra };
+  return { inv, notes: new Set(), built: new Set(), did: new Set(), xp: 0, perks: {}, ...extra };
 }
 
 const step = (id: string) => {
@@ -46,7 +46,12 @@ describe('survival basics', () => {
         ]),
       ),
     ).toBe(true);
-    expect(sticks.progress?.(view([['wood', 5]]))).toBe('Wood 3/3 · Stone 0/2');
+    // Each goal ticks off by itself, with how many so far.
+    const goals = sticks.goals(view([['wood', 5]]));
+    expect(goals.map((g) => [g.count, g.done])).toEqual([
+      [[3, 3], true],
+      [[0, 2], false],
+    ]);
     // Branches first, then loose stones.
     expect(sticks.target?.(view())).toEqual({ kind: 'node', types: [NODE.branch] });
     expect(sticks.target?.(view([['wood', 3]]))).toEqual({ kind: 'node', types: [NODE.pebble] });
@@ -65,10 +70,28 @@ describe('survival basics', () => {
     expect(step('eat').done(view([['wood', 4]]))).toBe(true);
   });
 
+  it('ticks off what the screen shows, and asks for a skill once there is a point', () => {
+    const fire = step('campfire');
+    expect(fire.goals(view()).map((g) => g.done)).toEqual([false, false, false]);
+    expect(
+      fire.goals(view([], { seen: new Set(['build', 'piece:campfire']) })).map((g) => g.done),
+    ).toEqual([true, true, false]);
+    const skills = step('skills');
+    // Level 2 (100 XP): a point to spend.
+    expect(skills.done(view([], { xp: 120 }))).toBe(false);
+    expect(skills.done(view([], { xp: 120, perks: { lumberjack: 1 } }))).toBe(true);
+    // Nothing to spend yet: nothing to learn here.
+    expect(skills.done(view([], { xp: 40 }))).toBe(true);
+  });
+
   it('reads saved steps safely', () => {
-    expect(parseTut(3, 0)).toBe(3);
-    expect(parseTut(99, 0)).toBe(TUT_DONE);
-    expect(parseTut(-4, 0)).toBe(0);
-    expect(parseTut('x', TUT_DONE)).toBe(TUT_DONE);
+    expect(parseTut(3, 0, TUT_VERSION)).toBe(3);
+    expect(parseTut(99, 0, TUT_VERSION)).toBe(TUT_DONE);
+    expect(parseTut(-4, 0, TUT_VERSION)).toBe(0);
+    expect(parseTut('x', TUT_DONE, TUT_VERSION)).toBe(TUT_DONE);
+    // v1.23 saves (no version): 12 meant finished; the skills step came in before the last.
+    expect(parseTut(12, 0, undefined)).toBe(TUT_DONE);
+    expect(parseTut(11, 0, undefined)).toBe(11);
+    expect(parseTut(12, 0, TUT_VERSION)).toBe(12);
   });
 });

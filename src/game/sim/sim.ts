@@ -56,7 +56,7 @@ import {
 } from './inventory';
 import { FIRST_EVENT, compass, rollLoot, runEvents, sponsorPod } from './events';
 import { isRewardKind, islandDay, rewardReady } from '../ads';
-import { TUTORIAL, TUT_DONE, TUT_GIFT, builtBy, type TutView } from '../tutorial';
+import { TUTORIAL, TUT_DONE, TUT_GIFT, TUT_VERSION, builtBy, type TutView } from '../tutorial';
 import { parseWeather, runWeather, type WeatherState } from './weather';
 import { burrowAll, damageMob, runDirector, spawnMob, updateMobs } from './mobs';
 import { MONSTERS, PET_NAMES } from '../content/monsters';
@@ -455,6 +455,7 @@ export class IslandSim {
         ...(Object.keys(p.ads).length ? { ads: { ...p.ads } } : {}),
         tut: p.tut,
         tutPaid: p.tutPaid,
+        tutV: TUT_VERSION,
       };
     }
     return {
@@ -1723,6 +1724,8 @@ export class IslandSim {
         notes: this.notes,
         built: builtBy(this.buildings.values(), p.id),
         did: new Set(),
+        xp: p.xp,
+        perks: p.perks,
       };
       if (!s.trust && !s.done(view)) return;
       if (p.tut >= p.tutPaid) {

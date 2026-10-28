@@ -9,6 +9,7 @@ import { ITEMS } from './content/items';
 import { BUILDINGS } from './content/buildings';
 import { count, type Inv } from './sim/inventory';
 import type { Slot } from './sim/protocol';
+import { levelFor, pointsFor, spent, type Perks } from './skills';
 
 /** What a step's check looks at: the same on the authority and on the phone. */
 export interface TutView {
@@ -18,13 +19,33 @@ export interface TutView {
   built: ReadonlySet<string>;
   /** What only the phone sees (walking, eating, "got it"); the authority takes the word for it. */
   did: ReadonlySet<string>;
+  /** XP and skills learned (the skills step). */
+  xp: number;
+  perks: Perks;
+  /**
+   * What this step has had on screen so far: 'panel:craft', 'build', 'piece:campfire',
+   * 'hold:food', 'near' (the phone only: the goals tick with it, the checks never read it).
+   */
+  seen?: ReadonlySet<string>;
+}
+
+/** One thing to do in a step, ticked off on the tracker when it's done. */
+export interface TutGoal {
+  text: string;
+  done: boolean;
+  /** An item picture to show with it. */
+  item?: string;
+  /** How many so far, of how many. */
+  count?: [number, number];
+  /** The PC key for it (an action name: the HUD shows whatever key it's bound to). */
+  key?: string;
 }
 
 /** Where the step sends you: a landmark spot, or the nearest node of these kinds. */
 export type TutTarget = { kind: 'spot'; id: string } | { kind: 'node'; types: number[] } | null;
 
 /** Which button the step lights up (the client decides what's on screen right now). */
-export type TutAction = 'walk' | 'use' | 'craft' | 'build' | 'eat' | 'ok';
+export type TutAction = 'walk' | 'use' | 'craft' | 'build' | 'eat' | 'skills' | 'ok';
 
 export interface TutStep {
   id: string;
@@ -41,8 +62,8 @@ export interface TutStep {
   done(v: TutView): boolean;
   /** Only the phone can tell (walking, eating): the authority pays it on the player's word. */
   trust?: boolean;
-  /** How far along, e.g. "Wood 2/3 · Stone 0/2". */
-  progress?(v: TutView): string;
+  /** What to do, ticked off as it gets done (and how many so far). */
+  goals(v: TutView): TutGoal[];
   target?(v: TutView): TutTarget;
 }
 
@@ -50,7 +71,18 @@ const TREES = [NODE.palm, NODE.jungle, NODE.pine];
 const BUSHES = [NODE.bush, NODE.berry];
 
 const has = (v: TutView, id: string) => count(v.inv, id);
-const of = (n: number, need: number) => `${Math.min(n, need)}/${need}`;
+const saw = (v: TutView, what: string) => !!v.seen?.has(what);
+
+/** Gather so many of an item (or be past needing it). */
+function gather(v: TutView, item: string, text: string, need: number, past = false): TutGoal {
+  const n = has(v, item);
+  return { text, item, count: [Math.min(n, need), need], done: past || n >= need };
+}
+
+/** Skills learned, or no point to spend yet. */
+function learned(v: TutView): boolean {
+  return spent(v.perks) > 0 || pointsFor(levelFor(v.xp)) <= 0;
+}
 
 /** Something in the bag to eat or drink. */
 export function hasFood(inv: Inv): boolean {
@@ -78,6 +110,7 @@ export const TUTORIAL: TutStep[] = [
     action: 'walk',
     trust: true,
     done: (v) => v.did.has('walk'),
+    goals: (v) => [{ text: 'Walk a few steps', done: v.did.has('walk') }],
   },
   {
     id: 'note',
@@ -88,6 +121,10 @@ export const TUTORIAL: TutStep[] = [
     xp: 15,
     action: 'use',
     done: (v) => v.notes.has('crash_note'),
+    goals: (v) => [
+      { text: 'Go to the note by the plane', done: saw(v, 'near') || v.notes.has('crash_note') },
+      { text: 'Read it', key: 'use', done: v.notes.has('crash_note') },
+    ],
     target: () => ({ kind: 'spot', id: 'crash_note' }),
   },
   {
@@ -99,7 +136,10 @@ export const TUTORIAL: TutStep[] = [
     xp: 15,
     action: 'use',
     done: (v) => (has(v, 'wood') >= 3 && has(v, 'stone') >= 2) || hasAxe(v.inv),
-    progress: (v) => `Wood ${of(has(v, 'wood'), 3)} · Stone ${of(has(v, 'stone'), 2)}`,
+    goals: (v) => [
+      gather(v, 'wood', 'Branches (wood)', 3, hasAxe(v.inv)),
+      gather(v, 'stone', 'Loose stones', 2, hasAxe(v.inv)),
+    ],
     target: (v) => ({ kind: 'node', types: [has(v, 'wood') < 3 ? NODE.branch : NODE.pebble] }),
   },
   {
@@ -111,7 +151,7 @@ export const TUTORIAL: TutStep[] = [
     xp: 15,
     action: 'use',
     done: (v) => has(v, 'fiber') >= 2 || hasAxe(v.inv),
-    progress: (v) => `Fiber ${of(has(v, 'fiber'), 2)}`,
+    goals: (v) => [gather(v, 'fiber', 'Fiber from a bush', 2, hasAxe(v.inv))],
     target: () => ({ kind: 'node', types: BUSHES }),
   },
   {
@@ -124,6 +164,10 @@ export const TUTORIAL: TutStep[] = [
     action: 'craft',
     recipe: 'axe_stone',
     done: (v) => hasAxe(v.inv),
+    goals: (v) => [
+      { text: 'Open Crafting', key: 'craft', done: saw(v, 'panel:craft') || hasAxe(v.inv) },
+      { text: 'Craft a Stone axe', item: 'axe_stone', done: hasAxe(v.inv) },
+    ],
   },
   {
     id: 'chop',
@@ -134,7 +178,7 @@ export const TUTORIAL: TutStep[] = [
     xp: 20,
     action: 'use',
     done: (v) => has(v, 'wood') >= 5 || v.built.has('campfire'),
-    progress: (v) => `Wood ${of(has(v, 'wood'), 5)}`,
+    goals: (v) => [gather(v, 'wood', 'Wood from a tree', 5, v.built.has('campfire'))],
     target: () => ({ kind: 'node', types: TREES }),
   },
   {
@@ -146,7 +190,7 @@ export const TUTORIAL: TutStep[] = [
     xp: 10,
     action: 'use',
     done: (v) => has(v, 'stone') >= 4 || v.built.has('campfire'),
-    progress: (v) => `Stone ${of(has(v, 'stone'), 4)}`,
+    goals: (v) => [gather(v, 'stone', 'Loose stones', 4, v.built.has('campfire'))],
     target: () => ({ kind: 'node', types: [NODE.pebble] }),
   },
   {
@@ -160,6 +204,14 @@ export const TUTORIAL: TutStep[] = [
     action: 'build',
     piece: 'campfire',
     done: (v) => v.built.has('campfire'),
+    goals: (v) => {
+      const fire = v.built.has('campfire');
+      return [
+        { text: 'Open build mode', key: 'build', done: saw(v, 'build') || fire },
+        { text: 'Pick the Campfire', done: saw(v, 'piece:campfire') || fire },
+        { text: 'Put it down', done: fire },
+      ];
+    },
   },
   {
     id: 'eat',
@@ -172,6 +224,10 @@ export const TUTORIAL: TutStep[] = [
     trust: true,
     // Nothing left to eat: there's nothing to learn here yet.
     done: (v) => v.did.has('eat') || !hasFood(v.inv),
+    goals: (v) => [
+      { text: 'Hold the ration', done: saw(v, 'hold:food') || v.did.has('eat') },
+      { text: 'Eat it', key: 'eat', done: v.did.has('eat') },
+    ],
   },
   {
     id: 'cloth',
@@ -182,7 +238,7 @@ export const TUTORIAL: TutStep[] = [
     xp: 15,
     action: 'use',
     done: (v) => has(v, 'cloth') >= 2 || hasBed(v),
-    progress: (v) => `Cloth ${of(has(v, 'cloth'), 2)}`,
+    goals: (v) => [gather(v, 'cloth', 'Cloth from suitcases', 2, hasBed(v))],
     target: () => ({ kind: 'node', types: [NODE.luggage] }),
   },
   {
@@ -196,8 +252,28 @@ export const TUTORIAL: TutStep[] = [
     action: 'build',
     piece: 'bedroll',
     done: hasBed,
-    progress: (v) => `Fiber ${of(has(v, 'fiber'), 8)} · Cloth ${of(has(v, 'cloth'), 2)}`,
+    goals: (v) => [
+      gather(v, 'fiber', 'Fiber', 8, hasBed(v)),
+      gather(v, 'cloth', 'Cloth', 2, hasBed(v)),
+      { text: 'Build a Bedroll', key: 'build', item: 'bedroll', done: hasBed(v) },
+    ],
     target: (v) => (has(v, 'fiber') < 8 ? { kind: 'node', types: BUSHES } : null),
+  },
+  {
+    id: 'skills',
+    icon: '⭐',
+    title: 'Get stronger',
+    touch:
+      'All that work levelled you up! Tap your ⭐ level badge (or 🎒 › Skills), pick a skill and tap Learn.',
+    pc: 'All that work levelled you up! Press L (or click your ⭐ level badge), pick a skill and click Learn.',
+    xp: 15,
+    action: 'skills',
+    // Nothing to spend yet (a skipped chain): nothing to learn here.
+    done: learned,
+    goals: (v) => [
+      { text: 'Open Skills', key: 'skills', done: saw(v, 'panel:skills') || learned(v) },
+      { text: 'Learn a skill', done: learned(v) },
+    ],
   },
   {
     id: 'end',
@@ -210,6 +286,7 @@ export const TUTORIAL: TutStep[] = [
     action: 'ok',
     trust: true,
     done: (v) => v.did.has('end'),
+    goals: (v) => [{ text: 'Look in the journal', key: 'journal', done: saw(v, 'panel:journal') }],
   },
 ];
 
@@ -222,10 +299,17 @@ export const TUT_GIFT: Slot[] = [
   { id: 'torch', n: 1 },
 ];
 
+/** Saved with the steps (PlayerSave.tutV): v1.23's 12 steps had no number. */
+export const TUT_VERSION = 2;
+/** "Finished" in v1.23 saves, which is a step now (skills came in before the last one). */
+const V1_DONE = 12;
+
 /** A saved step (untrusted): 0 … TUT_DONE. */
-export function parseTut(v: unknown, fallback: number): number {
+export function parseTut(v: unknown, fallback: number, version: unknown): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
-  return Math.max(0, Math.min(TUT_DONE, Math.floor(v)));
+  const n = Math.floor(v);
+  if (version !== TUT_VERSION && n >= V1_DONE) return TUT_DONE;
+  return Math.max(0, Math.min(TUT_DONE, n));
 }
 
 /** Which kinds of pieces a survivor has built. */

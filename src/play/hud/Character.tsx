@@ -33,6 +33,10 @@ export function CharacterMenu({
   pc: boolean;
 }) {
   const prog = client.progress();
+  const glow = client.tutGlow();
+  // Survival basics lights the tab it wants (and the pointer names it).
+  const litTab = (id: CharTab) =>
+    (id === 'craft' && glow === 'tab-craft') || (id === 'skills' && glow === 'tab-skills');
   const tabs: [CharTab, string][] = [
     ['bag', '🎒 Survivor'],
     ['craft', '🔨 Crafting'],
@@ -48,7 +52,8 @@ export function CharacterMenu({
                 key={id}
                 role="tab"
                 aria-selected={tab === id}
-                className={`char-tab${tab === id ? ' on' : ''}${id === 'craft' && client.tutGlow() === 'tab-craft' ? ' tut-glow' : ''}`}
+                className={`char-tab${tab === id ? ' on' : ''}${litTab(id) ? ' tut-glow' : ''}`}
+                data-tip={litTab(id) ? (id === 'craft' ? 'Crafting' : 'Skills') : undefined}
                 onClick={() => client.openPanel(id)}
               >
                 {label}
@@ -412,7 +417,8 @@ function CraftingTab({ client }: { client: GameClient }) {
             key={id}
             role="tab"
             aria-selected={cat === id}
-            className={`craft-cat${cat === id ? ' on' : ''}${wantCat === id || (wantCat && id === 'all') ? ' tut-glow' : ''}`}
+            className={`craft-cat${cat === id ? ' on' : ''}${wantCat === id ? ' tut-glow' : ''}`}
+            data-tip={wantCat === id ? label : undefined}
             onClick={() => {
               lastCat = id;
               setCat(id);
@@ -440,6 +446,9 @@ function CraftingTab({ client }: { client: GameClient }) {
             <button
               key={r.id}
               className={`recipe-tile${ok ? ' ok' : st[r.station] ? '' : ' away'}${sel?.id === r.id ? ' sel' : ''}${want === r.id && sel?.id !== r.id ? ' tut-glow' : ''}`}
+              data-tip={
+                want === r.id && sel?.id !== r.id ? `Pick the ${ITEMS[r.out]?.name}` : undefined
+              }
               onClick={() => choose(r.id)}
               aria-label={ITEMS[r.out]?.name ?? r.out}
               title={ITEMS[r.out]?.name}
@@ -498,6 +507,7 @@ function RecipeDetail({ client, r, glow }: { client: GameClient; r: Recipe; glow
       <div className="item-actions">
         <button
           className={`btn small primary${glow && most >= 1 ? ' tut-glow' : ''}`}
+          data-tip={glow && most >= 1 ? 'Craft it!' : undefined}
           disabled={most < 1}
           onClick={() => client.craft(r.id)}
         >
@@ -536,6 +546,9 @@ function SkillsTab({ client }: { client: GameClient }) {
   const perks = me.perks;
   const def = BRANCHES.find((b) => b.id === branch) ?? BRANCHES[0];
   const chosen = pick && PERK_BY_ID[pick]?.branch === branch ? PERK_BY_ID[pick] : undefined;
+  // Survival basics: pick a skill you can learn, then Learn it.
+  const teach = client.tutGlow() === 'perk';
+  const learnNow = teach && !!chosen && !cantLearn(perks, me.xp, chosen.id);
   return (
     <div className="skills">
       <div className="skills-top">
@@ -588,7 +601,8 @@ function SkillsTab({ client }: { client: GameClient }) {
                   return (
                     <button
                       key={k.id}
-                      className={`perk${rank > 0 ? ' has' : ''}${can ? ' can' : ''}${chosen?.id === k.id ? ' sel' : ''}`}
+                      className={`perk${rank > 0 ? ' has' : ''}${can ? ' can' : ''}${chosen?.id === k.id ? ' sel' : ''}${teach && !learnNow && can ? ' tut-glow' : ''}`}
+                      data-tip={teach && !learnNow && can ? 'Pick a skill' : undefined}
                       onClick={() => setPick(k.id)}
                       aria-label={`${k.name}, rank ${rank} of ${k.max}`}
                     >
@@ -628,7 +642,7 @@ function SkillsTab({ client }: { client: GameClient }) {
               )}
             </div>
           </div>
-          <LearnButton client={client} id={chosen.id} />
+          <LearnButton client={client} id={chosen.id} glow={learnNow} />
         </div>
       ) : (
         <p className="muted small-text">Tap a skill to see what it does.</p>
@@ -637,13 +651,18 @@ function SkillsTab({ client }: { client: GameClient }) {
   );
 }
 
-function LearnButton({ client, id }: { client: GameClient; id: PerkId }) {
+function LearnButton({ client, id, glow }: { client: GameClient; id: PerkId; glow: boolean }) {
   const me = client.me;
   if (!me) return null;
   const why = cantLearn(me.perks, me.xp, id);
   return (
     <div className="item-actions">
-      <button className="btn small primary" disabled={!!why} onClick={() => client.learn(id)}>
+      <button
+        className={`btn small primary${glow ? ' tut-glow' : ''}`}
+        data-tip={glow ? 'Learn it!' : undefined}
+        disabled={!!why}
+        onClick={() => client.learn(id)}
+      >
         Learn (1 point)
       </button>
       {why && <span className="muted small-text">{why}</span>}

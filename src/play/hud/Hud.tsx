@@ -26,7 +26,7 @@ import { ChatBox, ChatLog } from './ChatBox';
 import { prefs, usePrefs } from '../prefs';
 import { BUILD_CATS, BUILDINGS } from '../../game/content/buildings';
 import { REWARDS } from '../../game/ads';
-import { TUT_DONE } from '../../game/tutorial';
+import { TUTORIAL, TUT_DONE, type TutStep } from '../../game/tutorial';
 import { compass } from '../../game/sim/events';
 import type { Quest } from '../../game/objectives';
 import { cameraRig } from '../settings';
@@ -81,7 +81,7 @@ export function Hud(props: HudProps) {
   const quick = client.quickOpen && !panel && me?.alive !== false;
   const keys = pc && settings.keyHints;
   const hint = (a: Action) => (keys ? keyHint(input.bindings, a) : '');
-  // Settings › HUD: what shows (the controls and ☰ always do).
+  // Settings › HUD: what shows (the controls and ⚙️ always do).
   const showInfo = settings.hudOn;
   const coop = client.link.mode !== 'solo';
   const build = client.build;
@@ -89,8 +89,13 @@ export function Hud(props: HudProps) {
   const quests = showInfo && settings.quests !== 'off' && !quick && !build ? client.quests() : [];
   // Survival basics: its card, and what it lights up.
   const tut = client.tutStep();
-  const glow = client.tutGlow();
+  // With the level badge hidden (Settings › HUD), 🎒 is the way to the skills.
+  const badge = showInfo && settings.stats;
+  const glowKey = client.tutGlow();
+  const glow = glowKey === 'level' && !badge ? 'bag' : glowKey;
   const lit = (key: string) => (glow === key ? ' tut-glow' : '');
+  /** What the tutorial's pointer says at a lit button (only while it's lit). */
+  const tip = (key: string) => (glow === key ? tutTip(key, tut, pc, hint) : undefined);
   const mother = [...client.mobs.values()].find(
     (m) => m.kind === 'mother' && m.dying === 0 && Math.hypot(m.x - client.x, m.z - client.z) < 40,
   );
@@ -115,7 +120,7 @@ export function Hud(props: HudProps) {
             )}
           </div>
         )}
-        {showInfo && settings.stats && <LevelBadge client={client} />}
+        {badge && <LevelBadge client={client} glow={glow === 'level'} tip={tip('level')} />}
         {showInfo && settings.stats && (
           <div className="hud-stats">
             <Bar icon="❤️" value={me.hp} cls={`hp${me.poison > 0 ? ' poisoned' : ''}`} />
@@ -140,7 +145,8 @@ export function Hud(props: HudProps) {
           <div className="hud-corner-buttons">
             {showInfo && (
               <button
-                className="round-btn"
+                className={`round-btn${lit('journal')}`}
+                data-tip={tip('journal')}
                 onClick={() => client.openPanel('journal')}
                 aria-label="Journal"
                 title={withKey('Journal', hint('journal'))}
@@ -162,18 +168,19 @@ export function Hud(props: HudProps) {
               </button>
             )}
             <button
-              className="round-btn"
+              className="round-btn gear-btn"
               onClick={() => client.openPanel('menu')}
               aria-label="Menu"
+              title="Menu and settings (Esc)"
             >
-              ☰
+              ⚙️
             </button>
           </div>
         </div>
         {quests.length > 0 && (
           <QuestList quests={quests} current={settings.quests === 'current'} client={client} />
         )}
-        {tut && !quick && !build && <TutorialCard client={client} pc={pc} />}
+        {tut && !quick && !build && <TutorialCard client={client} pc={pc} hint={hint} />}
         {/* With the tutorial card up, big messages come under it instead of over it. */}
         {tut && !quick && !build && client.banner && (
           <div key={client.banner.id} className={`banner side ${client.banner.kind}`}>
@@ -249,6 +256,7 @@ export function Hud(props: HudProps) {
             )}
             <button
               className={`round-btn big${build ? ' on' : ''}${lit('build')}`}
+              data-tip={tip('build')}
               onClick={() => client.toggleBuild()}
               aria-label={build ? 'Leave build mode' : 'Build mode'}
               title={withKey('Build mode', hint('build'))}
@@ -265,6 +273,7 @@ export function Hud(props: HudProps) {
             {!build && (
               <button
                 className={`round-btn big${client.quickOpen || panel === 'bag' || panel === 'craft' || panel === 'skills' ? ' on' : ''}${lit('bag')}`}
+                data-tip={tip('bag')}
                 onClick={() => client.toggleBag('bag')}
                 aria-label="Bag and crafting"
                 title={withKey('Survivor, bag and crafting', hint('quick'))}
@@ -288,13 +297,19 @@ export function Hud(props: HudProps) {
               </button>
             )}
           </div>
-          <UseButton client={client} input={input} sound={sound} kind={label.kind} />
+          <UseButton
+            client={client}
+            input={input}
+            sound={sound}
+            kind={label.kind}
+            tip={tip('use')}
+          />
         </div>
       </div>
       {build ? (
-        <BuildBar client={client} input={input} />
+        <BuildBar client={client} input={input} tip={tip} />
       ) : (
-        <Hotbar client={client} hints={keys ? input.bindings : null} />
+        <Hotbar client={client} hints={keys ? input.bindings : null} tip={tip} />
       )}
       <DragLayer />
       {(panel === 'bag' || panel === 'craft' || panel === 'skills') && (
@@ -334,6 +349,117 @@ export function Hud(props: HudProps) {
       {(me.escaped || client.won) && (
         <WinScreen client={client} onLeave={props.onLeave} onNewIsland={props.onNewIsland} />
       )}
+      {tut && <TutPointer />}
+    </div>
+  );
+}
+
+/** What the pointer says at a button the tutorial lit up. */
+function tutTip(key: string, s: TutStep | null, pc: boolean, hint: (a: Action) => string): string {
+  const press = (a: Action, or: string) => (pc && hint(a) ? `Press ${hint(a)}` : or);
+  if (key === 'use') {
+    if (s?.action === 'build') return pc ? 'Click the island to put it here' : 'Tap to put it here';
+    return press('use', 'Tap here');
+  }
+  if (key === 'bag')
+    return s?.action === 'craft' ? press('craft', 'Tap here') : press('bag', 'Open your bag');
+  if (key === 'build')
+    return s?.action === 'build' ? press('build', 'Tap here') : press('build', 'Leave build mode');
+  if (key === 'level') return press('skills', 'Tap your level');
+  if (key === 'journal') return press('journal', 'Your journal');
+  if (key.startsWith('cat:')) return BUILD_CATS.find((c) => c.id === key.slice(4))?.name ?? '';
+  if (key.startsWith('piece:')) return BUILDINGS[key.slice(6)]?.name ?? '';
+  if (key.startsWith('slot:'))
+    return press(`slot${Number(key.slice(5)) + 1}` as Action, 'Tap the ration');
+  return '';
+}
+
+/** Scrolls the list a lit button sits in (never the game itself) so it's in view. */
+function showInList(el: HTMLElement): void {
+  for (let p = el.parentElement; p && !p.classList.contains('game'); p = p.parentElement) {
+    const cs = getComputedStyle(p);
+    const y = /auto|scroll/.test(cs.overflowY) && p.scrollHeight > p.clientHeight + 1;
+    const x = /auto|scroll/.test(cs.overflowX) && p.scrollWidth > p.clientWidth + 1;
+    if (!x && !y) continue;
+    const r = el.getBoundingClientRect();
+    const b = p.getBoundingClientRect();
+    if (y && r.top < b.top) p.scrollTop -= b.top - r.top + 8;
+    else if (y && r.bottom > b.bottom) p.scrollTop += r.bottom - b.bottom + 8;
+    if (x && r.left < b.left) p.scrollLeft -= b.left - r.left + 8;
+    else if (x && r.right > b.right) p.scrollLeft += r.right - b.right + 8;
+    return;
+  }
+}
+
+/**
+ * Survival basics: a bouncing arrow (and a word on what to do) at the button the tutorial
+ * lit up, so nobody has to hunt for it. A lit button in a scrolling list scrolls into view;
+ * one under a window is left alone.
+ */
+function TutPointer() {
+  const box = useRef<HTMLDivElement>(null);
+  const label = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    let raf = 0;
+    let last: HTMLElement | null = null;
+    const hide = () => {
+      if (box.current) box.current.style.display = 'none';
+    };
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const el0 = box.current;
+      const host = el0?.parentElement;
+      if (!el0 || !host) return;
+      // A lit button in an open window comes first, then the HUD's.
+      const lit = [...document.querySelectorAll<HTMLElement>('.tut-glow')].filter(
+        (e) => e.getClientRects().length > 0,
+      );
+      const inWindow = lit.filter((e) => e.closest('.sheet-backdrop, .menu-screen'));
+      const el = (inWindow.length ? inWindow : lit)[0];
+      if (!el) {
+        last = null;
+        return hide();
+      }
+      if (el !== last) {
+        last = el;
+        showInList(el);
+      }
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const layer = top?.closest('.sheet-backdrop, .overlay, .menu-screen');
+      if (layer && !layer.contains(el)) return hide();
+      const a = toLocal(r.left, r.top);
+      const b = toLocal(r.right, r.bottom);
+      const x0 = Math.min(a.x, b.x);
+      const x1 = Math.max(a.x, b.x);
+      const y0 = Math.min(a.y, b.y);
+      const y1 = Math.max(a.y, b.y);
+      const w = host.clientWidth;
+      // High on the screen: the arrow comes up from below; otherwise down from above.
+      const up = (y0 + y1) / 2 < host.clientHeight * 0.4;
+      const cx = Math.max(14, Math.min(w - 14, (x0 + x1) / 2));
+      el0.style.display = '';
+      el0.className = `tut-pointer ${up ? 'up' : 'down'}`;
+      el0.style.left = `${cx}px`;
+      el0.style.top = `${up ? y1 + 2 : y0 - 2}px`;
+      const text = el.dataset['tip'] ?? '';
+      const lb = label.current;
+      if (lb) {
+        if (lb.textContent !== text) lb.textContent = text;
+        lb.style.display = text ? '' : 'none';
+        // Keep the words on screen near the edges.
+        const half = lb.offsetWidth / 2;
+        const shift = Math.max(8 + half - cx, Math.min(0, w - 8 - half - cx));
+        lb.style.transform = `translateX(${shift}px)`;
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <div ref={box} className="tut-pointer" style={{ display: 'none' }} aria-hidden="true">
+      <span className="tut-pointer-arrow">▼</span>
+      <span ref={label} className="tut-pointer-tip" />
     </div>
   );
 }
@@ -364,11 +490,13 @@ function UseButton({
   input,
   sound,
   kind,
+  tip,
 }: {
   client: GameClient;
   input: Input;
   sound: Sound;
   kind: string;
+  tip?: string;
 }) {
   const down = (e: ReactPointerEvent) => {
     e.preventDefault();
@@ -394,7 +522,8 @@ function UseButton({
               : '👊';
   return (
     <button
-      className={`use-btn ${kind}${client.tutGlow() === 'use' ? ' tut-glow' : ''}`}
+      className={`use-btn ${kind}${tip !== undefined ? ' tut-glow' : ''}`}
+      data-tip={tip}
       onPointerDown={down}
       onPointerUp={up}
       onPointerCancel={up}
@@ -430,30 +559,41 @@ function TakeDown({ onConfirm }: { onConfirm: () => void }) {
   );
 }
 
-/** The quests under the minimap: a title and its steps, done ones ticked. */
 /**
- * Survival basics: the step you're on, how to do it (touch or keys), how far along, and
- * which way to go (the island and the minimap mark it too).
+ * Survival basics as a quest tracker: the step being tracked (highlighted), how to do it
+ * (touch or keys), its goals ticked off as they get done and which way to go. On PC the
+ * steps around it show too, done ones crossed off.
  */
-function TutorialCard({ client, pc }: { client: GameClient; pc: boolean }) {
+function TutorialCard({
+  client,
+  pc,
+  hint,
+}: {
+  client: GameClient;
+  pc: boolean;
+  hint: (a: Action) => string;
+}) {
   const [skipping, setSkipping] = useState(false);
   const s = client.tutStep();
   const me = client.me;
   if (!s || !me) return null;
-  const v = client.tutView();
-  const progress = s.progress?.(v);
+  const goals = s.goals(client.tutView());
   const t = client.tutTarget;
   const far = t ? Math.hypot(t.x - client.x, t.z - client.z) : 0;
+  const at = me.tut;
+  const done = pc ? TUTORIAL.slice(Math.max(0, at - 2), at) : [];
+  const next = pc ? TUTORIAL.slice(at + 1, at + 3) : [];
+  const more = TUT_DONE - at - 1 - next.length;
   const skip = () => {
     client.skipTutorial();
     prefs.set({ tutorial: false });
-    client.toast('Tutorial skipped. ☰ › How to play starts it again.');
+    client.toast('Tutorial skipped. ⚙️ › How to play starts it again.');
   };
   return (
     <div className="tut-card" role="region" aria-label="Tutorial">
       <div className="tut-head">
         <span className="tut-kicker">
-          📘 Survival basics · {Math.min(me.tut + 1, TUT_DONE)}/{TUT_DONE}
+          📘 Survival basics · {Math.min(at + 1, TUT_DONE)}/{TUT_DONE}
         </span>
         {skipping ? (
           <span className="tut-skip-ask">
@@ -471,44 +611,81 @@ function TutorialCard({ client, pc }: { client: GameClient; pc: boolean }) {
           </button>
         )}
       </div>
+      <div className="tut-bar" aria-hidden="true">
+        <span style={{ width: `${(at / TUT_DONE) * 100}%` }} />
+      </div>
       {client.tutFlash && (
         <div key={client.tutFlash.id} className="tut-flash">
           {client.tutFlash.text}
         </div>
       )}
-      <div className="tut-title">
-        {s.icon} {s.title}
-      </div>
-      <p className="tut-text">{pc ? s.pc : s.touch}</p>
-      {progress && <div className="tut-progress">{progress}</div>}
-      {t && far > 8 && (
-        <div className="tut-where">
-          📍 {Math.round(far / 5) * 5} m {compass(t.x - client.x, t.z - client.z)}
+      {done.map((d) => (
+        <div key={d.id} className="tut-step done">
+          <span className="tut-check" aria-hidden="true">
+            ✓
+          </span>
+          {d.title}
         </div>
-      )}
-      {s.action === 'ok' && (
-        <div className="row tut-actions">
-          <button
-            className="btn small primary"
-            onClick={() => {
-              client.tutorialGotIt();
-              prefs.set({ tutorial: false });
-            }}
-          >
-            Let's go
-          </button>
-          <button className="btn small" onClick={() => client.openPanel('journal')}>
-            📖 Journal
-          </button>
+      ))}
+      <div className="tut-now" aria-current="step">
+        <div className="tut-title">
+          {s.icon} {s.title}
         </div>
-      )}
-      <div className="tut-bar" aria-hidden="true">
-        <span style={{ width: `${(me.tut / TUT_DONE) * 100}%` }} />
+        <p className="tut-text">{pc ? s.pc : s.touch}</p>
+        <ul className="tut-goals">
+          {goals.map((g, i) => {
+            const key = pc && g.key && !g.done ? hint(g.key as Action) : '';
+            return (
+              <li key={i} className={g.done ? 'done' : ''}>
+                <span className="tut-check" aria-hidden="true">
+                  {g.done ? '✓' : ''}
+                </span>
+                {g.item && <ItemIcon id={g.item} className="tut-goal-icon" />}
+                <span className="tut-goal-text">{g.text}</span>
+                {g.count && (
+                  <span className="tut-count">
+                    {g.count[0]}/{g.count[1]}
+                  </span>
+                )}
+                {key && <span className="key-cap">{key}</span>}
+              </li>
+            );
+          })}
+        </ul>
+        {t && far > 8 && (
+          <div className="tut-where">
+            📍 {Math.round(far / 5) * 5} m {compass(t.x - client.x, t.z - client.z)}
+          </div>
+        )}
+        {s.action === 'ok' && (
+          <div className="row tut-actions">
+            <button
+              className="btn small primary"
+              onClick={() => {
+                client.tutorialGotIt();
+                prefs.set({ tutorial: false });
+              }}
+            >
+              Let's go
+            </button>
+            <button className="btn small" onClick={() => client.openPanel('journal')}>
+              📖 Journal
+            </button>
+          </div>
+        )}
       </div>
+      {next.map((n) => (
+        <div key={n.id} className="tut-step next">
+          {n.icon} {n.title}
+        </div>
+      ))}
+      {more > 0 && pc && <div className="tut-step next more">+{more} more</div>}
     </div>
   );
 }
 
+/** The quests under the minimap: a title and its steps, done ones crossed off, the next one
+ * highlighted. */
 function QuestList({
   quests,
   current,
@@ -520,14 +697,20 @@ function QuestList({
 }) {
   return (
     <div className="quests" aria-label="Quests">
-      {quests.map((q) => {
+      {quests.map((q, i) => {
         const steps = current ? q.steps.filter((s) => !s.done).slice(0, 1) : q.steps;
+        const now = q.steps.find((s) => !s.done)?.id;
+        // The first card is the one being tracked.
         return (
-          <button key={q.id} className="quest" onClick={() => client.openPanel('journal')}>
+          <button
+            key={q.id}
+            className={`quest${i === 0 ? ' tracked' : ''}`}
+            onClick={() => client.openPanel('journal')}
+          >
             <span className="quest-title">{q.title}</span>
             <ul className="quest-steps">
               {steps.map((s) => (
-                <li key={s.id} className={s.done ? 'done' : ''}>
+                <li key={s.id} className={s.done ? 'done' : s.id === now ? 'now' : ''}>
                   {s.text}
                 </li>
               ))}
@@ -666,7 +849,6 @@ function dragPiece(e: ReactPointerEvent, client: GameClient, input: Input, kind:
   if (e.button !== 0) return;
   const pid = e.pointerId;
   const start = toLocal(e.clientX, e.clientY);
-  const mouse = e.pointerType === 'mouse';
   let dragging = false;
   const onIsland = (ev: PointerEvent) =>
     !!(document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.classList.contains(
@@ -686,7 +868,8 @@ function dragPiece(e: ReactPointerEvent, client: GameClient, input: Input, kind:
       const dx = p.x - start.x;
       const dy = p.y - start.y;
       if (Math.hypot(dx, dy) < 8) return;
-      if (!mouse && Math.abs(dx) > Math.abs(dy)) {
+      // Sideways scrolls the row (a finger, or the mouse dragging it); up takes the piece.
+      if (Math.abs(dx) > Math.abs(dy)) {
         quit();
         return;
       }
@@ -710,7 +893,15 @@ function dragPiece(e: ReactPointerEvent, client: GameClient, input: Input, kind:
   window.addEventListener('pointercancel', end);
 }
 
-function BuildBar({ client, input }: { client: GameClient; input: Input }) {
+function BuildBar({
+  client,
+  input,
+  tip,
+}: {
+  client: GameClient;
+  input: Input;
+  tip: (key: string) => string | undefined;
+}) {
   const b = client.build;
   const glow = client.tutGlow();
   if (!b) return null;
@@ -734,6 +925,7 @@ function BuildBar({ client, input }: { client: GameClient; input: Input }) {
             role="tab"
             aria-selected={!removing && b.cat === c.id}
             className={`build-tab${!removing && b.cat === c.id ? ' on' : ''}${glow === `cat:${c.id}` ? ' tut-glow' : ''}`}
+            data-tip={tip(`cat:${c.id}`)}
             onClick={() => client.buildTab(c.id)}
             aria-label={c.name}
             title={c.name}
@@ -747,6 +939,7 @@ function BuildBar({ client, input }: { client: GameClient; input: Input }) {
           <button
             key={p.kind}
             className={`slot${b.piece === p.kind ? ' held' : ''}${p.can ? '' : ' poor'}${glow === `piece:${p.kind}` ? ' tut-glow' : ''}`}
+            data-tip={tip(`piece:${p.kind}`)}
             onClick={() => client.buildPick(p.kind)}
             onPointerDown={(e) => dragPiece(e, client, input, p.kind)}
             aria-label={BUILDINGS[p.kind]?.name ?? p.kind}
@@ -760,7 +953,15 @@ function BuildBar({ client, input }: { client: GameClient; input: Input }) {
   );
 }
 
-function Hotbar({ client, hints }: { client: GameClient; hints: Bindings | null }) {
+function Hotbar({
+  client,
+  hints,
+  tip,
+}: {
+  client: GameClient;
+  hints: Bindings | null;
+  tip: (key: string) => string | undefined;
+}) {
   const me = client.me;
   const glow = client.tutGlow();
   if (!me) return null;
@@ -773,6 +974,7 @@ function Hotbar({ client, hints }: { client: GameClient; hints: Bindings | null 
           slotRef={{ area: 'inv', index: i }}
           slot={me.inv[i] ?? null}
           className={`${me.held === i ? 'held' : ''}${glow === `slot:${i}` ? ' tut-glow' : ''}`}
+          tip={tip(`slot:${i}`)}
           onTap={() => client.select(i)}
           onContext={() => quickUse(client, i)}
         >
@@ -856,7 +1058,10 @@ function Joystick({ input, glow }: { input: Input; glow: boolean }) {
           />
         </div>
       ) : (
-        <div className={`joy-hint${glow ? ' tut-glow' : ''}`}>
+        <div
+          className={`joy-hint${glow ? ' tut-glow' : ''}`}
+          data-tip={glow ? 'Drag here to walk' : undefined}
+        >
           <div className="joy-knob" />
         </div>
       )}
@@ -937,13 +1142,14 @@ function WinScreen({
 }
 
 /** Your level and how far to the next, by the bars; tap for the skill tree. */
-function LevelBadge({ client }: { client: GameClient }) {
+function LevelBadge({ client, glow, tip }: { client: GameClient; glow: boolean; tip?: string }) {
   const p = client.progress();
   const span = Math.max(1, p.to - p.from);
   const pct = p.to > p.from ? Math.min(100, ((p.xp - p.from) / span) * 100) : 100;
   return (
     <button
-      className={`level-badge${p.points > 0 ? ' points' : ''}`}
+      className={`level-badge${p.points > 0 ? ' points' : ''}${glow ? ' tut-glow' : ''}`}
+      data-tip={tip}
       onClick={() => client.toggleBag('skills')}
       aria-label={`Level ${p.level}${p.points > 0 ? `, ${p.points} skill points to spend` : ''}`}
     >

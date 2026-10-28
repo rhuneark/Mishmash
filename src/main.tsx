@@ -6,6 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import * as run from './sdk/run';
 import { appEvents } from './app/appEvents';
 import { prefs } from './play/prefs';
+import { installDragScroll } from './ui/dragScroll';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) throw new Error('[mishmash] Root element not found');
@@ -20,6 +21,9 @@ void run.ready().then(() => {
   root.setProperty('--safe-right', `${insets.right}px`);
   root.setProperty('--fs', String(run.fontScale()));
 });
+
+// Click and drag scrolls menus and lists with a mouse too.
+installDragScroll();
 
 // Settings (volumes, screen, graphics) before the first game starts.
 void prefs.load();

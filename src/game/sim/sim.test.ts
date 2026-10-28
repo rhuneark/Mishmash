@@ -1692,5 +1692,10 @@ describe('survival basics (the tutorial)', () => {
     const back = parseIslandSave(JSON.parse(JSON.stringify(save)));
     const sim = new IslandSim(island, back ?? save, () => {}, rng(1));
     expect(sim.players.get('a')?.tut).toBe(TUT_DONE);
+    // v1.23 (12 steps, no version): finished stays finished now that skills came in.
+    save.players['a'] = { ...old, tut: 12, tutPaid: 12, tutV: undefined };
+    const v1 = parseIslandSave(JSON.parse(JSON.stringify(save)));
+    expect(v1?.players['a']?.tut).toBe(TUT_DONE);
+    expect(v1?.players['a']?.tutPaid).toBe(TUT_DONE);
   });
 });

@@ -20,7 +20,7 @@ const HOST_WAIT_MS = 120_000;
 
 const WAITING = 'Waiting for your friend to open the island…';
 const NOBODY =
-  'Nobody opened this island. Check the code with your friend: they open it from ☰ › Play with friends.';
+  'Nobody opened this island. Check the code with your friend: they open it from ⚙️ › Play with friends.';
 const HOST_LEFT = 'Your friend closed the island. What you carry is saved there.';
 const TAKEN = 'Another island is open with this code right now. Try again in a few minutes.';
 

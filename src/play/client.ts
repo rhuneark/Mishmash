@@ -361,6 +361,9 @@ export class GameClient {
   tutTarget: { x: number; z: number; h: number } | null = null;
   /** What only this phone sees for the tutorial: walking, eating, "got it". */
   private readonly tutDid = new Set<string>();
+  /** What the step on screen has seen (a window opened, build mode, the note in reach). */
+  private readonly tutSeen = new Set<string>();
+  private tutSeenStep = -1;
   private tutFrom: { x: number; z: number } | null = null;
   private tutSent = { step: -1, at: -99 };
   private tutAcc = 0;
@@ -1386,6 +1389,9 @@ export class GameClient {
       notes: this.notes,
       built: builtBy(this.buildings.values(), this.you),
       did: this.tutDid,
+      xp: this.me?.xp ?? 0,
+      perks: this.me?.perks ?? {},
+      seen: this.tutSeen,
     };
   }
 
@@ -1401,6 +1407,7 @@ export class GameClient {
 
   restartTutorial(): void {
     this.tutDid.clear();
+    this.tutSeen.clear();
     this.tutFrom = null;
     this.tutSent = { step: -1, at: -99 };
     this.send({ type: 'tutorial', act: 'restart' });
@@ -1408,7 +1415,8 @@ export class GameClient {
 
   /**
    * What the tutorial lights up right now: 'stick', 'use', 'bag', 'tab-craft', 'recipe',
-   * 'build', `cat:<tab>`, `piece:<kind>` or `slot:<n>`.
+   * 'build', `cat:<tab>`, `piece:<kind>`, `slot:<n>`, 'level', 'tab-skills', 'perk' or
+   * 'journal'.
    */
   tutGlow(): string | null {
     const s = this.tutStep();
@@ -1439,6 +1447,12 @@ export class GameClient {
       const i = me.inv.findIndex((x, k) => k < HOTBAR && !!x && !!ITEMS[x.id]?.food);
       return i >= 0 ? `slot:${i}` : 'bag';
     }
+    if (s.action === 'skills') {
+      if (this.panel === 'skills') return 'perk';
+      if (this.panel === 'bag' || this.panel === 'craft') return 'tab-skills';
+      return 'level';
+    }
+    if (s.action === 'ok') return this.panel === 'journal' ? null : 'journal';
     return null;
   }
 
@@ -1461,6 +1475,21 @@ export class GameClient {
       this.tutTarget = null;
       return;
     }
+    // What's on screen ticks the step's goals off (and stays ticked for this step).
+    if (this.tutSeenStep !== me.tut) {
+      this.tutSeenStep = me.tut;
+      this.tutSeen.clear();
+    }
+    const seen = this.tutSeen.size;
+    if (this.panel) this.tutSeen.add(`panel:${this.panel}`);
+    if (this.build) this.tutSeen.add('build');
+    if (this.build?.piece) this.tutSeen.add(`piece:${this.build.piece}`);
+    if (this.heldItem()?.food) this.tutSeen.add('hold:food');
+    const t = this.tutTarget;
+    if (t && Math.hypot(t.x - this.x, t.z - this.z) < 3.5) this.tutSeen.add('near');
+    if (this.tutSeen.size !== seen) this.touch();
+    // The last step: opening the journal is reading on.
+    if (s.id === 'end' && this.panel === 'journal') this.tutDid.add('end');
     const v = this.tutView();
     if (s.id === 'walk') {
       if (!this.tutFrom) this.tutFrom = { x: this.x, z: this.z };

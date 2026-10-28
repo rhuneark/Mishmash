@@ -79,6 +79,8 @@ export function SlotButton(props: {
   onContext?: () => void;
   children?: ReactNode;
   title?: string;
+  /** What the tutorial's pointer says at it (while it's lit). */
+  tip?: string;
 }) {
   const { client, slotRef, slot } = props;
   const ref = useRef<HTMLButtonElement>(null);
@@ -94,6 +96,8 @@ export function SlotButton(props: {
       ref={ref}
       className={`slot${props.className ? ` ${props.className}` : ''}`}
       data-slot={slotKey(slotRef)}
+      data-item={slot ? '' : undefined}
+      data-tip={props.tip}
       title={props.title ?? name}
       aria-label={name ?? 'Empty slot'}
       onPointerDown={(e) =>

@@ -146,7 +146,7 @@ export function Play({
                   }}
                 >
                   <label className="label" htmlFor="room-code">
-                    Your friend's island code (it's on their ☰ menu › Play with friends)
+                    Your friend's island code (it's on their ⚙️ menu › Play with friends)
                   </label>
                   <input
                     id="room-code"

@@ -54,7 +54,7 @@ update to the user with this link)
   `DAILY_LIMIT` 5 a day (`sentToday`, a courtesy limit). When something players asked for gets
   built, add it to `BUILT`.
 - **Island chat (co-op only)** (`hud/ChatBox.tsx`, `game/chat.ts`; the user's call: chat only
-  in games, the Town Square is gone since v1.17.0). 💬 next to ☰ (with an unread badge) or
+  in games, the Town Square is gone since v1.17.0). 💬 next to ⚙️ (with an unread badge) or
   Enter on PC opens a box at the top: the lines so far, a line to type (≤`MAX_SAY` 120
   characters, `cleanMessage`) and 👥 the crew with 🔇 Mute (hides their lines for you, this
   game only). Closed, the newest lines show over the game for `CHAT_SHOW` 10 s (`ChatLog`, tap
@@ -286,7 +286,9 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   is open, and while the tutorial runs (its card takes their place); sideways they sit left of the minimap), journal (objectives, notes, cargo code so far,
   Kessler pages, tips), map, bag + crafting sheet, storage box, keypad, pause menu, death and
   win screens. Floating joystick on the left half (touch only: a mouse clicks the island
-  through it; gone in build mode).
+  through it; gone in build mode). The player box sits over the stick's area when it's low
+  (`.stats-low .hud-player` z-index), so the level badge takes clicks there too. The menu
+  button is a ⚙️ gear (it was ☰ before v1.24; the user: "make the settings icon a gear").
 - **Tap to move and tap to use** (touch screens, v1.21; the user: "movement should be by
   either pad or by tap", "tap something on screen to interact"): a quick tap on the island
   (the canvas, or the stick's area: `Joystick` hands short taps to `input.tap`) goes through
@@ -305,7 +307,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   `manipulation` (not `none`) and only the canvas, the stick and the action button block
   gestures. Slots are `pan-y` (`pan-x` in the build bar, `none` in the hotbar), so a swipe that
   starts on a slot scrolls the bag or box.
-- **Pause menu** (`hud/Menu.tsx`, ☰ or Esc; `client.menuPage`: main / settings / friends /
+- **Pause menu** (`hud/Menu.tsx`, ⚙️ or Esc; `client.menuPage`: main / settings / friends /
   howto / island): Resume, Settings, Journal, Map, Play with friends (room code), This island,
   How to play, Save and quit. Solo play pauses while it's open (`link.pause`, also when the app is in the background).
   **Settings** (`SettingsPanel`, tabs): Gameplay (auto tool, auto weapon, switch back; small
@@ -314,7 +316,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   vibration), **HUD** (show the HUD (H), health/food/water on/off and where (auto / top left /
   bottom left), day and time, minimap on/off, size and turning, quests (every step / next
   step / hidden), HUD size 80–140% and opacity (`--hud-scale`, `--hud-alpha`), button size,
-  damage numbers, key hints; the controls and ☰ always stay), Graphics
+  damage numbers, key hints; the controls and ⚙️ always stay), Graphics
   (quality auto/low/medium/high: medium and high draw shadows; grass and wildlife, FPS), Controls (key list). Settings live
   in `play/settings.ts` (pure: `parseSettings` repairs saved data) and `play/prefs.ts` (store,
   `usePrefs`, saved in appStorage under `mishmash_settings` 0.4 s after a change, loaded at
@@ -486,27 +488,55 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   the local mock shows a "Close Ad" overlay. New reward: a `RewardKind` + `REWARDS` entry and
   its case in `onReward`.
 - **Survival basics, the tutorial** (`game/tutorial.ts`, v1.23; the user: "an easy to follow
-  tutorial reminiscent of this type of game"): a guided starter chain like 7 Days to Die's.
-  A new survivor starts it (`SimPlayer.tut` = the step, 0…`TUT_DONE`; survivors saved before
-  it have it done). `TUTORIAL` steps: walk, read the boarding pass, sticks and stones, fiber,
-  craft a stone axe, chop, stones, build a campfire, eat, luggage cloth, build a bedroll,
-  then "Now find a way off" (the journal). Each has a touch and a PC text, XP, an `action`
-  (which button glows) and a `target` (a spot, or the nearest node of some kinds). The checks
-  are pure (`TutView`: bag, notes, `builtBy`, `did`), shared by the phone and the authority:
-  C2S `tutorial {act: done | skip | restart, step}`; `IslandSim.onTutorial` checks the step
-  (walking, eating and "got it" are `trust`: only the phone sees them), pays its XP once
-  (`tutPaid`, so a restart pays nothing twice) and gives `TUT_GIFT` (2 bandages, a torch) at
-  the end; `MeNet.tut`. Client (`client.ts` `tutStep`, `updateTutorial` every 0.25 s,
-  `tutPlace`, `tutGlow`): a card under the minimap in place of the quest cards (`TutorialCard`
-  in Hud.tsx: step N of 12, how, progress, where it is (compass + metres), Skip (asks), "✓ step
-  · +XP" flash, 📖), a gold ring and chevron on the target (`view.ts` `updateTut`) with an arrow
-  on the screen's edge when it's off screen (`.tut-edge`), a gold dot on the minimap and map,
-  and a glow (`.tut-glow`) on the button to press: the stick, ✋ in reach of the target, 🎒 →
-  the Crafting tab → the recipe → Craft, 🔨 → the tab → the piece, the ration in the hotbar.
-  In build mode the panel shows the step (`.build-tut`). Settings › Gameplay › Tutorial
-  (`settings.tutorial`, Skip turns it off); ☰ › How to play › 📘 Play the tutorial starts it
-  again. New step: append to `TUTORIAL` (and its texts for both), keep checks on what the
-  authority sees unless `trust`.
+  tutorial reminiscent of this type of game"; v1.24: "more prominent on PC… not in your face,
+  but on the side, highlighted if tracking the quest, and crossed off or checked if completed",
+  "draw the attention to where the player needs to look for the buttons"): a guided starter
+  chain like 7 Days to Die's. A new survivor starts it (`SimPlayer.tut` = the step,
+  0…`TUT_DONE`; survivors saved before it have it done). `TUTORIAL` steps: walk, read the
+  boarding pass, sticks and stones, fiber, craft a stone axe, chop, stones, build a campfire,
+  eat, luggage cloth, build a bedroll, **get stronger** (learn a skill: done once a point is
+  spent, or when there's none to spend), then "Now find a way off" (opening the journal or
+  Let's go ends it). Each has a touch and a PC text, XP, an `action` (which button glows), a
+  `target` (a spot, or the nearest node of some kinds) and `goals` (`TutGoal`: text, done, an
+  item picture, a count, a PC key by action name). The checks are pure (`TutView`: bag,
+  notes, `builtBy`, `did`, xp, perks), shared by the phone and the authority; goals may also
+  read `seen` (the phone only, per step: 'panel:craft', 'build', 'piece:campfire',
+  'hold:food', 'near'). C2S `tutorial {act: done | skip | restart, step}`;
+  `IslandSim.onTutorial` checks the step (walking, eating and "got it" are `trust`), pays its
+  XP once (`tutPaid`, so a restart pays nothing twice) and gives `TUT_GIFT` (2 bandages, a
+  torch) at the end; `MeNet.tut`. Saves carry `tutV` (`TUT_VERSION` 2): v1.23's had 12 steps
+  and no version, so their 12 (done) reads as `TUT_DONE` (`parseTut(v, fallback, version)`).
+  Client (`client.ts` `tutStep`, `updateTutorial` every 0.25 s, `tutSeen`, `tutPlace`,
+  `tutGlow`): **the tracker** (`TutorialCard` in Hud.tsx) under the minimap in place of the
+  quest cards (left of it sideways and on PC): step N of 13, a progress bar, the tracked step
+  highlighted (`.tut-now`) with its how-to and its goals as checkboxes, ticked and struck
+  through when done (counts like "Wood 2/3", key caps on PC), where it is (compass + metres),
+  Skip (asks), the "✓ step · +XP" flash; on PC (`.game.pc`, 300 px, bigger text) the two
+  steps before it crossed off and the next two dimmed. A gold ring and chevron on the target
+  (`view.ts` `updateTut`) with an arrow on the screen's edge when it's off screen (`.tut-edge`),
+  a gold dot on the minimap and map. **The button to press** glows (`.tut-glow`: the stick, ✋ in
+  reach of the target, 🎒 → the Crafting tab → the recipe → Craft, 🔨 → the tab → the piece, the
+  ration in the hotbar, the ⭐ level badge (🎒 when the badge is hidden) → the Skills tab → a
+  skill → Learn, 📖) and **`TutPointer`** puts a bouncing arrow on it with a word on what to do
+  (the lit element's `data-tip`, `tutTip`: "Press C" on PC with the bound key, "Tap here" on a
+  phone, "Pick the Stone axe", "Learn it!"): a lit button in an open window first, scrolled
+  into view, hidden while a window covers it. In build mode the panel shows the step
+  (`.build-tut`). Settings › Gameplay › Tutorial (`settings.tutorial`, Skip turns it off);
+  ⚙️ › How to play › 📘 Play the tutorial starts it again. New step: insert in `TUTORIAL` with
+  texts for both, goals and a glow; inserting before the end moves saved step numbers, so bump
+  `TUT_VERSION` and map the old ones in `parseTut`; keep checks on what the authority sees
+  unless `trust`.
+- **Drag to scroll** (`ui/dragScroll.ts`, installed in `main.tsx`, v1.24; the user: "drag and
+  scroll for every menu needs to apply, like click and drag to go through the crafting
+  menu"): a mouse (or pen) press that moves 6 px in a scrolling list or row (the nearest
+  ancestor that scrolls that way) drags it, with a flick that keeps going; the click after a
+  drag is swallowed, so letting go doesn't pick what it started on. Item slots with an item
+  (`data-item`) still drag the item; inputs, sliders, the island and `[data-noscroll]` are left
+  alone; touch keeps the browser's own scrolling. The wheel scrolls sideways-only rows (craft
+  categories, the build menu). A build-menu tile dragged sideways scrolls the row, upwards
+  takes the piece (`dragPiece`).
+- **Quest tracking**: the first quest card is the tracked one (`.quest.tracked`) and its next
+  step is highlighted (`li.now`, ▶); done steps are ticked and crossed off; wider on PC.
 - **Item pictures** (`hud/itemIcons.ts`): every item is a small SVG (48×48, flat colours,
   dark outline) shown as a data-URL `<img>` (`Slots.tsx` `ItemIcon`). Not emoji: newer emoji
   (wood, rock, rope…) are empty boxes on older phones and Windows. `itemIcons.test.ts`
@@ -592,7 +622,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   (`bye`), so the host keeps the progress; friends' survivors live in the host's save. When
   the host leaves, the room tells everyone (S2C `closed {text}`: the client's "Island closed"
   overlay, Back to the title), lets them go and waits for the island to open again (same code,
-  same room while it lasts). Opening from solo: ☰ › Play with friends, the title, or Start with
+  same room while it lasts). Opening from solo: ⚙️ › Play with friends, the title, or Start with
   friends on the New island screen. Realtime needs a RUN sign-in (the SDK prompts). `npm run
   dev` runs a local room server (port 9001; it never disposes rooms and matches criteria the
   same way). Ask the user to try hosting and joining by code on the live build.
@@ -700,7 +730,8 @@ src/app/           community.ts (suggestions, Dev area over UgcApi), localUgc.ts
                    (the October Jam link, copied)
 src/screens/       Play (title, home), NewIsland, Intro (first launch), Suggest, Dev (owner)
 src/ui/            Logo (the BLOOM / ISLAND wordmark, `.brand`), Notice (failure messages),
-                   SubPage (a page with ‹ Back: Suggest, Dev)
+                   SubPage (a page with ‹ Back: Suggest, Dev), dragScroll (click and drag
+                   scrolls every list)
 src/components/    ErrorBoundary
 src/App.tsx        hub save, first-launch intro, title / suggest / dev pages, starts/leaves games
 src/main.tsx       entry: safe-area/font-scale CSS vars, lifecycle hooks, render
@@ -756,11 +787,13 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # global chat, suggestions box: send and take back, owner Dev
                             # area: star, done, delete, reports; jam link), New island (code,
                             # presets), the game
-                            # (the tutorial: its card, the lit stick, ✋, 🎒, Crafting tab
-                            # and recipe, steps moving on, Skip, restart from How to play;
+                            # (the tutorial: its card, the lit stick, ✋, 🎒 with the
+                            # pointer, the goals, Crafting tab and recipe, steps moving on,
+                            # Skip, restart from How to play, the last step's journal glow;
                             # walk, read, gather, the survivor menu: crafting by category,
                             # XP and learning a skill; touch: a swipe on the crafting grid
-                            # scrolls, a press and hold drags a bag item to the hotbar; a campfire from the build menu, night
+                            # scrolls, a mouse drag scrolls it too (and picks nothing), a
+                            # press and hold drags a bag item to the hotbar; a campfire from the build menu, night
                             # fight, death, item
                             # pictures, the small bag window: drag and drop, Mashbench, research page,
                             # auto tool, a supply pod, the bag window's place, isometric and
@@ -844,7 +877,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   island, PC drag and drop in build mode, the in-flight channel's rewarded ads) **was submitted
   with the Publish workflow on 2026-10-28 at the user's request** ("publish public"), so
   Explore gets v1.16–v1.22 once RUN's review passes. v1.23.0 (2026-10-28, Survival basics:
-  the tutorial) is a private build.
+  the tutorial) is a private build, and so is v1.24.0 (2026-10-28: the tutorial as a side
+  quest tracker with ticked goals and a pointer at the button to press, a skills step, drag to
+  scroll in every menu, the ⚙️ menu button).
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

@@ -1,4 +1,4 @@
-// The pause menu (☰ or Esc): resume, settings, journal, map, friends, how to
+// The pause menu (⚙️ or Esc): resume, settings, journal, map, friends, how to
 // play, save and quit. Solo play pauses while it's open. The settings panel is
 // shared with the hub's Play tab.
 
@@ -360,7 +360,7 @@ export function HowTo({ pc, bloomEvery }: { pc: boolean; bloomEvery: number }) {
         with your bag. Each once a day, and only when you pick it.
       </li>
       <li>
-        👥 Every island has its own multiplayer code. Open it to friends from ☰ › Play with
+        👥 Every island has its own multiplayer code. Open it to friends from ⚙️ › Play with
         friends; they join with the code, today or whenever you open it again.
       </li>
       {pc && <li>Every key can be changed under Settings › Controls.</li>}
@@ -601,7 +601,7 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
         >
           <Toggle
             label="Show the HUD"
-            desc={`Everything over the island; the controls and ☰ stay.${input ? ' H on a keyboard.' : ''}`}
+            desc={`Everything over the island; the controls and ⚙️ stay.${input ? ' H on a keyboard.' : ''}`}
             on={s.hudOn}
             set={(v) => set({ hudOn: v })}
           />

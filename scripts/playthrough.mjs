@@ -383,6 +383,16 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     .locator('.round-btn.tut-glow', { hasText: '🎒' })
     .waitFor({ timeout: 5000 })
     .catch(() => check(false, `${tag} tutorial: 🎒 isn't lit for the axe`));
+  // An arrow points at it, saying what to press; the card ticks off what's done so far.
+  await page
+    .locator('.tut-pointer-tip', { hasText: /^(Press C|Tap here)$/ })
+    .waitFor({ timeout: 5000 })
+    .catch(() => check(false, `${tag} tutorial: no pointer at 🎒`));
+  check(
+    (await tutCard.locator('.tut-goals li').count()) === 2 &&
+      (await tutCard.locator('.tut-goals li.done').count()) === 0,
+    `${tag} tutorial: the axe step's goals`,
+  );
   // 🎒 opens the survivor menu: the survivor and bag, crafting by category, skills.
   await page.getByRole('button', { name: 'Bag and crafting' }).click();
   const menu = page.locator('.char-menu');
@@ -485,6 +495,30 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await finger.swipe(tileBox.x + tileBox.width / 2, tileBox.y + tileBox.height / 2, -200);
   const scrolled = await game(page, () => document.querySelector('.char-body')?.scrollTop ?? 0);
   check(scrolled > 20, `${tag} menu: a swipe on the crafting grid didn't scroll (${scrolled})`);
+  // A mouse drags the list the same way, and letting go doesn't pick the tile it started on.
+  await game(page, () => {
+    const body = document.querySelector('.char-body');
+    if (body) body.scrollTop = 0;
+  });
+  const picked = await menu.locator('.recipe-detail .item-name').textContent();
+  const dragFrom = await menu.locator('.recipe-tile').nth(8).boundingBox();
+  await page.mouse.move(dragFrom.x + dragFrom.width / 2, dragFrom.y + dragFrom.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(
+      dragFrom.x + dragFrom.width / 2,
+      dragFrom.y + dragFrom.height / 2 - i * 20,
+    );
+    await page.waitForTimeout(16);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const dragged = await game(page, () => document.querySelector('.char-body')?.scrollTop ?? 0);
+  check(dragged > 20, `${tag} menu: a mouse drag on the crafting grid didn't scroll (${dragged})`);
+  check(
+    (await menu.locator('.recipe-detail .item-name').textContent()) === picked,
+    `${tag} menu: letting go of a mouse drag picked a recipe`,
+  );
   await menu.getByRole('tab', { name: /Survivor/ }).click();
   // Enough kinds of things that some sit in the bag, past the hotbar.
   await give(page, [
@@ -1849,6 +1883,26 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.getByRole('button', { name: /How to play/ }).click();
   await page.getByRole('button', { name: /Play the tutorial/ }).click();
   await tutCard.getByText('Find your feet').waitFor({ timeout: 15000 });
+  // The last steps: a skill already learned counts; then the journal lights up.
+  await game(
+    page,
+    (n) => {
+      const c = window.__game.client;
+      const p = c.link.sim.players.get(c.you);
+      p.tut = n;
+      c.link.sim.dirty(p);
+    },
+    11,
+  );
+  await tutCard.getByText('Now find a way off').waitFor({ timeout: 15000 });
+  await page
+    .locator('.round-btn.tut-glow', { hasText: '📖' })
+    .waitFor({ timeout: 5000 })
+    .catch(() => check(false, `${tag} tutorial: the journal isn't lit at the end`));
+  check(
+    (await tutCard.locator('.tut-goals li', { hasText: 'Look in the journal' }).count()) === 1,
+    `${tag} tutorial: the last step has no goals`,
+  );
   await tutCard.getByRole('button', { name: 'Skip' }).click();
   await tutCard.getByRole('button', { name: 'Yes' }).click();
   await tutCard.waitFor({ state: 'detached' });

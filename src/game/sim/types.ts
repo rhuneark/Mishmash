@@ -2,7 +2,7 @@
 
 import { parseRewardDays, type RewardDays } from '../ads';
 import { parsePerks, type Perks } from '../skills';
-import { TUT_DONE, parseTut } from '../tutorial';
+import { TUT_DONE, TUT_VERSION, parseTut } from '../tutorial';
 import { BUILDINGS, slotsOf } from '../content/buildings';
 import { CROP_BY_ID } from '../content/crops';
 import { MONSTERS, type MonsterKind } from '../content/monsters';
@@ -176,6 +176,8 @@ export interface PlayerSave {
    * someone who was already playing, so it's done). */
   tut?: number;
   tutPaid?: number;
+  /** Which tutorial the step numbers are for (TUT_VERSION; missing: v1.23's). */
+  tutV?: number;
 }
 
 export interface IslandSave {
@@ -333,8 +335,9 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
       const ads = parseRewardDays(pv['ads']);
       if (Object.keys(ads).length) (save.players[pid] as PlayerSave).ads = ads;
       if (pv['tut'] !== undefined) {
-        (save.players[pid] as PlayerSave).tut = parseTut(pv['tut'], TUT_DONE);
-        (save.players[pid] as PlayerSave).tutPaid = parseTut(pv['tutPaid'], 0);
+        (save.players[pid] as PlayerSave).tut = parseTut(pv['tut'], TUT_DONE, pv['tutV']);
+        (save.players[pid] as PlayerSave).tutPaid = parseTut(pv['tutPaid'], 0, pv['tutV']);
+        (save.players[pid] as PlayerSave).tutV = TUT_VERSION;
       }
     }
   }

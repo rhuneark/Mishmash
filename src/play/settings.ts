@@ -47,7 +47,7 @@ export interface Settings {
   /** Grass, birds, butterflies and fireflies. */
   life: boolean;
   fps: boolean;
-  /** HUD: everything over the island (the controls and ☰ always stay). */
+  /** HUD: everything over the island (the controls and ⚙️ always stay). */
   hudOn: boolean;
   stats: boolean;
   statsAt: StatsAt;

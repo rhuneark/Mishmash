@@ -14,11 +14,19 @@ import {
 } from '../game/content/buildings';
 import { ITEMS, type ItemDef, type ToolKind } from '../game/content/items';
 import { MONSTERS, type MonsterKind } from '../game/content/monsters';
-import { NODES } from '../game/content/nodes';
+import { NODE, NODES } from '../game/content/nodes';
 import { CROPS, cropForSeed } from '../game/content/crops';
 import { type PoiDef, type Spot } from '../game/content/pois';
 import { CLASSIC, specCode, type IslandSpec } from '../game/islands';
 import { REWARDS, rewardReady, type RewardKind } from '../game/ads';
+import {
+  TUTORIAL,
+  TUT_DONE,
+  builtBy,
+  type TutStep,
+  type TutTarget,
+  type TutView,
+} from '../game/tutorial';
 import * as run from '../sdk/run';
 import { DEFAULT_RULES, parseRules, type WorldRules } from '../game/rules';
 import { RECIPES, type Station } from '../game/content/recipes';
@@ -345,6 +353,17 @@ export class GameClient {
   quickTab: 'bag' | 'craft' = 'bag';
   /** Settings: 🎒 opens the small window by your survivor instead of the survivor menu. */
   bagWindow = false;
+  /** Settings: Survival basics (the tutorial) shows. */
+  tutorialOn = true;
+  /** The tutorial step just done (the card shows it for a moment). */
+  tutFlash: { id: number; text: string; until: number } | null = null;
+  /** Where the tutorial points on the island (refreshed a few times a second). */
+  tutTarget: { x: number; z: number; h: number } | null = null;
+  /** What only this phone sees for the tutorial: walking, eating, "got it". */
+  private readonly tutDid = new Set<string>();
+  private tutFrom: { x: number; z: number } | null = null;
+  private tutSent = { step: -1, at: -99 };
+  private tutAcc = 0;
   menuPage: MenuPage = 'main';
   /** The island's world rules (from the snapshot). */
   rules: WorldRules = DEFAULT_RULES;
@@ -516,6 +535,21 @@ export class GameClient {
             `⭐ Level ${levelFor(msg.me.xp)}! Spend your skill point in 🎒 › Skills.`,
             'info',
           );
+        else if (before && msg.me.tut === before.tut + 1) {
+          // A step done: the card says so; the last one gets a banner (the card goes).
+          const done = TUTORIAL[before.tut];
+          if (msg.me.tut >= TUT_DONE)
+            this.showBanner(
+              '📘 Survival basics done! Two bandages and a torch for the road.',
+              'info',
+            );
+          else if (done)
+            this.tutFlash = {
+              id: this.uid++,
+              text: `✓ ${done.title} · +${done.xp} XP`,
+              until: this.clock + 3.2,
+            };
+        }
         this.me = msg.me;
         break;
       }
@@ -737,6 +771,7 @@ export class GameClient {
   }
 
   private onFxMsg(msg: Extract<S2C, { type: 'fx' }>): void {
+    if ((msg.k === 'eat' || msg.k === 'drink') && msg.by === this.you) this.tutDid.add('eat');
     // Something you tapped can't be used (no axe, no shovel…): stop trying (the toast says why).
     if (msg.k === 'deny' && msg.by === this.you) this.goal = null;
     if (msg.k === 'death') {
@@ -893,6 +928,11 @@ export class GameClient {
     const before = this.target;
     this.target = alive ? this.findTarget() : null;
     if (!sameTarget(before, this.target)) this.touch();
+    this.tutAcc += dt;
+    if (this.tutAcc > 0.25) {
+      this.tutAcc = 0;
+      this.updateTutorial();
+    }
     if (act) this.useGoal();
     if (
       useHeld &&
@@ -1327,6 +1367,139 @@ export class GameClient {
   /** Where build mode points on the island (the cursor, or in front of you). */
   buildAt(): { x: number; z: number } | null {
     return this.build ? this.buildPoint(this.ghost?.kind ?? 'wall_wood') : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Survival basics (tutorial.ts): one step at a time, a marker on where to go and the
+  // button to press lit up; the authority checks each step and pays it.
+
+  /** The step showing now (null: finished, skipped, switched off, or you're down). */
+  tutStep(): TutStep | null {
+    const me = this.me;
+    if (!this.tutorialOn || !me?.alive || me.escaped || !this.island) return null;
+    return TUTORIAL[me.tut] ?? null;
+  }
+
+  tutView(): TutView {
+    return {
+      inv: this.me?.inv ?? [],
+      notes: this.notes,
+      built: builtBy(this.buildings.values(), this.you),
+      did: this.tutDid,
+    };
+  }
+
+  /** The tutorial's last step: you've read it ("Let's go"). */
+  tutorialGotIt(): void {
+    this.tutDid.add('end');
+    this.updateTutorial();
+  }
+
+  skipTutorial(): void {
+    this.send({ type: 'tutorial', act: 'skip' });
+  }
+
+  restartTutorial(): void {
+    this.tutDid.clear();
+    this.tutFrom = null;
+    this.tutSent = { step: -1, at: -99 };
+    this.send({ type: 'tutorial', act: 'restart' });
+  }
+
+  /**
+   * What the tutorial lights up right now: 'stick', 'use', 'bag', 'tab-craft', 'recipe',
+   * 'build', `cat:<tab>`, `piece:<kind>` or `slot:<n>`.
+   */
+  tutGlow(): string | null {
+    const s = this.tutStep();
+    const me = this.me;
+    if (!s || !me) return null;
+    const v = this.tutView();
+    const gathering = !!s.target?.(v);
+    // Build mode is done with for now: the way out.
+    if (this.build && (s.action !== 'build' || gathering)) return 'build';
+    if (s.action === 'walk') return 'stick';
+    if (s.action === 'use' || (s.action === 'build' && gathering)) {
+      return this.target && this.tutAims(s.target?.(v) ?? null) ? 'use' : null;
+    }
+    if (s.action === 'craft') {
+      if (this.panel === 'craft') return 'recipe';
+      if (this.panel === 'bag' || this.panel === 'skills') return 'tab-craft';
+      return 'bag';
+    }
+    if (s.action === 'build' && s.piece) {
+      const b = this.build;
+      if (!b) return 'build';
+      if (b.piece === s.piece) return 'use';
+      const cat = BUILDINGS[s.piece]?.cat;
+      return cat && b.cat !== cat ? `cat:${cat}` : `piece:${s.piece}`;
+    }
+    if (s.action === 'eat') {
+      if (this.heldItem()?.food) return 'use';
+      const i = me.inv.findIndex((x, k) => k < HOTBAR && !!x && !!ITEMS[x.id]?.food);
+      return i >= 0 ? `slot:${i}` : 'bag';
+    }
+    return null;
+  }
+
+  /** The action button is on what the tutorial points at. */
+  private tutAims(t: TutTarget): boolean {
+    const a = this.target;
+    if (!a || !t) return false;
+    if (t.kind === 'spot') return a.kind === 'spot' && a.id === t.id;
+    return a.kind === 'node' && t.types.includes(this.island?.nodeType[Number(a.id)] ?? -1);
+  }
+
+  private updateTutorial(): void {
+    if (this.tutFlash && this.clock > this.tutFlash.until) {
+      this.tutFlash = null;
+      this.touch();
+    }
+    const s = this.tutStep();
+    const me = this.me;
+    if (!s || !me) {
+      this.tutTarget = null;
+      return;
+    }
+    const v = this.tutView();
+    if (s.id === 'walk') {
+      if (!this.tutFrom) this.tutFrom = { x: this.x, z: this.z };
+      else if (Math.hypot(this.x - this.tutFrom.x, this.z - this.tutFrom.z) > 6)
+        this.tutDid.add('walk');
+    }
+    // Done: tell the island (again after a while, in case it wasn't ready to see it).
+    const sent = this.tutSent;
+    if (s.done(v) && (sent.step !== me.tut || this.clock - sent.at > 3)) {
+      this.tutSent = { step: me.tut, at: this.clock };
+      this.send({ type: 'tutorial', act: 'done', step: me.tut });
+    }
+    const before = this.tutTarget;
+    this.tutTarget = this.tutPlace(s.target?.(v) ?? null);
+    if (!before !== !this.tutTarget) this.touch();
+  }
+
+  /** Where on the island a step's target is: the spot, or the nearest node of its kinds. */
+  private tutPlace(t: TutTarget): { x: number; z: number; h: number } | null {
+    const island = this.island;
+    if (!t || !island) return null;
+    if (t.kind === 'spot') {
+      for (const poi of island.pois)
+        for (const spot of poi.spots)
+          if (spot.id === t.id) return { x: poi.x + spot.dx, z: poi.z + spot.dz, h: 1.2 };
+      return null;
+    }
+    let best = -1;
+    let bd = Infinity;
+    forNodesNear(island, this.x, this.z, 90, (id, d2) => {
+      if (d2 < bd && t.types.includes(island.nodeType[id] as number) && !this.nodeGone(id)) {
+        bd = d2;
+        best = id;
+      }
+    });
+    if (best < 0) return null;
+    const type = island.nodeType[best] as number;
+    const tree = type === NODE.palm || type === NODE.jungle || type === NODE.pine;
+    return { x: island.nodeX[best] as number, z: island.nodeZ[best] as number, h: tree ? 6 : 1.4 };
   }
 
   /** You may have this ad reward today (each once per island day). */
@@ -2430,8 +2603,10 @@ export class GameClient {
     });
   }
 
-  /** The quests the HUD lists: the way off (its current chapter) and the first night. */
+  /** The quests the HUD lists: the way off (its current chapter) and the first night (the
+   * tutorial card takes their place while it runs). */
   quests(): Quest[] {
+    if (this.tutStep()) return [];
     const main = mainQuest(
       objectives({
         flags: this.flags,

@@ -23,6 +23,8 @@ export interface Settings {
   autoBack: boolean;
   /** 🎒 opens the survivor menu, or the small window by your survivor (plays on). */
   bagWindow: boolean;
+  /** Survival basics (tutorial.ts) guides the first steps on an island. */
+  tutorial: boolean;
   /** Volumes, 0–100. */
   master: number;
   sfx: number;
@@ -72,6 +74,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoWeapon: true,
   autoBack: true,
   bagWindow: false,
+  tutorial: true,
   master: 80,
   sfx: 90,
   ambience: 70,
@@ -138,6 +141,7 @@ export function parseSettings(raw: unknown): Settings {
     autoWeapon: bool(o['autoWeapon'], d.autoWeapon),
     autoBack: bool(o['autoBack'], d.autoBack),
     bagWindow: bool(o['bagWindow'], d.bagWindow),
+    tutorial: bool(o['tutorial'], d.tutorial),
     master: num(o['master'], d.master, 0, 100),
     sfx: num(o['sfx'], d.sfx, 0, 100),
     ambience: num(o['ambience'], d.ambience, 0, 100),

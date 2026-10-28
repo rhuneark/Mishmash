@@ -4,7 +4,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { ITEMS, type ItemDef } from '../../game/content/items';
-import { RECIPE_LIST, STATION_NAMES, type Recipe } from '../../game/content/recipes';
+import { RECIPES, RECIPE_LIST, STATION_NAMES, type Recipe } from '../../game/content/recipes';
 import { HOTBAR, INV_SIZE } from '../../game/sim/inventory';
 import {
   BRANCHES,
@@ -48,7 +48,7 @@ export function CharacterMenu({
                 key={id}
                 role="tab"
                 aria-selected={tab === id}
-                className={`char-tab${tab === id ? ' on' : ''}`}
+                className={`char-tab${tab === id ? ' on' : ''}${id === 'craft' && client.tutGlow() === 'tab-craft' ? ' tut-glow' : ''}`}
                 onClick={() => client.openPanel(id)}
               >
                 {label}
@@ -394,6 +394,12 @@ function CraftingTab({ client }: { client: GameClient }) {
     .sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i)
     .map((x) => x.r);
   const sel = shown.find((r) => r.id === pick) ?? shown[0];
+  // Survival basics: the recipe it asks for (and its category, if another one is showing).
+  const want = client.tutGlow() === 'recipe' ? client.tutStep()?.recipe : undefined;
+  const wantCat =
+    want && !shown.some((r) => r.id === want) && RECIPES[want]
+      ? craftCategory(RECIPES[want])
+      : null;
   const choose = (id: string) => {
     lastRecipe = id;
     setPick(id);
@@ -406,7 +412,7 @@ function CraftingTab({ client }: { client: GameClient }) {
             key={id}
             role="tab"
             aria-selected={cat === id}
-            className={`craft-cat${cat === id ? ' on' : ''}`}
+            className={`craft-cat${cat === id ? ' on' : ''}${wantCat === id || (wantCat && id === 'all') ? ' tut-glow' : ''}`}
             onClick={() => {
               lastCat = id;
               setCat(id);
@@ -433,7 +439,7 @@ function CraftingTab({ client }: { client: GameClient }) {
           return (
             <button
               key={r.id}
-              className={`recipe-tile${ok ? ' ok' : st[r.station] ? '' : ' away'}${sel?.id === r.id ? ' sel' : ''}`}
+              className={`recipe-tile${ok ? ' ok' : st[r.station] ? '' : ' away'}${sel?.id === r.id ? ' sel' : ''}${want === r.id && sel?.id !== r.id ? ' tut-glow' : ''}`}
               onClick={() => choose(r.id)}
               aria-label={ITEMS[r.out]?.name ?? r.out}
               title={ITEMS[r.out]?.name}
@@ -447,12 +453,12 @@ function CraftingTab({ client }: { client: GameClient }) {
           <p className="muted small-text">Nothing here you can make with what you carry.</p>
         )}
       </div>
-      {sel && <RecipeDetail client={client} r={sel} />}
+      {sel && <RecipeDetail client={client} r={sel} glow={want === sel.id} />}
     </div>
   );
 }
 
-function RecipeDetail({ client, r }: { client: GameClient; r: Recipe }) {
+function RecipeDetail({ client, r, glow }: { client: GameClient; r: Recipe; glow: boolean }) {
   const def = ITEMS[r.out];
   const at = client.stations()[r.station];
   const most = client.craftMax(r.id);
@@ -491,7 +497,7 @@ function RecipeDetail({ client, r }: { client: GameClient; r: Recipe }) {
       </div>
       <div className="item-actions">
         <button
-          className="btn small primary"
+          className={`btn small primary${glow && most >= 1 ? ' tut-glow' : ''}`}
           disabled={most < 1}
           onClick={() => client.craft(r.id)}
         >

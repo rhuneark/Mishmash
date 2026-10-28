@@ -283,7 +283,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   (`QuestList`: quest cards with a title and bulleted steps, done ones ticked; the way off
   grouped into chapters by `mainQuest`, `Objective.chapter`/`short`, plus `starterQuest` "The
   first night" on days 1–3; tap opens the journal; hidden while the bag window or build mode
-  is open; sideways they sit left of the minimap), journal (objectives, notes, cargo code so far,
+  is open, and while the tutorial runs (its card takes their place); sideways they sit left of the minimap), journal (objectives, notes, cargo code so far,
   Kessler pages, tips), map, bag + crafting sheet, storage box, keypad, pause menu, death and
   win screens. Floating joystick on the left half (touch only: a mouse clicks the island
   through it; gone in build mode).
@@ -485,6 +485,28 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   says so). Outside the RUN app (desktop, or no ad ready) the player is told no ad is ready;
   the local mock shows a "Close Ad" overlay. New reward: a `RewardKind` + `REWARDS` entry and
   its case in `onReward`.
+- **Survival basics, the tutorial** (`game/tutorial.ts`, v1.23; the user: "an easy to follow
+  tutorial reminiscent of this type of game"): a guided starter chain like 7 Days to Die's.
+  A new survivor starts it (`SimPlayer.tut` = the step, 0…`TUT_DONE`; survivors saved before
+  it have it done). `TUTORIAL` steps: walk, read the boarding pass, sticks and stones, fiber,
+  craft a stone axe, chop, stones, build a campfire, eat, luggage cloth, build a bedroll,
+  then "Now find a way off" (the journal). Each has a touch and a PC text, XP, an `action`
+  (which button glows) and a `target` (a spot, or the nearest node of some kinds). The checks
+  are pure (`TutView`: bag, notes, `builtBy`, `did`), shared by the phone and the authority:
+  C2S `tutorial {act: done | skip | restart, step}`; `IslandSim.onTutorial` checks the step
+  (walking, eating and "got it" are `trust`: only the phone sees them), pays its XP once
+  (`tutPaid`, so a restart pays nothing twice) and gives `TUT_GIFT` (2 bandages, a torch) at
+  the end; `MeNet.tut`. Client (`client.ts` `tutStep`, `updateTutorial` every 0.25 s,
+  `tutPlace`, `tutGlow`): a card under the minimap in place of the quest cards (`TutorialCard`
+  in Hud.tsx: step N of 12, how, progress, where it is (compass + metres), Skip (asks), "✓ step
+  · +XP" flash, 📖), a gold ring and chevron on the target (`view.ts` `updateTut`) with an arrow
+  on the screen's edge when it's off screen (`.tut-edge`), a gold dot on the minimap and map,
+  and a glow (`.tut-glow`) on the button to press: the stick, ✋ in reach of the target, 🎒 →
+  the Crafting tab → the recipe → Craft, 🔨 → the tab → the piece, the ration in the hotbar.
+  In build mode the panel shows the step (`.build-tut`). Settings › Gameplay › Tutorial
+  (`settings.tutorial`, Skip turns it off); ☰ › How to play › 📘 Play the tutorial starts it
+  again. New step: append to `TUTORIAL` (and its texts for both), keep checks on what the
+  authority sees unless `trust`.
 - **Item pictures** (`hud/itemIcons.ts`): every item is a small SVG (48×48, flat colours,
   dark outline) shown as a data-URL `<img>` (`Slots.tsx` `ItemIcon`). Not emoji: newer emoji
   (wood, rock, rope…) are empty boxes on older phones and Windows. `itemIcons.test.ts`
@@ -653,6 +675,7 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
   objectives.ts      the escape checklist from flags/notes/inventory
   ads.ts             the in-flight channel: rewarded ads the player picks, once a day each
   skills.ts          levels, XP table and the skill tree (branches, perks, tiers)
+  tutorial.ts        Survival basics: the guided first steps, their checks, texts and targets
   content/           items, recipes, nodes, buildings, crops, monsters, landmarks (pois),
                      secrets (bunker, wreck, markers, treasure), notes
   sim/               the island authority: sim.ts (IslandSim), mobs.ts (monsters, director),
@@ -733,7 +756,9 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # global chat, suggestions box: send and take back, owner Dev
                             # area: star, done, delete, reports; jam link), New island (code,
                             # presets), the game
-                            # (walk, read, gather, the survivor menu: crafting by category,
+                            # (the tutorial: its card, the lit stick, ✋, 🎒, Crafting tab
+                            # and recipe, steps moving on, Skip, restart from How to play;
+                            # walk, read, gather, the survivor menu: crafting by category,
                             # XP and learning a skill; touch: a swipe on the crafting grid
                             # scrolls, a press and hold drags a bag item to the hotbar; a campfire from the build menu, night
                             # fight, death, item
@@ -818,7 +843,8 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   v1.16–v1.21 once RUN's review passes. **v1.22.0** (2026-10-26: a multiplayer code for every
   island, PC drag and drop in build mode, the in-flight channel's rewarded ads) **was submitted
   with the Publish workflow on 2026-10-28 at the user's request** ("publish public"), so
-  Explore gets v1.16–v1.22 once RUN's review passes.
+  Explore gets v1.16–v1.22 once RUN's review passes. v1.23.0 (2026-10-28, Survival basics:
+  the tutorial) is a private build.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

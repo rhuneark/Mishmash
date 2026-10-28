@@ -26,6 +26,8 @@ import { ChatBox, ChatLog } from './ChatBox';
 import { prefs, usePrefs } from '../prefs';
 import { BUILD_CATS, BUILDINGS } from '../../game/content/buildings';
 import { REWARDS } from '../../game/ads';
+import { TUT_DONE } from '../../game/tutorial';
+import { compass } from '../../game/sim/events';
 import type { Quest } from '../../game/objectives';
 import { cameraRig } from '../settings';
 import { DragLayer, ItemIcon, SlotButton, quickUse } from './Slots';
@@ -85,6 +87,10 @@ export function Hud(props: HudProps) {
   const build = client.build;
   // Quests make room for the bag window and for build mode (you tap the island there).
   const quests = showInfo && settings.quests !== 'off' && !quick && !build ? client.quests() : [];
+  // Survival basics: its card, and what it lights up.
+  const tut = client.tutStep();
+  const glow = client.tutGlow();
+  const lit = (key: string) => (glow === key ? ' tut-glow' : '');
   const mother = [...client.mobs.values()].find(
     (m) => m.kind === 'mother' && m.dying === 0 && Math.hypot(m.x - client.x, m.z - client.z) < 40,
   );
@@ -93,7 +99,7 @@ export function Hud(props: HudProps) {
 
   return (
     <div
-      className={`hud${info.bloom ? ' bloom' : ''}${info.night ? ' night' : ''}${client.quickOpen && !panel ? ' quick-open' : ''}${quests.length ? ' quests-on' : ''}`}
+      className={`hud${info.bloom ? ' bloom' : ''}${info.night ? ' night' : ''}${client.quickOpen && !panel ? ' quick-open' : ''}${quests.length ? ' quests-on' : ''}${tut && !quick && !build ? ' tut-on' : ''}`}
     >
       <div className="hurt-flash" style={{ opacity: client.hurtFlash * 0.7 }} />
       {me.poison > 0 && <div className="poison-tint" />}
@@ -167,6 +173,13 @@ export function Hud(props: HudProps) {
         {quests.length > 0 && (
           <QuestList quests={quests} current={settings.quests === 'current'} client={client} />
         )}
+        {tut && !quick && !build && <TutorialCard client={client} pc={pc} />}
+        {/* With the tutorial card up, big messages come under it instead of over it. */}
+        {tut && !quick && !build && client.banner && (
+          <div key={client.banner.id} className={`banner side ${client.banner.kind}`}>
+            {client.banner.text}
+          </div>
+        )}
       </div>
       <div className="hud-left">
         {build && <BuildPanel client={client} pc={pc} hint={hint} />}
@@ -205,13 +218,13 @@ export function Hud(props: HudProps) {
       </div>
       {coop && client.chatOpen && !panel && <ChatBox client={client} />}
       {quick && <QuickWindow client={client} pc={pc} />}
-      {client.banner && !quick && (
+      {client.banner && !quick && !(tut && !build) && (
         <div key={client.banner.id} className={`banner ${client.banner.kind}`}>
           {client.banner.text}
         </div>
       )}
       {/* Build mode stands the survivor still: the whole island takes taps and drags. */}
-      {!build && <Joystick input={input} />}
+      {!build && <Joystick input={input} glow={glow === 'stick'} />}
       <div className="hud-actions">
         <div className={`action-label${label.blocked ? ' blocked' : ''}`}>
           {!label.blocked && label.text && hint('use') ? (
@@ -235,7 +248,7 @@ export function Hud(props: HudProps) {
               </button>
             )}
             <button
-              className={`round-btn big${build ? ' on' : ''}`}
+              className={`round-btn big${build ? ' on' : ''}${lit('build')}`}
               onClick={() => client.toggleBuild()}
               aria-label={build ? 'Leave build mode' : 'Build mode'}
               title={withKey('Build mode', hint('build'))}
@@ -251,7 +264,7 @@ export function Hud(props: HudProps) {
             )}
             {!build && (
               <button
-                className={`round-btn big${client.quickOpen || panel === 'bag' || panel === 'craft' || panel === 'skills' ? ' on' : ''}`}
+                className={`round-btn big${client.quickOpen || panel === 'bag' || panel === 'craft' || panel === 'skills' ? ' on' : ''}${lit('bag')}`}
                 onClick={() => client.toggleBag('bag')}
                 aria-label="Bag and crafting"
                 title={withKey('Survivor, bag and crafting', hint('quick'))}
@@ -381,7 +394,7 @@ function UseButton({
               : '👊';
   return (
     <button
-      className={`use-btn ${kind}`}
+      className={`use-btn ${kind}${client.tutGlow() === 'use' ? ' tut-glow' : ''}`}
       onPointerDown={down}
       onPointerUp={up}
       onPointerCancel={up}
@@ -418,6 +431,84 @@ function TakeDown({ onConfirm }: { onConfirm: () => void }) {
 }
 
 /** The quests under the minimap: a title and its steps, done ones ticked. */
+/**
+ * Survival basics: the step you're on, how to do it (touch or keys), how far along, and
+ * which way to go (the island and the minimap mark it too).
+ */
+function TutorialCard({ client, pc }: { client: GameClient; pc: boolean }) {
+  const [skipping, setSkipping] = useState(false);
+  const s = client.tutStep();
+  const me = client.me;
+  if (!s || !me) return null;
+  const v = client.tutView();
+  const progress = s.progress?.(v);
+  const t = client.tutTarget;
+  const far = t ? Math.hypot(t.x - client.x, t.z - client.z) : 0;
+  const skip = () => {
+    client.skipTutorial();
+    prefs.set({ tutorial: false });
+    client.toast('Tutorial skipped. ☰ › How to play starts it again.');
+  };
+  return (
+    <div className="tut-card" role="region" aria-label="Tutorial">
+      <div className="tut-head">
+        <span className="tut-kicker">
+          📘 Survival basics · {Math.min(me.tut + 1, TUT_DONE)}/{TUT_DONE}
+        </span>
+        {skipping ? (
+          <span className="tut-skip-ask">
+            Skip it?{' '}
+            <button className="tut-link" onClick={skip}>
+              Yes
+            </button>{' '}
+            <button className="tut-link" onClick={() => setSkipping(false)}>
+              No
+            </button>
+          </span>
+        ) : (
+          <button className="tut-link" onClick={() => setSkipping(true)}>
+            Skip
+          </button>
+        )}
+      </div>
+      {client.tutFlash && (
+        <div key={client.tutFlash.id} className="tut-flash">
+          {client.tutFlash.text}
+        </div>
+      )}
+      <div className="tut-title">
+        {s.icon} {s.title}
+      </div>
+      <p className="tut-text">{pc ? s.pc : s.touch}</p>
+      {progress && <div className="tut-progress">{progress}</div>}
+      {t && far > 8 && (
+        <div className="tut-where">
+          📍 {Math.round(far / 5) * 5} m {compass(t.x - client.x, t.z - client.z)}
+        </div>
+      )}
+      {s.action === 'ok' && (
+        <div className="row tut-actions">
+          <button
+            className="btn small primary"
+            onClick={() => {
+              client.tutorialGotIt();
+              prefs.set({ tutorial: false });
+            }}
+          >
+            Let's go
+          </button>
+          <button className="btn small" onClick={() => client.openPanel('journal')}>
+            📖 Journal
+          </button>
+        </div>
+      )}
+      <div className="tut-bar" aria-hidden="true">
+        <span style={{ width: `${(me.tut / TUT_DONE) * 100}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function QuestList({
   quests,
   current,
@@ -465,8 +556,19 @@ function BuildPanel({
   // Taking down: the pieces stacked under the cursor (roof, wall, floor…), topmost first.
   const stack = removing ? client.removeStack() : [];
   const at = removing ? stack.indexOf(client.build?.remove ?? -1) : -1;
+  const tut = client.tutStep();
   return (
     <div className="build-panel">
+      {tut && (
+        <div className="build-tut">
+          📘 {tut.icon} {tut.title}
+          {tut.action === 'build' && !tut.target?.(client.tutView())
+            ? ''
+            : pc
+              ? ': press V to leave build mode'
+              : ': tap 🔨 to leave build mode'}
+        </div>
+      )}
       <div className="build-head">
         <span className="build-title">🔨 Build mode</span>
         <button
@@ -610,6 +712,7 @@ function dragPiece(e: ReactPointerEvent, client: GameClient, input: Input, kind:
 
 function BuildBar({ client, input }: { client: GameClient; input: Input }) {
   const b = client.build;
+  const glow = client.tutGlow();
   if (!b) return null;
   const removing = b.piece === 'remove';
   return (
@@ -630,7 +733,7 @@ function BuildBar({ client, input }: { client: GameClient; input: Input }) {
             key={c.id}
             role="tab"
             aria-selected={!removing && b.cat === c.id}
-            className={`build-tab${!removing && b.cat === c.id ? ' on' : ''}`}
+            className={`build-tab${!removing && b.cat === c.id ? ' on' : ''}${glow === `cat:${c.id}` ? ' tut-glow' : ''}`}
             onClick={() => client.buildTab(c.id)}
             aria-label={c.name}
             title={c.name}
@@ -643,7 +746,7 @@ function BuildBar({ client, input }: { client: GameClient; input: Input }) {
         {client.buildPieces(b.cat).map((p) => (
           <button
             key={p.kind}
-            className={`slot${b.piece === p.kind ? ' held' : ''}${p.can ? '' : ' poor'}`}
+            className={`slot${b.piece === p.kind ? ' held' : ''}${p.can ? '' : ' poor'}${glow === `piece:${p.kind}` ? ' tut-glow' : ''}`}
             onClick={() => client.buildPick(p.kind)}
             onPointerDown={(e) => dragPiece(e, client, input, p.kind)}
             aria-label={BUILDINGS[p.kind]?.name ?? p.kind}
@@ -659,6 +762,7 @@ function BuildBar({ client, input }: { client: GameClient; input: Input }) {
 
 function Hotbar({ client, hints }: { client: GameClient; hints: Bindings | null }) {
   const me = client.me;
+  const glow = client.tutGlow();
   if (!me) return null;
   return (
     <div className="hotbar">
@@ -668,7 +772,7 @@ function Hotbar({ client, hints }: { client: GameClient; hints: Bindings | null 
           client={client}
           slotRef={{ area: 'inv', index: i }}
           slot={me.inv[i] ?? null}
-          className={me.held === i ? 'held' : ''}
+          className={`${me.held === i ? 'held' : ''}${glow === `slot:${i}` ? ' tut-glow' : ''}`}
           onTap={() => client.select(i)}
           onContext={() => quickUse(client, i)}
         >
@@ -682,7 +786,7 @@ function Hotbar({ client, hints }: { client: GameClient; hints: Bindings | null 
 }
 
 /** A joystick that appears where the thumb lands (left side of the screen). */
-function Joystick({ input }: { input: Input }) {
+function Joystick({ input, glow }: { input: Input; glow: boolean }) {
   const zone = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
   const pointer = useRef<number | null>(null);
@@ -752,7 +856,7 @@ function Joystick({ input }: { input: Input }) {
           />
         </div>
       ) : (
-        <div className="joy-hint">
+        <div className={`joy-hint${glow ? ' tut-glow' : ''}`}>
           <div className="joy-knob" />
         </div>
       )}

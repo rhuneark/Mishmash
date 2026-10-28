@@ -56,6 +56,16 @@ export function PauseMenu(props: {
       )}
       {page === 'howto' && (
         <MenuCard title="❓ How to play" onBack={back} onClose={close} wide>
+          <button
+            className="btn primary tut-again"
+            onClick={() => {
+              prefs.set({ tutorial: true });
+              client.restartTutorial();
+              close();
+            }}
+          >
+            📘 Play the tutorial (Survival basics)
+          </button>
           <HowTo pc={props.pc} bloomEvery={client.rules.bloomEvery} />
         </MenuCard>
       )}
@@ -437,6 +447,12 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
             desc="Go back to what you held (a torch, say) once the job is done."
             on={s.autoBack}
             set={(v) => set({ autoBack: v })}
+          />
+          <Toggle
+            label="Tutorial"
+            desc="Survival basics: step-by-step help with your first steps on an island, with what to do and where to go."
+            on={s.tutorial}
+            set={(v) => set({ tutorial: v })}
           />
           <Toggle
             label="Small bag window"

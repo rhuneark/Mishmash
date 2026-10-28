@@ -43,6 +43,8 @@ export type C2S =
   | { type: 'respawn' }
   /** The player watched an ad to the end (ads.ts): its reward, if they may have it. */
   | { type: 'reward'; kind: string }
+  /** Survival basics: a step done (`step`: the one you were on), skipped, or from the start. */
+  | { type: 'tutorial'; act: 'done' | 'skip' | 'restart'; step?: number }
   /** The island's owner changes the world rules (others are ignored). */
   | { type: 'rules'; rules: unknown }
   /** A chat line to everyone on the island (co-op). */
@@ -132,6 +134,8 @@ export interface MeNet {
   perks: Perks;
   /** The island day each ad reward was last used. */
   ads: RewardDays;
+  /** Survival basics: the step you're on (TUT_DONE: finished or skipped). */
+  tut: number;
 }
 
 export interface RescueNet {

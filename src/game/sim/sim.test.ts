@@ -20,6 +20,7 @@ import { DEFAULT_RULES, type WorldRules } from '../rules';
 import { dayInfo } from './time';
 import { MAX_SAY } from '../chat';
 import { nextWeather, type WeatherKind } from './weather';
+import { TUTORIAL, TUT_DONE, TUT_GIFT } from '../tutorial';
 
 const island: Island = generateIsland(4242);
 
@@ -1627,5 +1628,69 @@ describe('the in-flight channel and Second wind (ads)', () => {
     // Kept with the survivor in the save.
     const back = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())));
     expect(back?.players['a']?.ads?.wind).toBe(Math.floor(h.sim.time / DAY));
+  });
+});
+
+describe('survival basics (the tutorial)', () => {
+  it('walks a new survivor through it, paying each step once', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a');
+    if (!p) throw new Error();
+    expect(p.tut).toBe(0);
+    // Walking only the phone can see: taken on the player's word.
+    h.sim.handle('a', { type: 'tutorial', act: 'done', step: 0 });
+    expect(p.tut).toBe(1);
+    const xp = p.xp;
+    expect(xp).toBe(TUTORIAL[0]?.xp);
+    // Reading the note is checked: not read, not done.
+    h.sim.handle('a', { type: 'tutorial', act: 'done', step: 1 });
+    expect(p.tut).toBe(1);
+    h.sim.notes.add('crash_note');
+    // Only the step you're on counts.
+    h.sim.handle('a', { type: 'tutorial', act: 'done', step: 2 });
+    expect(p.tut).toBe(1);
+    h.sim.handle('a', { type: 'tutorial', act: 'done', step: 1 });
+    expect(p.tut).toBe(2);
+    expect(p.xp).toBe(xp + (TUTORIAL[1]?.xp ?? 0));
+    // Starting over doesn't pay the same steps again.
+    h.sim.handle('a', { type: 'tutorial', act: 'restart' });
+    expect(p.tut).toBe(0);
+    const again = p.xp;
+    h.sim.handle('a', { type: 'tutorial', act: 'done', step: 0 });
+    h.sim.handle('a', { type: 'tutorial', act: 'done', step: 1 });
+    expect(p.tut).toBe(2);
+    expect(p.xp).toBe(again);
+    h.sim.handle('a', { type: 'tutorial', act: 'skip' });
+    expect(p.tut).toBe(TUT_DONE);
+    const back = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())));
+    expect(back?.players['a']?.tut).toBe(TUT_DONE);
+    expect(back?.players['a']?.tutPaid).toBe(2);
+  });
+
+  it('gives a little something for finishing it', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a');
+    if (!p) throw new Error();
+    p.tut = TUT_DONE - 1;
+    p.tutPaid = TUT_DONE - 1;
+    h.sim.handle('a', { type: 'tutorial', act: 'done', step: TUT_DONE - 1 });
+    expect(p.tut).toBe(TUT_DONE);
+    for (const g of TUT_GIFT) expect(count(p.inv, g.id)).toBeGreaterThanOrEqual(g.n);
+  });
+
+  it('leaves survivors from older saves out of it', () => {
+    const save = newSave(4242);
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const old = h.sim.serialize().players['a'];
+    if (!old) throw new Error();
+    delete old.tut;
+    delete old.tutPaid;
+    save.players['a'] = old;
+    const back = parseIslandSave(JSON.parse(JSON.stringify(save)));
+    const sim = new IslandSim(island, back ?? save, () => {}, rng(1));
+    expect(sim.players.get('a')?.tut).toBe(TUT_DONE);
   });
 });

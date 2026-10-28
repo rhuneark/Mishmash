@@ -133,6 +133,28 @@ function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, o: MapOpts
     }
     ctx.lineCap = 'butt';
   }
+  // Survival basics: where it sends you (on the minimap's rim when further away).
+  const tut = c.tutTarget;
+  if (tut) {
+    let [tx, ty] = at(tut.x, tut.z);
+    if (!o.full) {
+      const r = w / 2 - 8;
+      const dx = tx - w / 2;
+      const dy = ty - h / 2;
+      const dd = Math.hypot(dx, dy);
+      if (dd > r) {
+        tx = w / 2 + (dx / dd) * r;
+        ty = h / 2 + (dy / dd) * r;
+      }
+    }
+    ctx.fillStyle = '#ffd36a';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(tx, ty, (o.full ? 6 : 4.5) * (1 + Math.sin(o.t * 6) * 0.2), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
   for (const other of markers === 'all' ? c.others.values() : []) {
     if (!other.alive) continue;
     const info = c.players.find((p) => p.id === other.id);

@@ -173,7 +173,16 @@ export function Game(props: {
   useEffect(() => {
     client.auto = { tool: settings.autoTool, weapon: settings.autoWeapon, back: settings.autoBack };
     client.bagWindow = settings.bagWindow;
-  }, [client, settings.autoTool, settings.autoWeapon, settings.autoBack, settings.bagWindow]);
+    client.tutorialOn = settings.tutorial;
+    client.touch();
+  }, [
+    client,
+    settings.autoTool,
+    settings.autoWeapon,
+    settings.autoBack,
+    settings.bagWindow,
+    settings.tutorial,
+  ]);
   useEffect(() => {
     client.buildPrefs = { snap: settings.buildSnap, grid: settings.buildGrid };
     client.touch();

@@ -2,6 +2,7 @@
 
 import { parseRewardDays, type RewardDays } from '../ads';
 import { parsePerks, type Perks } from '../skills';
+import { TUT_DONE, parseTut } from '../tutorial';
 import { BUILDINGS, slotsOf } from '../content/buildings';
 import { CROP_BY_ID } from '../content/crops';
 import { MONSTERS, type MonsterKind } from '../content/monsters';
@@ -48,6 +49,9 @@ export interface SimPlayer {
   ads: RewardDays;
   /** The bag they left when they last fell (Second wind gives it back). */
   lastBag: number | null;
+  /** Survival basics (tutorial.ts): the step they're on, and how many steps have paid. */
+  tut: number;
+  tutPaid: number;
 }
 
 export interface Building {
@@ -168,6 +172,10 @@ export interface PlayerSave {
   perks?: Perks;
   /** Ad rewards used (ads.ts); missing: none yet. */
   ads?: RewardDays;
+  /** Survival basics: the step they're on and how many have paid (missing in older saves:
+   * someone who was already playing, so it's done). */
+  tut?: number;
+  tutPaid?: number;
 }
 
 export interface IslandSave {
@@ -324,6 +332,10 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
       }
       const ads = parseRewardDays(pv['ads']);
       if (Object.keys(ads).length) (save.players[pid] as PlayerSave).ads = ads;
+      if (pv['tut'] !== undefined) {
+        (save.players[pid] as PlayerSave).tut = parseTut(pv['tut'], TUT_DONE);
+        (save.players[pid] as PlayerSave).tutPaid = parseTut(pv['tutPaid'], 0);
+      }
     }
   }
   if (Array.isArray(d['flags']))

@@ -221,6 +221,11 @@ export class View {
   private readonly doomBox: THREE.BoxHelper;
   /** Where a tap is walking you to. */
   private readonly goalRing: THREE.Mesh;
+  /** Survival basics: a gold ring and a bobbing chevron over where it sends you, and an
+   * arrow at the screen's edge while that's out of view. */
+  private readonly tutRing: THREE.Mesh;
+  private readonly tutCone: THREE.Mesh;
+  private readonly tutEdge: HTMLDivElement;
   private doomId: number | null = null;
   private readonly lights: THREE.PointLight[] = [];
   private readonly labels: Labels;
@@ -343,6 +348,24 @@ export class View {
     });
     this.goalRing.visible = false;
     this.scene.add(this.goalRing);
+    const gold = new THREE.MeshBasicMaterial({
+      color: 0xffd36a,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+    });
+    this.tutRing = this.ring.clone();
+    this.tutRing.material = gold;
+    this.tutCone = new THREE.Mesh(new THREE.ConeGeometry(0.38, 0.8, 4).rotateX(Math.PI), gold);
+    this.tutRing.visible = this.tutCone.visible = false;
+    this.tutRing.userData['shade'] = this.tutCone.userData['shade'] = 'none';
+    this.scene.add(this.tutRing, this.tutCone);
+    this.tutEdge = document.createElement('div');
+    this.tutEdge.className = 'tut-edge';
+    this.tutEdge.innerHTML =
+      '<span class="tut-edge-arrow">➤</span><span class="tut-edge-m"></span>';
+    this.tutEdge.style.display = 'none';
+    overlay.appendChild(this.tutEdge);
     this.labels = new Labels(overlay);
     this.me = this.newPlayer(client.you);
     this.terrain.prime(client.x, client.z, this.terrainRadius);
@@ -1104,6 +1127,7 @@ export class View {
     this.updateGrid();
     this.updateRing();
     this.updateGoal();
+    this.updateTut();
     this.updateLighting(dt, time);
     // Camera: a little ahead (away from the camera, and where you're heading), so the
     // survivor sits below the HUD's top rows; sprinting and a fight pull it back a touch.
@@ -1579,6 +1603,53 @@ export class View {
     const pool = poolNear(this.island, g.x, g.z, 0.5);
     if (pool) return { kind: 'pool', id: 0, x: g.x, z: g.z, gx: g.x, gz: g.z };
     return { kind: 'ground', x: g.x, z: g.z, gx: g.x, gz: g.z };
+  }
+
+  /** Survival basics: the marker over where it sends you, or an arrow at the edge. */
+  private updateTut(): void {
+    const t = this.client.tutTarget;
+    this.tutRing.visible = this.tutCone.visible = !!t;
+    if (!t) {
+      this.tutEdge.style.display = 'none';
+      return;
+    }
+    const gy = this.y(t.x, t.z);
+    this.tutRing.position.set(t.x, gy + 0.07, t.z);
+    this.tutRing.scale.setScalar(0.85 * (1 + Math.sin(this.t * 5) * 0.1));
+    this.tutCone.position.set(t.x, gy + t.h + 0.6 + Math.sin(this.t * 3) * 0.25, t.z);
+    this.tutCone.rotation.y = this.t * 1.6;
+    const w = this.renderer.domElement.clientWidth;
+    const h = this.renderer.domElement.clientHeight;
+    tmpVec.set(t.x, gy + t.h, t.z).project(this.camera);
+    const behind = tmpVec.z > 1;
+    // Screen px from the middle of the open view (the HUD's rows are above and below it).
+    const box = { l: 0.08 * w, r: 0.92 * w, t: 0.16 * h, b: 0.68 * h };
+    const cx = (box.l + box.r) / 2;
+    const cy = (box.t + box.b) / 2;
+    let dx = (tmpVec.x * 0.5 + 0.5) * w - cx;
+    let dy = (-tmpVec.y * 0.5 + 0.5) * h - cy;
+    if (behind) {
+      dx = -dx;
+      dy = -dy;
+    }
+    const hw = (box.r - box.l) / 2;
+    const hh = (box.b - box.t) / 2;
+    if (!behind && Math.abs(dx) < hw && Math.abs(dy) < hh) {
+      this.tutEdge.style.display = 'none';
+      return;
+    }
+    // Out of the open view: an arrow on its edge, pointing the way, with how far it is.
+    const k = Math.min(hw / Math.max(Math.abs(dx), 1e-6), hh / Math.max(Math.abs(dy), 1e-6));
+    const ex = cx + dx * k;
+    const ey = cy + dy * k;
+    const angle = Math.atan2(dy, dx);
+    const el = this.tutEdge;
+    el.style.display = '';
+    el.style.transform = `translate(${ex.toFixed(1)}px, ${ey.toFixed(1)}px) translate(-50%, -50%)`;
+    (el.firstChild as HTMLElement).style.transform = `rotate(${angle.toFixed(3)}rad)`;
+    const m = `${Math.round(Math.hypot(t.x - this.client.x, t.z - this.client.z))} m`;
+    const label = el.lastChild as HTMLElement;
+    if (label.textContent !== m) label.textContent = m;
   }
 
   /** Where a tap sent the survivor: a small marker on the ground until it gets there. */

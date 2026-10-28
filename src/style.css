@@ -1875,6 +1875,214 @@ button:disabled {
   -webkit-user-select: text;
 }
 
+/* Survival basics (the tutorial): its card under the minimap, the buttons it lights up and
+   the arrow at the screen's edge pointing to where it sends you. */
+
+.tut-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 232px;
+  max-width: 60vw;
+  padding: 9px 11px 10px;
+  border: 1px solid rgba(255, 211, 106, 0.55);
+  border-left: 4px solid #ffd36a;
+  border-radius: 12px;
+  background: rgba(14, 14, 30, 0.86);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  text-align: left;
+  pointer-events: auto;
+}
+
+.tut-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.tut-kicker {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #ffd36a;
+}
+
+.tut-link {
+  min-height: 28px;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: var(--text-soft);
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.tut-skip-ask {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.tut-title {
+  font-size: 16px;
+  font-weight: 900;
+  text-shadow: 0 1px 2px #000;
+}
+
+.tut-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.tut-progress,
+.tut-where {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffe6a8;
+}
+
+.tut-where {
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+.tut-actions {
+  margin-top: 4px;
+  gap: 6px;
+}
+
+.tut-bar {
+  height: 4px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.tut-bar span {
+  display: block;
+  height: 100%;
+  background: #ffd36a;
+  transition: width 0.4s;
+}
+
+/* A step just done: it shows on the card a moment, then fades. */
+.tut-flash {
+  font-size: 14px;
+  font-weight: 900;
+  color: #3ddc97;
+  animation: tut-flash 3.2s ease forwards;
+}
+
+@keyframes tut-flash {
+  0%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.banner.side {
+  position: static;
+  width: 232px;
+  max-width: 60vw;
+  padding: 8px 10px;
+  font-size: 16px;
+  transform: none;
+  animation: banner-side 5.5s ease forwards;
+}
+
+@keyframes banner-side {
+  0% {
+    opacity: 0;
+  }
+  8%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.tut-again {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.build-tut {
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 211, 106, 0.16);
+  color: #ffe6a8;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+/* Leave room for the tutorial card under the minimap (upright). */
+.game.portrait .hud.tut-on .hud-left {
+  right: calc(min(232px, 60vw) + 12px);
+}
+
+.game.landscape .tut-card {
+  width: 230px;
+}
+
+.tut-glow {
+  animation: tut-glow 1.1s ease-in-out infinite;
+}
+
+@keyframes tut-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px #ffd36a,
+      0 0 6px 2px rgba(255, 211, 106, 0.55);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px #ffd36a,
+      0 0 18px 7px rgba(255, 211, 106, 0.85);
+  }
+}
+
+.joy-hint.tut-glow {
+  border-radius: 50%;
+}
+
+.game-labels > .tut-edge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  color: #ffd36a;
+  font-weight: 900;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 6px #000;
+}
+
+.tut-edge-arrow {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.tut-edge-m {
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tut-glow {
+    animation: none;
+    box-shadow: 0 0 0 3px #ffd36a;
+  }
+}
+
 /* The in-flight channel (seatback screens: rewarded ads the player picks) */
 
 .channels {

@@ -56,6 +56,7 @@ import {
 } from './inventory';
 import { FIRST_EVENT, compass, rollLoot, runEvents, sponsorPod } from './events';
 import { isRewardKind, islandDay, rewardReady } from '../ads';
+import { TUTORIAL, TUT_DONE, TUT_GIFT, builtBy, type TutView } from '../tutorial';
 import { parseWeather, runWeather, type WeatherState } from './weather';
 import { burrowAll, damageMob, runDirector, spawnMob, updateMobs } from './mobs';
 import { MONSTERS, PET_NAMES } from '../content/monsters';
@@ -213,6 +214,8 @@ export class IslandSim {
         perks: { ...(p.perks ?? {}) },
         ads: { ...(p.ads ?? {}) },
         lastBag: null,
+        tut: p.tut ?? TUT_DONE,
+        tutPaid: p.tutPaid ?? (p.tut === undefined ? TUT_DONE : 0),
       });
     }
     for (const f of save.flags) this.flags.add(f);
@@ -345,6 +348,8 @@ export class IslandSim {
         perks: {},
         ads: {},
         lastBag: null,
+        tut: 0,
+        tutPaid: 0,
       };
       this.players.set(id, p);
     } else if (name) {
@@ -448,6 +453,8 @@ export class IslandSim {
         escaped: p.escaped,
         ...(p.xp ? { xp: p.xp, perks: { ...p.perks } } : {}),
         ...(Object.keys(p.ads).length ? { ads: { ...p.ads } } : {}),
+        tut: p.tut,
+        tutPaid: p.tutPaid,
       };
     }
     return {
@@ -553,6 +560,8 @@ export class IslandSim {
         return this.onRespawn(p);
       case 'reward':
         return this.onReward(p, msg.kind);
+      case 'tutorial':
+        return this.onTutorial(p, msg.act, msg.step);
       case 'say':
         return this.onSay(p, msg.text);
       default:
@@ -1698,6 +1707,34 @@ export class IslandSim {
     this.dirty(p);
   }
 
+  /**
+   * Survival basics (tutorial.ts): a step done (checked here when the island can see it,
+   * taken on the player's word when it's about walking or eating), paid once per survivor
+   * even if they start the tutorial again; skipping or starting over only moves the step.
+   */
+  private onTutorial(p: SimPlayer, act: string, step: number | undefined): void {
+    if (act === 'skip') p.tut = TUT_DONE;
+    else if (act === 'restart') p.tut = 0;
+    else if (act === 'done') {
+      const s = TUTORIAL[p.tut];
+      if (!s || step !== p.tut) return;
+      const view: TutView = {
+        inv: p.inv,
+        notes: this.notes,
+        built: builtBy(this.buildings.values(), p.id),
+        did: new Set(),
+      };
+      if (!s.trust && !s.done(view)) return;
+      if (p.tut >= p.tutPaid) {
+        p.tutPaid = p.tut + 1;
+        this.gainXp(p, s.xp);
+        if (p.tutPaid === TUT_DONE) for (const g of TUT_GIFT) this.give(p, g.id, g.n);
+      }
+      p.tut++;
+    } else return;
+    this.dirty(p);
+  }
+
   /** A seatback screen in reach: the crash site's, or one someone built. */
   private screenNear(p: SimPlayer): boolean {
     for (const s of this.spots.values())
@@ -2294,6 +2331,7 @@ export class IslandSim {
       xp: p.xp,
       perks: p.perks,
       ads: p.ads,
+      tut: p.tut,
     };
     const key = JSON.stringify(me);
     if (this.lastMe.get(p.id) === key) return;

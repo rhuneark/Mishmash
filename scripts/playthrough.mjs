@@ -277,6 +277,21 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   );
   check(use && use.x + use.width <= width, `${tag} game: action button off screen`);
 
+  // Survival basics: a new island starts the tutorial, one step at a time, the stick lit up.
+  const tutCard = page.locator('.tut-card');
+  await tutCard.getByText('Find your feet').waitFor();
+  check(
+    (await tutCard.getByText(/Drag on the left side|W A S D/).count()) === 1,
+    `${tag} tutorial: no how-to on the first step`,
+  );
+  check(
+    (await page.locator('.joy-hint.tut-glow').count()) === 1,
+    `${tag} tutorial: the stick isn't lit`,
+  );
+  check((await page.locator('.quest').count()) === 0, `${tag} tutorial: quest cards under it`);
+  await noSideScroll('tutorial');
+  await shot('5a-tutorial');
+
   // Walk north with the on-screen stick.
   const start = await game(page, () => window.__game.client.z);
   const zone = await page.locator('.joy-zone').boundingBox();
@@ -295,6 +310,17 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await touch('touchEnd', sx, sy - 45);
   const moved = start - (await game(page, () => window.__game.client.z));
   check(moved > 0.5, `${tag} game: the stick didn't move the survivor (${moved.toFixed(2)} m)`);
+  // A few more steps and the tutorial moves on to the wreckage, marking the note.
+  await teleport(page, 8, 250);
+  await tutCard.getByText('Search the wreckage').waitFor({ timeout: 15000 });
+  await until(
+    page,
+    () => {
+      const t = window.__game.client.tutTarget;
+      return !!t && Math.hypot(t.x + 3, t.z - 254.5) < 0.5;
+    },
+    `${tag} tutorial: the note isn't marked`,
+  );
 
   // Read the boarding pass in the wreckage.
   await teleport(page, -3, 256.6);
@@ -307,7 +333,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.getByText('Boarding pass, Flight MX207').waitFor();
   await shot('5-note');
   await page.keyboard.press('Escape');
-  await page.getByText('Find the cockpit').waitFor();
+  await tutCard.getByText('Sticks and stones').waitFor({ timeout: 15000 });
 
   // Pick up a fallen branch by hand.
   const branch = await game(page, () => {
@@ -331,6 +357,11 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     () => window.__game.client.target?.verb === 'Pick up',
     `${tag} game: branch not targeted`,
   );
+  // The tutorial lights up the action button in reach of what it asks for.
+  await page
+    .locator('.use-btn.tut-glow')
+    .waitFor({ timeout: 5000 })
+    .catch(() => check(false, `${tag} tutorial: the action button isn't lit by a branch`));
   await pressUse(page);
   await until(
     page,
@@ -346,10 +377,20 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     ['cloth', 4],
   ]);
   await page.waitForTimeout(400);
+  // The tutorial asks for a stone axe and lights the way: 🎒, Crafting, then Craft.
+  await tutCard.getByText('Your first tool').waitFor({ timeout: 15000 });
+  await page
+    .locator('.round-btn.tut-glow', { hasText: '🎒' })
+    .waitFor({ timeout: 5000 })
+    .catch(() => check(false, `${tag} tutorial: 🎒 isn't lit for the axe`));
   // 🎒 opens the survivor menu: the survivor and bag, crafting by category, skills.
   await page.getByRole('button', { name: 'Bag and crafting' }).click();
   const menu = page.locator('.char-menu');
   await menu.waitFor();
+  check(
+    (await menu.locator('.char-tab.tut-glow', { hasText: 'Crafting' }).count()) === 1,
+    `${tag} tutorial: the Crafting tab isn't lit`,
+  );
   check(
     (await menu.getByRole('tab', { name: /Survivor/ }).getAttribute('aria-selected')) === 'true',
     `${tag} menu: didn't open on the survivor`,
@@ -362,6 +403,10 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await noSideScroll('survivor menu');
   await menu.getByRole('tab', { name: /Crafting/ }).click();
   const recipes = menu.locator('.recipe-grid');
+  check(
+    (await menu.locator('.tut-glow').count()) >= 1,
+    `${tag} tutorial: neither the stone axe nor Craft is lit`,
+  );
   check(
     (await recipes.getByRole('button', { name: /^(Campfire|Bedroll|Workbench)$/ }).count()) === 0,
     `${tag} craft: buildings are still crafted`,
@@ -504,6 +549,17 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     );
   }
   check((await page.locator('.level-badge').count()) === 1, `${tag} hud: no level badge`);
+  // The axe is made: the tutorial moves on, past the steps the bag already covers (wood,
+  // stones), to the campfire; skipping it brings the quests back.
+  await tutCard.getByText('Light a fire before dark').waitFor({ timeout: 15000 });
+  check(
+    (await page.locator('.round-btn.tut-glow', { hasText: '🔨' }).count()) === 1,
+    `${tag} tutorial: 🔨 isn't lit for the campfire`,
+  );
+  await tutCard.getByRole('button', { name: 'Skip' }).click();
+  await tutCard.getByRole('button', { name: 'Yes' }).click();
+  await tutCard.waitFor({ state: 'detached' });
+  await page.getByText('Find the cockpit').waitFor();
 
   // Build a campfire: pick it in build mode, and it's paid for straight from the bag.
   await teleport(page, 12, 272);
@@ -1789,6 +1845,15 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   );
   await noSideScroll('menu');
   await shot('9c-menu');
+  // How to play starts the tutorial again (from the first step).
+  await page.getByRole('button', { name: /How to play/ }).click();
+  await page.getByRole('button', { name: /Play the tutorial/ }).click();
+  await tutCard.getByText('Find your feet').waitFor({ timeout: 15000 });
+  await tutCard.getByRole('button', { name: 'Skip' }).click();
+  await tutCard.getByRole('button', { name: 'Yes' }).click();
+  await tutCard.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByText('Paused').waitFor();
   // This island: its name, code and rules.
   await page.getByRole('button', { name: /This island/ }).click();
   await page.locator('.island-name', { hasText: islandName }).waitFor();

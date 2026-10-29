@@ -13,9 +13,13 @@ import { POIS, SPAWN, TOWER_VINES } from './content/pois';
 import { NODE } from './content/nodes';
 import {
   CLASSIC,
+  CLIMATES,
+  GEN,
   JOIN_CHARS,
   TERRAINS,
   cleanJoinCode,
+  isClassic,
+  parseParts,
   islandName,
   newJoinCode,
   parseSpecCode,
@@ -196,9 +200,37 @@ describe('islands from parts', () => {
       climate: 'autumn' as const,
       terrain: 'islets' as const,
     };
-    expect(parseSpecCode(specCode(spec))).toEqual(spec);
+    // A shared code makes a new island: it gets today's generator.
+    expect(parseSpecCode(specCode(spec))).toEqual({ ...spec, gen: GEN });
     expect(parseSpecCode('nonsense')).toBeNull();
     expect(islandName(spec)).toMatch(/^\w+ \w+$/);
+  });
+
+  it('puts twigs, loose stones and bushes by every new crash site, and leaves old islands be', () => {
+    const counts = (isl: Island, r: number) => {
+      const n = { branch: 0, pebble: 0, bush: 0 };
+      forNodesNear(isl, isl.spawn.x, isl.spawn.z, r, (id) => {
+        if (isl.hidden[id]) return;
+        const t = isl.nodeType[id];
+        if (t === NODE.branch) n.branch++;
+        else if (t === NODE.pebble) n.pebble++;
+        else if (t === NODE.bush || t === NODE.berry) n.bush++;
+      });
+      return n;
+    };
+    for (const climate of CLIMATES) {
+      for (const terrain of ['classic', 'rugged'] as const) {
+        const isl = generateIsland(4242, { turn: 1, mirror: true, climate, terrain, gen: GEN });
+        const n = counts(isl, 30);
+        expect(n.branch, `${climate} ${terrain}`).toBeGreaterThanOrEqual(8);
+        expect(n.pebble, `${climate} ${terrain}`).toBeGreaterThanOrEqual(8);
+        expect(n.bush, `${climate} ${terrain}`).toBeGreaterThanOrEqual(6);
+      }
+    }
+    // Saved islands keep the generator they were made with (node ids are saved).
+    expect(parseParts({ climate: 'volcanic' }).gen).toBeUndefined();
+    expect(parseParts({ climate: 'volcanic', gen: GEN }).gen).toBe(GEN);
+    expect(isClassic({ ...CLASSIC, gen: GEN })).toBe(false);
   });
 
   it('gives islands multiplayer codes that are easy to type', () => {

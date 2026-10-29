@@ -17,7 +17,15 @@ export interface IslandParts {
   mirror: boolean;
   climate: Climate;
   terrain: Terrain;
+  /** How it was generated (GEN): missing = 1, the islands from before the starter supplies. */
+  gen?: number;
 }
+
+/**
+ * The generator new islands get. 2: twigs, loose stones and bushes topped up around the crash
+ * site (v1.25). Islands keep the one they were made with, so saved ones never change.
+ */
+export const GEN = 2;
 
 export interface IslandSpec extends IslandParts {
   seed: number;
@@ -50,7 +58,13 @@ export const TERRAIN_NAMES: Record<Terrain, string> = {
 };
 
 export function isClassic(p: IslandParts): boolean {
-  return p.turn === 0 && !p.mirror && p.climate === 'tropic' && p.terrain === 'classic';
+  return (
+    p.turn === 0 &&
+    !p.mirror &&
+    p.climate === 'tropic' &&
+    p.terrain === 'classic' &&
+    (p.gen ?? 1) === 1
+  );
 }
 
 /** Island parts from saved (untrusted) data; anything missing is classic. */
@@ -63,6 +77,7 @@ export function parseParts(raw: unknown): IslandParts {
     mirror: o['mirror'] === true,
     climate: CLIMATES.includes(o['climate'] as Climate) ? (o['climate'] as Climate) : 'tropic',
     terrain: TERRAINS.includes(o['terrain'] as Terrain) ? (o['terrain'] as Terrain) : 'classic',
+    ...(o['gen'] === GEN ? { gen: GEN } : {}),
   };
 }
 
@@ -74,6 +89,7 @@ export function randomParts(random: () => number, want: Partial<IslandParts> = {
     mirror: want.mirror ?? random() < 0.5,
     climate: want.climate ?? pick(CLIMATES),
     terrain: want.terrain ?? pick(TERRAINS),
+    gen: GEN,
   };
 }
 
@@ -91,7 +107,19 @@ export function parseSpecCode(code: string): IslandSpec | null {
   const terrain = TERRAINS.find((t) => t.slice(0, 1).toUpperCase() === m[2]);
   const seed = Number(m[5]);
   if (!climate || !terrain || !Number.isSafeInteger(seed) || seed > 0xffffffff) return null;
-  return { seed, climate, terrain, turn: Number(m[3]) as 0 | 1 | 2 | 3, mirror: m[4] === 'M' };
+  return {
+    seed,
+    climate,
+    terrain,
+    turn: Number(m[3]) as 0 | 1 | 2 | 3,
+    mirror: m[4] === 'M',
+    gen: GEN,
+  };
+}
+
+/** Tells generated islands apart: the map code, and the generator when it isn't the first. */
+export function specKey(s: IslandSpec): string {
+  return (s.gen ?? 1) > 1 ? `${specCode(s)}/${s.gen}` : specCode(s);
 }
 
 const FIRST: Record<Climate, string[]> = {

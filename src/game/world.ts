@@ -397,6 +397,12 @@ export function generateIsland(seed: number, parts: IslandParts = CLASSIC): Isla
     }
   }
 
+  // Starter supplies (generation 2): twigs, loose stones and bushes topped up around where
+  // survivors wake, so the first tools come quick on every island.
+  const spawn = place(parts, SPAWN.x, SPAWN.z);
+  if ((parts.gen ?? 1) >= 2)
+    starterKit(cands, push, spawn, { heights, colliders, pois, pools, seed });
+
   // Stable sort by chunk so each chunk's ids are contiguous.
   const sorted = [...cands].sort((a, b) => a.chunk - b.chunk || a.order - b.order);
   const count = sorted.length;
@@ -421,7 +427,6 @@ export function generateIsland(seed: number, parts: IslandParts = CLASSIC): Isla
 
   // Rooted Snapjaws in the jungle and marsh, away from the crash site.
   const snapjaws: { x: number; z: number }[] = [];
-  const spawn = place(parts, SPAWN.x, SPAWN.z);
   const SJ = 9;
   for (let j = 0; j < WORLD / SJ; j++) {
     for (let i = 0; i < WORLD / SJ; i++) {
@@ -461,6 +466,60 @@ export function generateIsland(seed: number, parts: IslandParts = CLASSIC): Isla
   };
   placeSecrets(island);
   return island;
+}
+
+/**
+ * Starter supplies near the spawn: each kind is topped up to `want` within its ring (bushes
+ * a little further out, off the bare crash site), counting berry bushes as bushes. Clear of
+ * the wreck, the landmarks' spots, pools and the sea, a step apart, on its own random stream
+ * so nothing else on the island moves.
+ */
+const KIT: { t: number; want: number; r0: number; r1: number }[] = [
+  { t: NODE.branch, want: 8, r0: 5, r1: 24 },
+  { t: NODE.pebble, want: 8, r0: 5, r1: 24 },
+  { t: NODE.bush, want: 6, r0: 12, r1: 30 },
+];
+
+function starterKit(
+  cands: { x: number; z: number; t: number }[],
+  push: (x: number, z: number, t: number, v: number) => void,
+  spawn: { x: number; z: number },
+  w: {
+    heights: Float32Array;
+    colliders: Collider[];
+    pois: PoiDef[];
+    pools: Pool[];
+    seed: number;
+  },
+): void {
+  const random = rng(w.seed ^ 0x2468ace1);
+  const near = cands.filter((c) => dist2(c.x, c.z, spawn.x, spawn.z) < 34 * 34);
+  const spots: { x: number; z: number }[] = [];
+  for (const poi of w.pois)
+    for (const sp of poi.spots) spots.push({ x: poi.x + sp.dx, z: poi.z + sp.dz });
+  for (const k of KIT) {
+    let have = near.filter(
+      (c) =>
+        (c.t === k.t || (k.t === NODE.bush && c.t === NODE.berry)) &&
+        dist2(c.x, c.z, spawn.x, spawn.z) < k.r1 * k.r1,
+    ).length;
+    for (let tries = 0; have < k.want && tries < 600; tries++) {
+      const dx = (random() * 2 - 1) * k.r1;
+      const dz = (random() * 2 - 1) * k.r1;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < k.r0 * k.r0 || d2 > k.r1 * k.r1) continue;
+      const x = spawn.x + dx;
+      const z = spawn.z + dz;
+      if (sampleHeights(w.heights, x, z) < 0.4) continue;
+      if (hitColliderList(w.colliders, x, z, 1.5)) continue;
+      if (spots.some((p) => dist2(p.x, p.z, x, z) < 3 * 3)) continue;
+      if (w.pools.some((p) => dist2(p.x, p.z, x, z) < (p.r + 2) * (p.r + 2))) continue;
+      if (near.some((c) => dist2(c.x, c.z, x, z) < 1.6 * 1.6)) continue;
+      push(x, z, k.t, Math.floor(random() * 256));
+      near.push({ x, z, t: k.t });
+      have++;
+    }
+  }
 }
 
 /** Eight headings: (cos, sin) of k quarter-of-a-right-angle turns, exact on every engine. */

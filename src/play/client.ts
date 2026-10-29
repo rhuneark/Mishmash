@@ -17,7 +17,7 @@ import { MONSTERS, type MonsterKind } from '../game/content/monsters';
 import { NODE, NODES } from '../game/content/nodes';
 import { CROPS, cropForSeed } from '../game/content/crops';
 import { type PoiDef, type Spot } from '../game/content/pois';
-import { CLASSIC, specCode, type IslandSpec } from '../game/islands';
+import { CLASSIC, specKey, type IslandSpec } from '../game/islands';
 import { REWARDS, rewardReady, type RewardKind } from '../game/ads';
 import {
   TUTORIAL,
@@ -482,7 +482,7 @@ export class GameClient {
       }
       this.you = msg.you;
       const spec: IslandSpec = { seed: snap.seed, ...(snap.island ?? CLASSIC) };
-      if (this.island && specCode(this.island.spec) === specCode(spec)) {
+      if (this.island && specKey(this.island.spec) === specKey(spec)) {
         this.applySnapshot(snap);
         return;
       }

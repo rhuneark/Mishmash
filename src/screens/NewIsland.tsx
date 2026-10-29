@@ -11,6 +11,7 @@ import {
   parseSpecCode,
   randomParts,
   specCode,
+  specKey,
   type Climate,
   type IslandSpec,
   type Terrain,
@@ -234,7 +235,7 @@ export function NewIslandScreen({
 function MapPreview({ spec }: { spec: IslandSpec }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [busy, setBusy] = useState(true);
-  const code = specCode(spec);
+  const code = specKey(spec);
   useEffect(() => {
     setBusy(true);
     const timer = setTimeout(() => {

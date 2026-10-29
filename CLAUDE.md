@@ -125,7 +125,17 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   climate, terrain, turn, M, seed) shares an island; `islandName` names it. Landmark models
   are built in the classic layout and turned/mirrored by their group (`buildPois`). Islands are
   generated on the client from the snapshot's `island` parts (`session.islandFor`, the last one
-  cached) and on the room server from the save.
+  cached by `specKey`) and on the room server from the save. **Generator versions**
+  (`IslandParts.gen`, `GEN` 2 since v1.25): new islands (`randomParts`, a typed map code, the
+  default new island) get today's generator; saves keep the one they were made with (missing
+  = 1), because node ids are saved. Gen 2 adds **starter supplies** (the user: "every map
+  starting area should have stone and twigs and bushes so that you can craft the necessary
+  starting gear quick"): `world.ts` `starterKit` tops up branches and pebbles (8 each, 5–24 m)
+  and bushes (6 counting berry bushes, 12–30 m) around the spawn, clear of the wreck, the
+  spots, pools and the sea, on its own random stream (before v1.25 most islands had 0–4 loose
+  stones within 40 m, because the crash site's 26 m clearing keeps the scatter out).
+  `isClassic` is false for gen 2, so it's saved. A new generator change: bump `GEN`, gate it
+  on `gen`, and keep the classic fingerprint test passing.
 - **World rules** (`game/rules.ts`, 7 Days to Die style), picked on the New island screen and
   kept in the save (`IslandSave.rules`; the snapshot sends them, so guests play by the host's
   rules): difficulty (Bloom damage to you), hunger, what you drop when you fall (everything /
@@ -879,7 +889,8 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   Explore gets v1.16–v1.22 once RUN's review passes. v1.23.0 (2026-10-28, Survival basics:
   the tutorial) is a private build, and so is v1.24.0 (2026-10-28: the tutorial as a side
   quest tracker with ticked goals and a pointer at the button to press, a skills step, drag to
-  scroll in every menu, the ⚙️ menu button).
+  scroll in every menu, the ⚙️ menu button) and v1.25.0 (2026-10-29: starter supplies by
+  every new island's crash site, generator 2).
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

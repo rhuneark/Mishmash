@@ -4,7 +4,7 @@ import {
   JOIN_LEN,
   cleanJoinCode,
   showJoinCode,
-  specCode,
+  specKey,
   type IslandSpec,
 } from '../game/islands';
 import type { IslandSave } from '../game/sim/types';
@@ -293,7 +293,7 @@ function Backdrop({ spec }: { spec: IslandSpec }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
   // A new scene only when the island itself changes.
-  const code = specCode(spec);
+  const code = specKey(spec);
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;

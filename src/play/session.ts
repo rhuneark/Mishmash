@@ -4,10 +4,11 @@
 import * as run from '../sdk/run';
 import {
   CLASSIC,
+  GEN,
   cleanJoinCode,
   islandName,
   newJoinCode,
-  specCode,
+  specKey,
   type IslandParts,
   type IslandSpec,
 } from '../game/islands';
@@ -25,7 +26,7 @@ let cached: Island | null = null;
 
 /** The island for a spec (generating one takes a moment; the last is kept). */
 export function islandFor(spec: IslandSpec): Island {
-  if (!cached || specCode(cached.spec) !== specCode(spec)) cached = generateIsland(spec.seed, spec);
+  if (!cached || specKey(cached.spec) !== specKey(spec)) cached = generateIsland(spec.seed, spec);
   return cached;
 }
 
@@ -52,7 +53,7 @@ function keep(save: IslandSave): Promise<void> {
 function makeIsland(fresh: NewIsland | null): IslandSave & { code: string } {
   const save = fresh
     ? newSave(fresh.seed, fresh.parts, fresh.rules)
-    : newSave(randomSeed(Math.random));
+    : newSave(randomSeed(Math.random), { ...CLASSIC, gen: GEN });
   return { ...save, code: newJoinCode(Math.random) };
 }
 

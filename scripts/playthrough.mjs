@@ -1101,7 +1101,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     // Away from the crash site's notes and luggage tags (a tap near one reads it), and from
     // anything to pick up or chop.
     const clear = await game(page, async () => {
-      const { forNodesNear } = await import('/src/game/world.ts');
+      const { forNodesNear, hitCollider } = await import('/src/game/world.ts');
       const c = window.__game.client;
       const view = window.__view;
       for (let r = 30; r <= 160; r += 10)
@@ -1117,7 +1117,11 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
           forNodesNear(c.island, x, z, 6, (id) => {
             if (!c.nodeGone(id)) nodes = true;
           });
-          if (!spots && !built && !nodes) return [x, z];
+          // Dry, open ground all round (a wall or the sea would stop the walk).
+          const open =
+            !hitCollider(c.island, x, z, 8) &&
+            [-6, 0, 6].every((dx) => [-6, 0, 6].every((dz) => view.y(x + dx, z + dz) >= 0.6));
+          if (!spots && !built && !nodes && open) return [x, z];
         }
       return null;
     });
@@ -1154,7 +1158,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
       await until(
         page,
         ([x, z]) => Math.hypot(window.__game.client.x - x, window.__game.client.z - z) > 2,
-        `${tag} tap: a tap on the ground didn't walk there`,
+        `${tag} tap: a tap on the ground didn't walk there (from ${from.map((v) => v.toFixed(1))}, goal ${await game(page, () => JSON.stringify(window.__game.client.goal))})`,
         15000,
         from,
       );

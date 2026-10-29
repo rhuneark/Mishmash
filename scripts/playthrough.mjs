@@ -1098,8 +1098,10 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   // down.
   {
     const finger = await fingerOn(page);
-    // Away from the crash site's notes and luggage tags (a tap near one reads it).
-    const clear = await game(page, () => {
+    // Away from the crash site's notes and luggage tags (a tap near one reads it), and from
+    // anything to pick up or chop.
+    const clear = await game(page, async () => {
+      const { forNodesNear } = await import('/src/game/world.ts');
       const c = window.__game.client;
       const view = window.__view;
       for (let r = 30; r <= 160; r += 10)
@@ -1111,7 +1113,11 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
             p.spots.some((s) => Math.hypot(p.x + s.dx - x, p.z + s.dz - z) < 18),
           );
           const built = [...c.buildings.values()].some((b) => Math.hypot(b.x - x, b.z - z) < 12);
-          if (!spots && !built) return [x, z];
+          let nodes = false;
+          forNodesNear(c.island, x, z, 6, (id) => {
+            if (!c.nodeGone(id)) nodes = true;
+          });
+          if (!spots && !built && !nodes) return [x, z];
         }
       return null;
     });

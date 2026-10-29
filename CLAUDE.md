@@ -887,10 +887,12 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   island, PC drag and drop in build mode, the in-flight channel's rewarded ads) **was submitted
   with the Publish workflow on 2026-10-28 at the user's request** ("publish public"), so
   Explore gets v1.16–v1.22 once RUN's review passes. v1.23.0 (2026-10-28, Survival basics:
-  the tutorial) is a private build, and so is v1.24.0 (2026-10-28: the tutorial as a side
-  quest tracker with ticked goals and a pointer at the button to press, a skills step, drag to
-  scroll in every menu, the ⚙️ menu button) and v1.25.0 (2026-10-29: starter supplies by
-  every new island's crash site, generator 2).
+  the tutorial), v1.24.0 (2026-10-28: the tutorial as a side quest tracker with ticked goals
+  and a pointer at the button to press, a skills step, drag to scroll in every menu, the ⚙️
+  menu button) and v1.25.0 (2026-10-29: starter supplies by every new island's crash site,
+  generator 2) were private builds; **v1.25.0 was submitted with the Publish workflow on
+  2026-10-29 at the user's request** ("publish public"), so Explore gets v1.16–v1.25 once
+  RUN's review passes.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

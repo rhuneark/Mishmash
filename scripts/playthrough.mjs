@@ -1485,7 +1485,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   const q1 = await game(page, () => [window.__game.client.x, window.__game.client.z]);
   check(
     q0[1] - q1[1] > 0.3 && q1[0] - q0[0] > 0.3,
-    `${tag} game: W didn't walk north-east with the bag window open`,
+    `${tag} game: W didn't walk north-east with the bag window open (${q0.map((v) => v.toFixed(1))} → ${q1.map((v) => v.toFixed(1))})`,
   );
   const drag = async (from, to) => {
     const a = await from.boundingBox();

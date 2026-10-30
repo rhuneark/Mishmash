@@ -3451,6 +3451,67 @@ button:disabled {
   color: var(--text);
 }
 
+/* What's new (once after an update, and under 📰 What's new). */
+.news-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-color: rgba(255, 211, 106, 0.6);
+  background: rgba(42, 39, 66, 0.94);
+}
+
+.news-head {
+  font-size: calc(15px * var(--fs));
+  color: #ffe6a8;
+}
+
+.news-items {
+  margin: 0;
+  padding-left: 18px;
+  font-size: calc(14px * var(--fs));
+  line-height: 1.35;
+}
+
+.news-card .btn {
+  align-self: flex-start;
+}
+
+.news-section + .news-section {
+  margin-top: 10px;
+}
+
+/* 🗂️ Your islands: the save slots. */
+.slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slot-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.slot-card.on {
+  border-color: rgba(255, 211, 106, 0.6);
+}
+
+.slot-name {
+  font-size: calc(16px * var(--fs));
+  font-weight: 800;
+}
+
+.slot-tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 211, 106, 0.18);
+  color: #ffe6a8;
+  font-size: calc(12px * var(--fs));
+  font-weight: 700;
+}
+
 .jam-link {
   display: flex;
   flex-direction: column;

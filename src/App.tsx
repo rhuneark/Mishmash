@@ -11,7 +11,8 @@ import { SubPage } from './ui/SubPage';
 import { Play, type PlayChoice } from './screens/Play';
 import { Game } from './play/Game';
 import type { GameClient } from './play/client';
-import { FAIL_TEXT, startHost, startJoin, startSolo } from './play/session';
+import { FAIL_TEXT, chooseSlot, startHost, startJoin, startSolo } from './play/session';
+import { LATEST, unseenNews } from './game/news';
 
 /** The title screen, or a page opened from it (each has a back button). */
 type Screen = 'play' | 'suggest' | 'dev';
@@ -30,12 +31,15 @@ export default function App() {
   const [newIdeas, setNewIdeas] = useState(0);
   // The win screen's "New island" lands on the New island screen.
   const [wantNew, setWantNew] = useState(false);
+  // Just through the intro: no island yet means straight onto a ready-made one.
+  const [quickStart, setQuickStart] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const next = recordVisit(parseSave(await run.getItem(SAVE_KEY)));
       if (cancelled) return;
+      chooseSlot(next.slot);
       setSave(next);
       void run.setItem(SAVE_KEY, JSON.stringify(next));
       run.track('app_loaded', { visits: next.visits });
@@ -48,6 +52,7 @@ export default function App() {
   }, []);
 
   const clearWantNew = useCallback(() => setWantNew(false), []);
+  const quickStarted = useCallback(() => setQuickStart(false), []);
 
   const commit = (next: SaveData) => {
     setSave(next);
@@ -56,9 +61,11 @@ export default function App() {
 
   const go = (next: Screen) => {
     if (save && !save.introSeen) {
-      commit({ ...save, introSeen: true });
+      // A new player has nothing to catch up on.
+      commit({ ...save, introSeen: true, newsSeen: LATEST.version });
       run.track('intro_done', { to: next });
       run.funnel(2, 'intro_done');
+      if (next === 'play') setQuickStart(true);
     }
     setScreen(next);
   };
@@ -149,6 +156,11 @@ export default function App() {
             error={playError}
             newIsland={wantNew}
             onNewIslandShown={clearWantNew}
+            onSlot={(slot) => commit({ ...save, slot })}
+            quickStart={quickStart}
+            onQuickStarted={quickStarted}
+            news={save.visits > 1 ? unseenNews(save.newsSeen) : null}
+            onNewsSeen={() => commit({ ...save, newsSeen: LATEST.version })}
           />
         )}
         {screen === 'suggest' && (

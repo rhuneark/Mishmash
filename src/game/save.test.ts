@@ -20,7 +20,12 @@ describe('parseSave', () => {
       v: SAVE_VERSION,
       visits: 4,
       introSeen: true,
+      slot: 1,
+      newsSeen: '',
     });
+    const slotted = parseSave(JSON.stringify({ visits: 1, slot: 3, newsSeen: '1.26' }));
+    expect([slotted.slot, slotted.newsSeen]).toEqual([3, '1.26']);
+    expect(parseSave(JSON.stringify({ slot: 9 })).slot).toBe(1);
   });
 
   it('accepts saves from before the intro', () => {
@@ -28,6 +33,8 @@ describe('parseSave', () => {
       v: SAVE_VERSION,
       visits: 2,
       introSeen: false,
+      slot: 1,
+      newsSeen: '',
     });
   });
 

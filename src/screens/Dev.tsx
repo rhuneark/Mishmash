@@ -13,7 +13,8 @@ import {
   type Flagged,
   type FlaggedState,
 } from '../app/community';
-import { TOPICS, type DevMarks, type Suggestion } from '../game/suggest';
+import { TOPICS, builtText, type DevMarks, type Suggestion } from '../game/suggest';
+import { copyText } from '../app/links';
 import { usePolling } from '../app/usePolling';
 import { Notice, type NoticeState } from '../ui/Notice';
 
@@ -110,12 +111,13 @@ export function Dev({
   );
 }
 
-type IdeaFilter = 'new' | 'starred' | 'done' | 'all';
+type IdeaFilter = 'new' | 'starred' | 'done' | 'built' | 'all';
 
 const FILTERS: [IdeaFilter, string][] = [
   ['new', 'To read'],
   ['starred', '⭐ Starred'],
   ['done', '✓ Done'],
+  ['built', '🏗️ Built'],
   ['all', 'All'],
 ];
 
@@ -127,6 +129,7 @@ function Suggestions({ onNewCount }: { onNewCount: (n: number) => void }) {
   const [filter, setFilter] = useState<IdeaFilter>('new');
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [copied, setCopied] = useState(false);
   // What counted as new when the list opened (the marks move on once it's open).
   const [seenBefore, setSeenBefore] = useState<number | null>(null);
 
@@ -174,6 +177,19 @@ function Suggestions({ onNewCount }: { onNewCount: (n: number) => void }) {
     saveMarks(m);
   };
 
+  /** Built (and so done): kept with who asked, for the next update's credits. */
+  const markBuilt = (s: Suggestion) => {
+    if (!marks) return;
+    const has = marks.built.some((b) => b.id === s.id);
+    const built = has
+      ? marks.built.filter((b) => b.id !== s.id)
+      : [...marks.built, { id: s.id, text: s.text, by: s.authorName, at: Date.now() }];
+    const done = has || marks.done.includes(s.id) ? marks.done : [...marks.done, s.id];
+    const m = { ...marks, built, done };
+    setMarks(m);
+    saveMarks(m);
+  };
+
   const remove = async (s: Suggestion) => {
     if (!(await deleteSuggestion(s.id))) {
       setNotice({ reason: 'error' });
@@ -201,6 +217,7 @@ function Suggestions({ onNewCount }: { onNewCount: (n: number) => void }) {
     if (filter === 'new') return !done;
     if (filter === 'done') return done;
     if (filter === 'starred') return marks?.starred.includes(s.id) ?? false;
+    if (filter === 'built') return marks?.built.some((b) => b.id === s.id) ?? false;
     return true;
   });
 
@@ -220,6 +237,20 @@ function Suggestions({ onNewCount }: { onNewCount: (n: number) => void }) {
         ))}
       </div>
       {notice && <Notice state={notice} onClose={() => setNotice(null)} />}
+      {filter === 'built' && marks && marks.built.length > 0 && (
+        <div className="card built-copy">
+          <p className="small-text">
+            Built from players’ ideas: copy this for your update post, or send it to Claude to
+            credit them in the game’s “You asked, we built it”.
+          </p>
+          <button
+            className="btn small"
+            onClick={() => void copyText(builtText(marks.built)).then((ok) => setCopied(ok))}
+          >
+            {copied ? '✓ Copied' : `📋 Copy the built list (${marks.built.length})`}
+          </button>
+        </div>
+      )}
       {!ready && <p className="muted center">Loading suggestions…</p>}
       {ready && shown.length === 0 && (
         <p className="muted center">
@@ -229,6 +260,7 @@ function Suggestions({ onNewCount }: { onNewCount: (n: number) => void }) {
       {shown.map((s) => {
         const starred = marks?.starred.includes(s.id) ?? false;
         const done = marks?.done.includes(s.id) ?? false;
+        const built = marks?.built.some((b) => b.id === s.id) ?? false;
         return (
           <div key={s.id} className={`card idea${done ? ' done' : ''}`}>
             <div className="flag-head">
@@ -251,6 +283,13 @@ function Suggestions({ onNewCount }: { onNewCount: (n: number) => void }) {
               <button className="btn small" aria-pressed={done} onClick={() => mark(s.id, 'done')}>
                 {done ? '↩ Not done' : '✓ Done'}
               </button>
+              <button
+                className={`btn small${built ? ' primary' : ''}`}
+                aria-pressed={built}
+                onClick={() => markBuilt(s)}
+              >
+                {built ? '🏗️ Built' : '🏗️ Mark built'}
+              </button>
               <button className="btn small danger" onClick={() => void remove(s)}>
                 Delete
               </button>
@@ -264,7 +303,7 @@ function Suggestions({ onNewCount }: { onNewCount: (n: number) => void }) {
         </button>
       )}
       <p className="muted small-text">
-        Stars and Done are kept on your device. Delete removes it for good.
+        Stars, Done and Built are kept on your device. Delete removes it for good.
       </p>
     </>
   );

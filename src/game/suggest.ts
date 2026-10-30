@@ -70,6 +70,15 @@ export interface DevMarks {
   seenAt: number;
   starred: string[];
   done: string[];
+  /** Suggestions the owner built, with who asked (for the next "You asked, we built it"). */
+  built: BuiltMark[];
+}
+
+export interface BuiltMark {
+  id: string;
+  text: string;
+  by: string;
+  at: number;
 }
 
 export const MARKS_KEY = 'mishmash_dev_marks';
@@ -79,11 +88,30 @@ export function parseMarks(raw: unknown): DevMarks {
   const ids = (v: unknown) =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(-2000) : [];
   const seen = d['seenAt'];
+  const built = Array.isArray(d['built']) ? d['built'] : [];
   return {
     seenAt: typeof seen === 'number' && Number.isFinite(seen) ? seen : 0,
     starred: ids(d['starred']),
     done: ids(d['done']),
+    built: built
+      .map((b): BuiltMark | null => {
+        const o = (b && typeof b === 'object' ? b : {}) as Record<string, unknown>;
+        if (typeof o['id'] !== 'string' || typeof o['text'] !== 'string') return null;
+        return {
+          id: o['id'],
+          text: o['text'].slice(0, MAX_SUGGESTION),
+          by: typeof o['by'] === 'string' ? o['by'].slice(0, 24) : 'Player',
+          at: typeof o['at'] === 'number' && Number.isFinite(o['at']) ? o['at'] : 0,
+        };
+      })
+      .filter((b): b is BuiltMark => b !== null)
+      .slice(-200),
   };
+}
+
+/** The built list as text to paste (Discord, or the next update's credits). */
+export function builtText(list: readonly BuiltMark[]): string {
+  return list.map((b) => `• ${b.text} (suggested by ${b.by})`).join('\n');
 }
 
 /** Suggestions newer than the owner last looked (and not already marked done). */

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_SUGGESTION, newCount, parseMarks, sentToday, suggestionFromEntry } from './suggest';
+import {
+  MAX_SUGGESTION,
+  builtText,
+  newCount,
+  parseMarks,
+  sentToday,
+  suggestionFromEntry,
+} from './suggest';
 import { MAX_MESSAGE, cleanMessage, messageFromEntry, timeAgo } from './chat';
 
 describe('suggestions', () => {
@@ -37,7 +44,10 @@ describe('suggestions', () => {
     const marks = parseMarks({ seenAt: 9 * day, done: ['b'], starred: [1, 'a'] });
     expect(marks.starred).toEqual(['a']);
     expect(newCount(list, marks)).toBe(1);
-    expect(parseMarks('junk')).toEqual({ seenAt: 0, starred: [], done: [] });
+    expect(parseMarks('junk')).toEqual({ seenAt: 0, starred: [], done: [], built: [] });
+    const built = parseMarks({ built: [{ id: 'a', text: 'Boats', by: 'Nova', at: 5 }, { id: 3 }] });
+    expect(built.built).toEqual([{ id: 'a', text: 'Boats', by: 'Nova', at: 5 }]);
+    expect(builtText(built.built)).toBe('• Boats (suggested by Nova)');
   });
 });
 

@@ -11,7 +11,19 @@ import type { IslandSave } from '../game/sim/types';
 import { JAM_URL, copyText } from '../app/links';
 import * as run from '../sdk/run';
 import { HowTo, SettingsPanel } from '../play/hud/Menu';
-import { describeSave, islandFor, loadIsland, playerId, type NewIsland } from '../play/session';
+import {
+  currentSlot,
+  deleteIsland,
+  describeSave,
+  islandFor,
+  listIslands,
+  playerId,
+  quickIsland,
+  chooseSlot,
+  type NewIsland,
+} from '../play/session';
+import { NEWS, type News } from '../game/news';
+import { CLIMATE_NAMES } from '../game/islands';
 import { TitleScene } from '../play/TitleScene';
 import { Logo } from '../ui/Logo';
 import { NewIslandScreen } from './NewIsland';
@@ -36,6 +48,11 @@ export function Play({
   error,
   newIsland,
   onNewIslandShown,
+  onSlot,
+  quickStart = false,
+  onQuickStarted,
+  news = null,
+  onNewsSeen,
 }: {
   onStart: (c: PlayChoice) => void;
   onSuggest: () => void;
@@ -47,21 +64,53 @@ export function Play({
   /** Open straight on the New island screen (from the win screen). */
   newIsland: boolean;
   onNewIslandShown: () => void;
+  /** The island slot picked (the hub save remembers it). */
+  onSlot: (slot: number) => void;
+  /** Just through the intro: no island yet means straight onto a ready-made one. */
+  quickStart?: boolean;
+  onQuickStarted?: () => void;
+  /** What's new since the player's last visit (shown once). */
+  news?: News | null;
+  onNewsSeen?: () => void;
 }) {
-  const [save, setSave] = useState<IslandSave | null | undefined>(undefined);
+  const [islands, setIslands] = useState<(IslandSave | null)[] | undefined>(undefined);
+  const [slot, setSlot] = useState(currentSlot);
   const [view, setView] = useState<'title' | 'new'>(newIsland ? 'new' : 'title');
   const [joining, setJoining] = useState(false);
   const [code, setCode] = useState('');
-  const [dialog, setDialog] = useState<'settings' | 'howto' | null>(null);
+  const [dialog, setDialog] = useState<'settings' | 'howto' | 'islands' | 'news' | null>(null);
   const [jam, setJam] = useState<'idle' | 'copied' | 'shown'>('idle');
+  // The slot a new island goes into: a free one first, else the one played now.
+  const [target, setTarget] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void loadIsland().then((s) => !cancelled && setSave(s));
+    void listIslands().then((list) => !cancelled && setIslands(list));
     return () => {
       cancelled = true;
     };
   }, []);
+
+  const save = islands === undefined ? undefined : (islands[slot - 1] ?? null);
+  const pick = (n: number) => {
+    chooseSlot(n);
+    setSlot(n);
+    onSlot(n);
+  };
+  const freeSlot = islands ? islands.findIndex((s) => !s) + 1 : 0;
+  const newTarget = target ?? (freeSlot || slot);
+  const fresh = (f: NewIsland, friends: boolean) => {
+    pick(newTarget);
+    setTarget(null);
+    onStart({ kind: friends ? 'host' : 'solo', fresh: f });
+  };
+
+  // Just through the intro with no island yet: straight onto a ready-made one.
+  useEffect(() => {
+    if (!quickStart || islands === undefined) return;
+    onQuickStarted?.();
+    if (!islands[slot - 1]) onStart({ kind: 'solo', fresh: quickIsland() });
+  }, [quickStart, islands, slot, onStart, onQuickStarted]);
 
   useEffect(() => {
     if (newIsland) {
@@ -73,11 +122,16 @@ export function Play({
   const info = save ? describeSave(save, playerId()) : null;
 
   if (view === 'new') {
+    const there = islands?.[newTarget - 1];
+    const old = there ? describeSave(there, playerId()) : null;
     return (
       <NewIslandScreen
-        replacing={info && { day: info.day, name: info.name }}
-        onBack={() => setView('title')}
-        onStart={(fresh, friends) => onStart({ kind: friends ? 'host' : 'solo', fresh })}
+        replacing={old && { day: old.day, name: old.name }}
+        onBack={() => {
+          setTarget(null);
+          setView('title');
+        }}
+        onStart={fresh}
       />
     );
   }
@@ -100,6 +154,21 @@ export function Play({
 
         <div className="title-menu">
           {error && <div className="notice title-notice">{error}</div>}
+          {news && save !== undefined && (
+            <div className="card news-card" role="status" aria-label="What's new">
+              <div className="news-head">
+                📰 What’s new in v{news.version}: <b>{news.title}</b>
+              </div>
+              <ul className="news-items">
+                {news.items.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+              <button className="btn small primary" onClick={onNewsSeen}>
+                Got it
+              </button>
+            </div>
+          )}
           {save === undefined ? (
             <p className="muted center">Loading your island…</p>
           ) : (
@@ -117,13 +186,19 @@ export function Play({
                   </span>
                 </button>
               ) : (
-                <button className="menu-btn primary" onClick={() => setView('new')}>
+                <button
+                  className="menu-btn primary"
+                  onClick={() => onStart({ kind: 'solo', fresh: quickIsland() })}
+                >
                   ▶ Start surviving
                 </button>
               )}
-              {info && (
-                <button className="menu-btn" onClick={() => setView('new')}>
-                  🏝️ New island
+              <button className="menu-btn" onClick={() => setView('new')}>
+                {info ? '🏝️ New island' : '🏝️ Choose your island'}
+              </button>
+              {islands?.some(Boolean) && (
+                <button className="menu-btn" onClick={() => setDialog('islands')}>
+                  🗂️ Your islands ({islands.filter(Boolean).length}/{islands.length})
                 </button>
               )}
               <button
@@ -186,9 +261,14 @@ export function Play({
                   ❓ How to play
                 </button>
               </div>
-              <button className="menu-btn" onClick={onSuggest}>
-                💡 Suggest an update
-              </button>
+              <div className="title-row">
+                <button className="menu-btn" onClick={onSuggest}>
+                  💡 Suggest an update
+                </button>
+                <button className="menu-btn" onClick={() => setDialog('news')}>
+                  📰 What’s new
+                </button>
+              </div>
               <button className="menu-btn jam-btn" onClick={voteJam}>
                 🎃 Vote for us in October Jam
               </button>
@@ -211,6 +291,45 @@ export function Play({
           </p>
         </Dialog>
       )}
+      {dialog === 'islands' && islands && (
+        <Dialog title="🗂️ Your islands" name="your islands" onClose={() => setDialog(null)}>
+          <IslandSlots
+            islands={islands}
+            slot={slot}
+            onPlay={(n) => {
+              pick(n);
+              setDialog(null);
+              onStart({ kind: 'solo', fresh: null });
+            }}
+            onNew={(n) => {
+              setTarget(n);
+              setDialog(null);
+              setView('new');
+            }}
+            onDelete={(n) =>
+              void deleteIsland(n).then(() =>
+                setIslands((list) => list?.map((s, i) => (i === n - 1 ? null : s))),
+              )
+            }
+          />
+        </Dialog>
+      )}
+      {dialog === 'news' && (
+        <Dialog title="📰 What’s new" name="what's new" onClose={() => setDialog(null)}>
+          {NEWS.map((n) => (
+            <section key={n.version} className="news-section">
+              <div className="label">
+                v{n.version} · {n.title}
+              </div>
+              <ul className="tips">
+                {n.items.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </Dialog>
+      )}
       {dialog === 'howto' && (
         <Dialog title="❓ How to play" name="how to play" onClose={() => setDialog(null)}>
           <HowTo pc={isPc()} bloomEvery={7} />
@@ -227,6 +346,83 @@ export function Play({
           </ul>
         </Dialog>
       )}
+    </div>
+  );
+}
+
+/** The island slots: play one, start a new one in an empty slot, or throw one away. */
+function IslandSlots({
+  islands,
+  slot,
+  onPlay,
+  onNew,
+  onDelete,
+}: {
+  islands: (IslandSave | null)[];
+  slot: number;
+  onPlay: (n: number) => void;
+  onNew: (n: number) => void;
+  onDelete: (n: number) => void;
+}) {
+  const [asking, setAsking] = useState<number | null>(null);
+  return (
+    <div className="slots">
+      {islands.map((save, i) => {
+        const n = i + 1;
+        const info = save ? describeSave(save, playerId()) : null;
+        return (
+          <div key={n} className={`card slot-card${n === slot ? ' on' : ''}`}>
+            {info ? (
+              <>
+                <div className="slot-name">
+                  {info.name}
+                  {n === slot && <span className="slot-tag">last played</span>}
+                </div>
+                <div className="muted small-text">
+                  {CLIMATE_NAMES[info.spec.climate]} · Day {info.day}
+                  {info.escaped ? ' · escaped' : ''}
+                  {info.friends > 0
+                    ? ` · ${info.friends} friend${info.friends > 1 ? 's' : ''}`
+                    : ''}
+                </div>
+                {asking === n ? (
+                  <div className="row">
+                    <span className="small-text">Delete {info.name} for good?</span>
+                    <button
+                      className="btn small danger"
+                      onClick={() => {
+                        setAsking(null);
+                        onDelete(n);
+                      }}
+                    >
+                      Delete
+                    </button>
+                    <button className="btn small" onClick={() => setAsking(null)}>
+                      Keep
+                    </button>
+                  </div>
+                ) : (
+                  <div className="row">
+                    <button className="btn small primary" onClick={() => onPlay(n)}>
+                      ▶ Play
+                    </button>
+                    <button className="btn small" onClick={() => setAsking(n)}>
+                      🗑️ Delete
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="slot-name muted">Empty slot {n}</div>
+                <button className="btn small" onClick={() => onNew(n)}>
+                  ＋ New island here
+                </button>
+              </>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

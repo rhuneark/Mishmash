@@ -17,8 +17,8 @@ import {
 } from '../app/community';
 import { Notice, type NoticeState } from '../ui/Notice';
 
-/** What the community voted for, and what's in the game now. */
-export const BUILT = [
+/** What players asked for and got (`by`: who suggested it, when known), newest last. */
+export const BUILT: { icon: string; name: string; text: string; by?: string }[] = [
   { icon: '🏝️', name: 'Round 1: a survival game', text: 'Bloom Island itself.' },
   { icon: '🌾', name: 'Farming and cooking', text: 'Seeds, garden plots, a cooking pot.' },
   { icon: '🐐', name: 'Island animals', text: 'Hunt them, or feed them until they trust you.' },
@@ -111,6 +111,7 @@ export function Suggest() {
                 <span aria-hidden="true">{b.icon}</span>
                 <span>
                   <b>{b.name}</b> · {b.text}
+                  {b.by && <span className="muted"> · suggested by {b.by}</span>}
                 </span>
               </li>
             ))}

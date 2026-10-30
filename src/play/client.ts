@@ -72,6 +72,7 @@ import { WEATHER_KINDS, type WeatherKind } from '../game/sim/weather';
 import { footprint, pushOutOfBox } from '../game/sim/types';
 import { DEEP, HALF, forNodesNear, heightAt, poolNear, type Island } from '../game/world';
 import type { Link } from './link';
+import { Telemetry } from './telemetry';
 
 export const WALK = 4.2;
 export const RUN = 6.8;
@@ -353,6 +354,8 @@ export class GameClient {
   quickTab: 'bag' | 'craft' = 'bag';
   /** Settings: 🎒 opens the small window by your survivor instead of the survivor menu. */
   bagWindow = false;
+  /** What this game tells RUN's analytics (set when it starts). */
+  telemetry: Telemetry | null = null;
   /** Settings: Survival basics (the tutorial) shows. */
   tutorialOn = true;
   /** The tutorial step just done (the card shows it for a moment). */
@@ -430,6 +433,7 @@ export class GameClient {
   }
 
   start(): void {
+    this.telemetry = new Telemetry(this.link.mode, this.clock);
     this.link.send({ type: 'hello', name: this.name });
   }
 
@@ -935,6 +939,10 @@ export class GameClient {
     if (this.tutAcc > 0.25) {
       this.tutAcc = 0;
       this.updateTutorial();
+      if (this.me && this.island) {
+        const info = this.info();
+        this.telemetry?.watch(this.me, info.day, info.bloom, this.clock);
+      }
     }
     if (act) this.useGoal();
     if (
@@ -1402,6 +1410,7 @@ export class GameClient {
   }
 
   skipTutorial(): void {
+    this.telemetry?.tutorialSkipped(this.me?.tut ?? 0);
     this.send({ type: 'tutorial', act: 'skip' });
   }
 
@@ -2664,6 +2673,7 @@ export class GameClient {
   }
 
   async close(): Promise<void> {
+    this.telemetry?.end(this.clock, this.progress().level);
     await this.link.close();
   }
 }

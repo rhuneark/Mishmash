@@ -12,10 +12,9 @@ import { Input } from './input';
 import { KEYS_KEY, parseBindings, type Action } from './keys';
 import { isTouch, prefs, usePrefs } from './prefs';
 import { rotationFor, setRotation, toLocal, turnInsets } from './screen';
-import { gain, graphicsFor, type Settings } from './settings';
+import { SLOW_FPS, SLOW_SECONDS, autoLevel, gain, graphicsFor, type Settings } from './settings';
 import { View } from './view';
-
-const FOG_KEY = 'mishmash_fog';
+import { fogKey } from './session';
 
 export const sound = new Sound();
 
@@ -29,9 +28,9 @@ export function applyVolumes(s: Settings): void {
   });
 }
 
-async function loadFog(seed: number): Promise<Fog> {
+async function loadFog(key: string, seed: number): Promise<Fog> {
   try {
-    const raw = await run.getItem(FOG_KEY);
+    const raw = await run.getItem(key);
     const data = raw ? (JSON.parse(raw) as { seed?: number; d?: string }) : null;
     if (data?.seed === seed && typeof data.d === 'string') return Fog.decode(data.d);
   } catch {
@@ -40,10 +39,10 @@ async function loadFog(seed: number): Promise<Fog> {
   return new Fog();
 }
 
-function saveFog(seed: number, fog: Fog): void {
+function saveFog(key: string, seed: number, fog: Fog): void {
   if (!fog.changed) return;
   fog.changed = false;
-  void run.setItem(FOG_KEY, JSON.stringify({ seed, d: fog.encode() }));
+  void run.setItem(key, JSON.stringify({ seed, d: fog.encode() }));
 }
 
 function useViewport(): { w: number; h: number } {
@@ -193,7 +192,7 @@ export function Game(props: {
       zoom: settings.camera / 100,
       shake: settings.shake,
       numbers: settings.damageNumbers,
-      gfx: graphicsFor(settings.quality, touch),
+      gfx: graphicsFor(settings.quality, touch, settings.autoDrop),
       life: settings.life,
       grid: settings.buildGridShow,
     });
@@ -381,7 +380,7 @@ export function Game(props: {
     if (!ready || !client.island) return;
     let cancelled = false;
     const image = islandImage(client.island);
-    void loadFog(seed).then((fog) => {
+    void loadFog(fogKey(client.link.mode === 'guest'), seed).then((fog) => {
       if (!cancelled) setMap({ fog, image });
     });
     return () => {
@@ -400,7 +399,7 @@ export function Game(props: {
       zoom: s.camera / 100,
       shake: s.shake,
       numbers: s.damageNumbers,
-      gfx: graphicsFor(s.quality, touch),
+      gfx: graphicsFor(s.quality, touch, s.autoDrop),
       life: s.life,
       grid: s.buildGridShow,
     });
@@ -413,14 +412,44 @@ export function Game(props: {
     let last = performance.now();
     let fogAcc = 0;
     let fogSave = 0;
+    const fogAt = fogKey(client.link.mode === 'guest');
     let fpsAcc = 0;
     let frames = 0;
+    // How smoothly it runs: Auto quality steps down on a device that can't keep up, and a
+    // sample goes to analytics after a minute and every five minutes after.
+    let perfMs = 0;
+    let perfFrames = 0;
+    let slowFor = 0;
+    let played = 0;
+    let sampleAt = 60;
     let hover: number | null = null;
     map.fog.reveal(client.x, client.z);
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
-      const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+      const real = Math.max(0, now - last);
+      const dt = Math.min(0.1, real / 1000);
       last = now;
+      perfMs += Math.min(real, 1000);
+      perfFrames++;
+      if (perfMs >= 4000) {
+        const fps = (perfFrames * 1000) / perfMs;
+        const s = prefs.get();
+        if (s.quality === 'auto' && fps < SLOW_FPS && !document.hidden) {
+          slowFor += perfMs / 1000;
+          if (slowFor >= SLOW_SECONDS && s.autoDrop < 2) {
+            slowFor = 0;
+            prefs.set({ autoDrop: s.autoDrop + 1 });
+          }
+        } else slowFor = 0;
+        played += perfMs / 1000;
+        if (played >= sampleAt) {
+          sampleAt += 300;
+          const quality = s.quality === 'auto' ? `auto-${autoLevel(touch, s.autoDrop)}` : s.quality;
+          client.telemetry?.perf(fps, quality, window.innerWidth, window.innerHeight, touch);
+        }
+        perfMs = 0;
+        perfFrames = 0;
+      }
       // The stick and keys are screen directions; the island turns with the camera.
       client.update(dt, view.toWorld(input.move()), input.useHeld);
       // Build mode: the piece stays under the mouse; taking down, the piece the mouse is on
@@ -446,7 +475,7 @@ export function Game(props: {
       fogSave += dt;
       if (fogSave > 20) {
         fogSave = 0;
-        saveFog(seed, map.fog);
+        saveFog(fogAt, seed, map.fog);
       }
       frames++;
       fpsAcc += dt;
@@ -466,13 +495,13 @@ export function Game(props: {
     ) {
       client.showBanner('Flight MX207 went down. You are alive. Search the wreckage.', 'info');
     }
-    run.track('island_ready', { mode: client.link.mode });
+    client.telemetry?.ready(client.info().day, client.progress().level);
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
       viewRef.current = null;
       view.dispose();
-      saveFog(seed, map.fog);
+      saveFog(fogAt, seed, map.fog);
     };
   }, [client, ready, map, input, seed, touch]);
 

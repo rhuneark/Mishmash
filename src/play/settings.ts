@@ -44,6 +44,8 @@ export interface Settings {
   damageNumbers: boolean;
   vibration: boolean;
   quality: Quality;
+  /** Auto quality: levels stepped down on this device because it couldn't keep up (0–2). */
+  autoDrop: number;
   /** Grass, birds, butterflies and fireflies. */
   life: boolean;
   fps: boolean;
@@ -89,6 +91,7 @@ export const DEFAULT_SETTINGS: Settings = {
   damageNumbers: true,
   vibration: true,
   quality: 'auto',
+  autoDrop: 0,
   life: true,
   fps: false,
   hudOn: true,
@@ -156,6 +159,7 @@ export function parseSettings(raw: unknown): Settings {
     damageNumbers: bool(o['damageNumbers'], d.damageNumbers),
     vibration: bool(o['vibration'], d.vibration),
     quality: pick(o['quality'], QUALITIES, d.quality),
+    autoDrop: Math.round(num(o['autoDrop'], d.autoDrop, 0, 2)),
     life: bool(o['life'], d.life),
     fps: bool(o['fps'], d.fps),
     hudOn: bool(o['hudOn'], d.hudOn),
@@ -215,11 +219,22 @@ const LEVELS: Record<Exclude<Quality, 'auto'>, GraphicsLevel> = {
   },
 };
 
-/** What a quality setting means on this device ('auto': medium on phones, high with a mouse). */
-export function graphicsFor(q: Quality, touch: boolean): GraphicsLevel {
-  if (q === 'auto') return LEVELS[touch ? 'medium' : 'high'];
-  return LEVELS[q];
+/**
+ * What a quality setting means on this device ('auto': medium on phones, high with a mouse,
+ * stepped down `drop` levels on a device that couldn't keep up).
+ */
+export function graphicsFor(q: Quality, touch: boolean, drop = 0): GraphicsLevel {
+  return LEVELS[q === 'auto' ? autoLevel(touch, drop) : q];
 }
+
+export function autoLevel(touch: boolean, drop: number): Exclude<Quality, 'auto'> {
+  const order = ['low', 'medium', 'high'] as const;
+  return order[Math.max(0, (touch ? 1 : 2) - drop)] ?? 'low';
+}
+
+/** Auto quality steps down after this long under this frame rate. */
+export const SLOW_FPS = 24;
+export const SLOW_SECONDS = 12;
 
 /** Volume 0–100 → gain (a curve, so the slider feels even). */
 export function gain(v: number): number {

@@ -31,10 +31,25 @@ update to the user with this link)
 - **Play** (`screens/Play.tsx`): a game title screen. Behind the menu your saved island turns
   slowly around the crash site (`play/TitleScene.ts`: the game's own terrain, nodes, grass and
   landmarks, 30 fps, gives the WebGL context back on unmount; no save: an autumn showcase
-  island). Buttons: Continue (island name · Day N) or Start surviving, New island, Play with
-  friends (opens your island; shows its multiplayer code), Join a friend (that code), ⚙️ Settings (the game's settings panel
-  without the key list), ❓ How to play, 💡 Suggest an update, 🎃 Vote for us in October Jam,
-  and for the owner only 🛠️ Dev (· N to check: new suggestions + messages with open reports). **New island** (`screens/NewIsland.tsx`): map preview, name and code, 🎲
+  island). Buttons: Continue (island name · Day N) or **Start surviving** (no island in the
+  slot: straight onto a ready-made one, `session.quickIsland`: tropical, classic terrain, any
+  layout, default rules), New island / Choose your island (the New island screen), 🗂️ Your
+  islands (N/3), Play with friends (opens your island; shows its multiplayer code), Join a
+  friend (that code), ⚙️ Settings (the game's settings panel without the key list), ❓ How to
+  play, 💡 Suggest an update, 📰 What's new, 🎃 Vote for us in October Jam, and for the owner
+  only 🛠️ Dev (· N to check: new suggestions + messages with open reports). **First launch**
+  (v1.26, the coach review: get new players playing faster): the intro's Play goes straight
+  onto a ready-made island (`App` `quickStart` → `Play` starts `quickIsland` when the slot is
+  empty), no New island screen. **Save slots** (`ISLAND_SLOTS` 3, `session.islandKey`: slot 1
+  keeps `mishmash_island`, then `mishmash_island_2`/`_3`; `currentSlot`/`chooseSlot`, the hub
+  save's `slot` remembers the last one; `listIslands`, `deleteIsland`; saves are kept per slot
+  by `keeper(slot)` bound when a game starts; the minimap fog per slot, `fogKey`, and one for
+  friends' islands): a new island goes into a free slot (the New island screen only asks
+  "This replaces…" when all three are full); 🗂️ Your islands plays, deletes (asks) or starts
+  one in an empty slot (`IslandSlots`). **What's new** (`game/news.ts` `NEWS`, newest first,
+  version = RUN's): a card on the title once after an update for returning players
+  (`unseenNews(save.newsSeen)`, visits > 1; a new player's intro marks the latest seen), and
+  📰 What's new lists them. Add an entry to `NEWS` with every update. **New island** (`screens/NewIsland.tsx`): map preview, name and code, 🎲
   Surprise me / Same kind, new island, climate, terrain, layout (quarter turns + mirror), a
   map code box (the `specCode`; called "map code" in the UI since v1.22 so it isn't mixed up
   with the multiplayer code), then the world rules (`hud/RulesPanel.tsx`); Start on X or 👥
@@ -52,7 +67,9 @@ update to the user with this link)
   `run.isCleanText` before sending) and the player's own suggestions with Take back. Each one
   is a UGC entry of type `suggest` (`SUGGEST_TYPE`, data `{v, text, topic}`); a player may send
   `DAILY_LIMIT` 5 a day (`sentToday`, a courtesy limit). When something players asked for gets
-  built, add it to `BUILT`.
+  built, add it to `BUILT` (with `by`: who suggested it; the owner's 🏗️ Built list in the Dev
+  area has the names). A dynamic built list isn't possible safely: any player can post UGC of
+  any type and readers can't tell the owner's entries apart.
 - **Island chat (co-op only)** (`hud/ChatBox.tsx`, `game/chat.ts`; the user's call: chat only
   in games, the Town Square is gone since v1.17.0). 💬 next to ⚙️ (with an unread badge) or
   Enter on PC opens a box at the top: the lines so far, a line to type (≤`MAX_SAY` 120
@@ -69,9 +86,12 @@ update to the user with this link)
   **only the game's owner (the user) sees** (`isOwner` → `app.getMyRole()`, checked by RUN against the account;
   RUN also refuses the admin calls it makes for anyone but the owner and editors). Two areas:
   **💡 Suggestions** (every `suggest` entry, newest first, "Load older suggestions" pages on;
-  filters To read / ⭐ Starred / ✓ Done / All; Star and Done are the owner's own marks, kept on
-  their device in appStorage `mishmash_dev_marks` (`DevMarks`, `parseMarks`, with `seenAt` for
-  the New badge); Delete removes the entry for good (`adminUgc.removeEntry`)) and **🚩
+  filters To read / ⭐ Starred / ✓ Done / 🏗️ Built / All; Star, Done and 🏗️ Mark built are the
+  owner's own marks, kept on their device in appStorage `mishmash_dev_marks` (`DevMarks`,
+  `parseMarks`, with `seenAt` for the New badge; `built` keeps the text and who asked, and
+  📋 Copy the built list (`builtText`) gives "• idea (suggested by Name)" lines for the update
+  post or for Claude to credit in `BUILT`); Delete removes the entry for good
+  (`adminUgc.removeEntry`)) and **🚩
   Reports**, which lists player
   reports grouped per message (`groupReports`: most reported first), with the reported text even
   when the message is hidden (`adminEntries`: `ugc.getMany`, then `app.adminUgc.browse` over the
@@ -327,7 +347,10 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   bottom left), day and time, minimap on/off, size and turning, quests (every step / next
   step / hidden), HUD size 80–140% and opacity (`--hud-scale`, `--hud-alpha`), button size,
   damage numbers, key hints; the controls and ⚙️ always stay), Graphics
-  (quality auto/low/medium/high: medium and high draw shadows; grass and wildlife, FPS), Controls (key list). Settings live
+  (quality auto/low/medium/high: medium and high draw shadows; **Auto steps down** a level,
+  `settings.autoDrop` 0–2 kept in prefs, after `SLOW_SECONDS` 12 s under `SLOW_FPS` 24 in
+  Game's frame loop, `graphicsFor(q, touch, drop)` / `autoLevel`; picking a quality resets it;
+  grass and wildlife, FPS), Controls (key list). Settings live
   in `play/settings.ts` (pure: `parseSettings` repairs saved data) and `play/prefs.ts` (store,
   `usePrefs`, saved in appStorage under `mishmash_settings` 0.4 s after a change, loaded at
   start-up in `main.tsx`).
@@ -636,6 +659,16 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   friends on the New island screen. Realtime needs a RUN sign-in (the SDK prompts). `npm run
   dev` runs a local room server (port 9001; it never disposes rooms and matches criteria the
   same way). Ask the user to try hosting and joining by code on the live build.
+- **Analytics** (`play/telemetry.ts` `Telemetry`, v1.26; the coach review: "measure before
+  you build more"): `client.telemetry` (made in `start`, watched every 0.25 s with the
+  tutorial) sends RUN analytics events: `island_ready` (mode, day, level), `tutorial_step`
+  (step, id, sec), `tutorial_skip`, `first_craft`, `night_survived` (day, bloom), `death`,
+  `escaped`, `perf` (fps, quality, screen, touch: after a minute, then every 5 minutes, from
+  Game's frame loop) and `session_end` (minutes, days, level, deaths); the hub sends
+  `app_loaded`, `intro_done`, `suggestion_sent`, `ad_reward`… The **first-session funnel**
+  (`run.funnel`, 'first_session'): 1 app loaded, 2 intro done, 3 island ready, 4… each
+  tutorial step (`FUNNEL.tutorial` + index), then first night survived, day 3, escaped.
+  New steps go at the end (numbers are what RUN charts).
 - **Dev hook**: in dev builds `window.__game = { client, input }` (the playthrough uses it;
   solo `client.link.sim` is the authority itself).
 
@@ -716,6 +749,7 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
   ads.ts             the in-flight channel: rewarded ads the player picks, once a day each
   skills.ts          levels, XP table and the skill tree (branches, perks, tiers)
   tutorial.ts        Survival basics: the guided first steps, their checks, texts and targets
+  news.ts            What's new: a note per update (title card once, 📰 What's new)
   content/           items, recipes, nodes, buildings, crops, monsters, landmarks (pois),
                      secrets (bunker, wreck, markers, treasure), notes
   sim/               the island authority: sim.ts (IslandSim), mobs.ts (monsters, director),
@@ -730,6 +764,7 @@ src/play/          the game client: session.ts (solo/host/join, saves), link.ts 
                    roomLink.ts, client.ts (GameClient), input.ts, keys.ts (PC bindings),
                    settings.ts + prefs.ts (settings), screen.ts (landscape), audio.ts +
                    music.ts, view.ts (scene), Game.tsx (canvas, frame loop, settings),
+                   telemetry.ts (analytics events and the first-session funnel),
                    TitleScene.ts (the title backdrop), render/ (terrain, nodes, actors,
                    structures, items, props, fx, geo, wind, ambient, climate, light,
                    weather), hud/ (Hud,
@@ -796,7 +831,8 @@ npm run dev                 # then, in another shell:
 npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, no tab bar or
                             # global chat, suggestions box: send and take back, owner Dev
                             # area: star, done, delete, reports; jam link), New island (code,
-                            # presets), the game
+                            # presets; the first launch's Play straight onto a ready-made
+                            # island; What's new once; 🏗️ Mark built and copy), the game
                             # (the tutorial: its card, the lit stick, ✋, 🎒 with the
                             # pointer, the goals, Crafting tab and recipe, steps moving on,
                             # Skip, restart from How to play, the last step's journal glow;
@@ -814,7 +850,8 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # on the ground walks there, a tap on a tree chops it), pause menu, This island (change the spawn
                             # rate), a bow shot, planting and watering, feeding a goat, the
                             # bunker sign, HUD settings, settings, rebinding a key, landscape,
-                            # save/continue, replace confirm; PC build drag and drop: grab and
+                            # save/continue, save slots (a new island in a free slot, play
+                            # the first again, replace confirm when full, delete); PC build drag and drop: grab and
                             # drop a piece, drag one from the menu, right-drag looks, right
                             # click turns; ads: Second wind on the death screen, the crash
                             # site's in-flight channel: sponsor drop, Island Explorer), hub
@@ -892,7 +929,12 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   menu button) and v1.25.0 (2026-10-29: starter supplies by every new island's crash site,
   generator 2) were private builds; **v1.25.0 was submitted with the Publish workflow on
   2026-10-29 at the user's request** ("publish public"), so Explore gets v1.16–v1.25 once
-  RUN's review passes.
+  RUN's review passes. v1.26.0 (2026-10-30, the coach review's first batch: analytics and
+  the first-session funnel, the intro's Play straight onto an island, three save slots,
+  What's new, 🏗️ Mark built, Auto quality stepping down) is a private build. **Waiting:**
+  the coach review's item 3: when the October Jam closes, swap the 🎃 Vote for us button
+  for something lasting (Invite a friend with the island's code) and decide on the
+  halloween/spooky tags (the user: "reserve 3 until after the jam").
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

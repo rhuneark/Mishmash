@@ -26,7 +26,7 @@ import {
   type ActionDef,
 } from '../keys';
 import { isTouch, prefs, usePrefs } from '../prefs';
-import type { Settings } from '../settings';
+import { autoLevel, type Settings } from '../settings';
 import { RulesEditor, RulesList } from './RulesPanel';
 
 export function PauseMenu(props: {
@@ -685,10 +685,12 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
         </Group>
       )}
       {tab === 'graphics' && (
-        <Group onReset={() => prefs.reset(['quality', 'life', 'fps'])}>
+        <Group onReset={() => prefs.reset(['quality', 'autoDrop', 'life', 'fps'])}>
           <Choice
             label="Quality"
-            desc="Medium and High draw shadows. Lower it if the game feels slow or your phone gets warm."
+            desc={`Medium and High draw shadows. Auto steps down by itself if the game runs slow${
+              s.quality === 'auto' ? ` (now: ${autoLevel(isTouch(), s.autoDrop)})` : ''
+            }.`}
             value={s.quality}
             options={[
               { id: 'auto', label: 'Auto' },
@@ -696,7 +698,7 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
               { id: 'medium', label: 'Medium' },
               { id: 'high', label: 'High' },
             ]}
-            set={(v) => set({ quality: v })}
+            set={(v) => set({ quality: v, autoDrop: 0 })}
           />
           <Toggle
             label="Grass and wildlife"

@@ -8,12 +8,14 @@ import {
   cleanJoinCode,
   islandName,
   newJoinCode,
+  randomParts,
   specKey,
   type IslandParts,
   type IslandSpec,
 } from '../game/islands';
 import { randomSeed } from '../game/rng';
-import type { WorldRules } from '../game/rules';
+import { DEFAULT_RULES, type WorldRules } from '../game/rules';
+import { ISLAND_SLOTS } from '../game/save';
 import { newSave, parseIslandSave, type IslandSave } from '../game/sim/types';
 import { generateIsland, type Island } from '../game/world';
 import { GameClient } from './client';
@@ -21,6 +23,27 @@ import { LocalLink } from './link';
 import { RoomLink } from './roomLink';
 
 export const ISLAND_KEY = 'mishmash_island';
+
+/** Where an island slot is kept (slot 1 is the key from before there were slots). */
+export function islandKey(slot: number): string {
+  return slot <= 1 ? ISLAND_KEY : `${ISLAND_KEY}_${slot}`;
+}
+
+let slot = 1;
+
+/** The island slot played now (the title picks it; the hub save remembers it). */
+export function currentSlot(): number {
+  return slot;
+}
+
+export function chooseSlot(n: number): void {
+  slot = Math.max(1, Math.min(ISLAND_SLOTS, Math.floor(n) || 1));
+}
+
+/** The minimap's explored fog: one per slot, and one for friends' islands. */
+export function fogKey(guest: boolean): string {
+  return guest ? 'mishmash_fog_guest' : slot <= 1 ? 'mishmash_fog' : `mishmash_fog_${slot}`;
+}
 
 let cached: Island | null = null;
 
@@ -42,11 +65,15 @@ export interface NewIsland {
   rules: WorldRules;
 }
 
-let lastSave: IslandSave | null = null;
+/** The last save kept per slot this session (a room's save can come in after leaving). */
+const lastSaves = new Map<number, IslandSave>();
 
-function keep(save: IslandSave): Promise<void> {
-  lastSave = save;
-  return run.setItem(ISLAND_KEY, JSON.stringify(save)).then(() => undefined);
+/** Keeps saves of the island in slot `n` (bound when a game starts). */
+function keeper(n: number): (save: IslandSave) => Promise<void> {
+  return (save) => {
+    lastSaves.set(n, save);
+    return run.setItem(islandKey(n), JSON.stringify(save)).then(() => undefined);
+  };
 }
 
 /** A new island, with its own multiplayer code. */
@@ -57,9 +84,26 @@ function makeIsland(fresh: NewIsland | null): IslandSave & { code: string } {
   return { ...save, code: newJoinCode(Math.random) };
 }
 
-/** Your island (older saves get their multiplayer code here, kept from then on). */
-export async function loadIsland(): Promise<(IslandSave & { code: string }) | null> {
-  const raw = await run.getItem(ISLAND_KEY);
+/**
+ * A ready-made first island (no choices to make): tropical, the classic terrain in any
+ * layout, the default rules.
+ */
+export function quickIsland(random: () => number = Math.random): NewIsland {
+  return {
+    seed: randomSeed(random),
+    parts: randomParts(random, { climate: 'tropic', terrain: 'classic' }),
+    rules: { ...DEFAULT_RULES },
+  };
+}
+
+/**
+ * The island in a slot (the current one by default; older saves get their multiplayer
+ * code here, kept from then on).
+ */
+export async function loadIsland(
+  n: number = slot,
+): Promise<(IslandSave & { code: string }) | null> {
+  const raw = await run.getItem(islandKey(n));
   if (!raw) return null;
   let save: IslandSave | null;
   try {
@@ -70,8 +114,24 @@ export async function loadIsland(): Promise<(IslandSave & { code: string }) | nu
   if (!save) return null;
   if (save.code) return save as IslandSave & { code: string };
   const coded = { ...save, code: newJoinCode(Math.random) };
-  await keep(coded);
+  await keeper(n)(coded);
   return coded;
+}
+
+/** Every slot's island (null: empty). */
+export async function listIslands(): Promise<((IslandSave & { code: string }) | null)[]> {
+  const out: ((IslandSave & { code: string }) | null)[] = [];
+  for (let n = 1; n <= ISLAND_SLOTS; n++) {
+    const last = lastSaves.get(n);
+    out.push(last?.code ? (last as IslandSave & { code: string }) : await loadIsland(n));
+  }
+  return out;
+}
+
+/** Throws an island away for good (its slot is empty again). */
+export async function deleteIsland(n: number): Promise<void> {
+  lastSaves.delete(n);
+  await run.setItem(islandKey(n), '');
 }
 
 /** A short summary of the saved island for the Play screen. */
@@ -109,6 +169,7 @@ export type Started = { ok: true; client: GameClient } | { ok: false; reason: St
 
 /** Your own island, run on this device (`fresh`: a new one, made as asked). */
 export async function startSolo(fresh: NewIsland | null): Promise<Started> {
+  const keep = keeper(slot);
   let save = fresh ? null : await savedIsland();
   if (!save) {
     save = makeIsland(fresh);
@@ -125,12 +186,14 @@ export async function startSolo(fresh: NewIsland | null): Promise<Started> {
 
 /** The island you play (the last one kept this session, else the saved one). */
 async function savedIsland(): Promise<(IslandSave & { code: string }) | null> {
-  if (lastSave?.code) return lastSave as IslandSave & { code: string };
+  const last = lastSaves.get(slot);
+  if (last?.code) return last as IslandSave & { code: string };
   return loadIsland();
 }
 
 /** Opens your island to friends (`fresh`: a new one): it moves into a RUN room. */
 export async function startHost(fresh: NewIsland | null = null): Promise<Started> {
+  const keep = keeper(slot);
   let save = fresh ? null : await savedIsland();
   if (!save) {
     save = makeIsland(fresh);

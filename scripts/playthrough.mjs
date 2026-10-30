@@ -255,7 +255,7 @@ async function newIsland(page, tag, code, preset, noSideScroll) {
 /** Solo survival: move, read, gather, craft, build, fight, die, save and continue. */
 async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.goto(URL);
-  await page.getByRole('button', { name: /Start surviving/ }).click();
+  await page.getByRole('button', { name: /Choose your island/ }).click();
   await shot('5-new-island');
   const islandName = await newIsland(page, tag, 'TR-C0-4242', 'Survivor', noSideScroll);
   await page.locator('.hud').waitFor({ timeout: 60000 });
@@ -2096,13 +2096,50 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page
     .getByRole('button', { name: `Continue · Day ${await dayNow(page)} on ${islandName}` })
     .waitFor();
-  // A new island asks before it replaces this one.
+  // Islands keep side by side: a new one goes into a free slot, not over this one.
+  await page.getByRole('button', { name: 'Your islands (1/3)' }).waitFor();
+  await page.getByRole('button', { name: /New island/ }).click();
+  const second = await page.locator('[data-testid="island-name"]').textContent();
+  await page.getByRole('button', { name: /Start on/ }).click();
+  await page.locator('.hud').waitFor({ timeout: 60000 });
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('button', { name: /Save and quit/ }).click();
+  await page.getByRole('button', { name: new RegExp(`Continue · Day 1 on ${second}`) }).waitFor();
+  await page.getByRole('button', { name: 'Your islands (2/3)' }).click();
+  const first = page.locator('.slot-card', { hasText: islandName });
+  await first.getByRole('button', { name: '▶ Play' }).click();
+  await page.locator('.hud').waitFor({ timeout: 60000 });
+  check(
+    (await game(page, () => window.__game.client.buildings.size)) >= 1,
+    `${tag} slots: the first island lost its campfire`,
+  );
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('button', { name: /Save and quit/ }).click();
+  await page
+    .getByRole('button', { name: new RegExp(`Continue · Day \\d+ on ${islandName}`) })
+    .waitFor();
+  // With every slot full, a new island asks before it replaces the one played last.
+  await game(page, async () => {
+    const run = await import('/src/sdk/run.ts');
+    await run.setItem('mishmash_island_3', (await run.getItem('mishmash_island_2')) ?? '');
+  });
+  await page.waitForTimeout(400);
+  await page.reload();
+  await page.getByRole('button', { name: 'Your islands (3/3)' }).waitFor();
   await page.getByRole('button', { name: /New island/ }).click();
   await page.locator('[data-testid="island-name"]').waitFor();
   await page.getByRole('button', { name: /Start on/ }).click();
   await page.getByText(`This replaces ${islandName}`).waitFor();
   await page.getByRole('button', { name: 'Keep mine' }).click();
   await page.getByRole('button', { name: '‹ Back' }).click();
+  // Throwing one away frees its slot.
+  await page.getByRole('button', { name: 'Your islands (3/3)' }).click();
+  const third = page.locator('.slot-card').nth(2);
+  await third.getByRole('button', { name: '🗑️ Delete' }).click();
+  await third.getByRole('button', { name: 'Delete', exact: true }).click();
+  await third.getByText('Empty slot 3').waitFor();
+  await page.getByRole('button', { name: 'Close your islands' }).click();
+  await page.getByRole('button', { name: 'Your islands (2/3)' }).waitFor();
   await page.getByRole('button', { name: /Continue · Day/ }).waitFor();
 }
 
@@ -2114,20 +2151,34 @@ async function dayNow(page) {
 
 /** Co-op on the local room server: one hosts, a friend joins with the code. */
 async function playCoop() {
-  const open = async () => {
+  const open = async (play) => {
     const context = await browser.newContext({ viewport: { width: 375, height: 667 } });
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
     await page.goto(URL);
-    await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+    if (play) {
+      await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+    } else {
+      await page.getByRole('button', { name: 'Suggest an idea' }).click();
+      await page.getByRole('button', { name: '‹ Back' }).click();
+    }
     return { context, page, errors };
   };
-  const host = await open();
+  const host = await open(true);
+  // A first launch goes from the intro's Play straight onto a ready-made island.
+  await host.page.locator('.hud').waitFor({ timeout: 60000 });
+  await host.page.locator('.tut-card').getByText('Find your feet').waitFor();
+  check(
+    (await game(host.page, () => window.__game.client.island.spec.climate)) === 'tropic',
+    'first play: not the ready-made tropical island',
+  );
+  await host.page.getByRole('button', { name: 'Menu' }).click();
+  await host.page.getByRole('button', { name: /Save and quit/ }).click();
   // The host's island is a made one (turned, mirrored, wetlands) with Relaxed rules:
   // the room has to build the same island and play by the same rules.
-  await host.page.getByRole('button', { name: /Start surviving/ }).click();
+  await host.page.getByRole('button', { name: /New island/ }).click();
   const spec = 'OV-W3M-31337';
   await newIsland(host.page, 'co-op', spec, 'Relaxed');
   await host.page.locator('.hud').waitFor({ timeout: 60000 });
@@ -2310,6 +2361,27 @@ for (const [width, height] of VIEWPORTS) {
     (await page.getByText('A game the players build.').count()) === 0,
     `${tag} intro shown again`,
   );
+  check((await page.locator('.news-card').count()) === 0, `${tag} news: shown to a new player`);
+  // After an update, a returning player gets What's new once.
+  await game(page, async () => {
+    const run = await import('/src/sdk/run.ts');
+    const save = JSON.parse((await run.getItem('mishmash_save')) ?? '{}');
+    await run.setItem('mishmash_save', JSON.stringify({ ...save, newsSeen: '1.0' }));
+  });
+  await page.waitForTimeout(400);
+  await page.reload();
+  const news = page.locator('.news-card');
+  await news.waitFor();
+  await noSideScroll('news');
+  await news.getByRole('button', { name: 'Got it' }).click();
+  await news.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: /What’s new/ }).click();
+  await page.locator('.news-section').first().waitFor();
+  await page.getByRole('button', { name: "Close what's new" }).click();
+  await page.waitForTimeout(400);
+  await page.reload();
+  await page.getByRole('button', { name: /Start surviving/ }).waitFor();
+  check((await page.locator('.news-card').count()) === 0, `${tag} news: shown twice`);
 
   // Settings from the title too.
   await page.getByRole('button', { name: /Settings/ }).click();
@@ -2361,6 +2433,17 @@ for (const [width, height] of VIEWPORTS) {
   await nova.waitFor();
   await page.getByRole('tab', { name: '✓ Done' }).click();
   await pip.waitFor();
+  // Built: kept with who asked, ready to copy for the update post.
+  await page.getByRole('tab', { name: 'All' }).click();
+  await nova.getByRole('button', { name: '🏗️ Mark built' }).click();
+  await page.getByRole('tab', { name: '🏗️ Built' }).click();
+  await nova.waitFor();
+  await page.getByRole('button', { name: /Copy the built list \(1\)/ }).click();
+  const credits = await page.evaluate(() => navigator.clipboard.readText());
+  check(
+    credits.includes('Boats so we can sail') && credits.includes('suggested by Nova'),
+    `${tag} dev: the built list didn't copy (${credits})`,
+  );
   await noSideScroll('dev');
   await shot('4-dev');
   // Reports: the seeded spam was hidden by 3 reports, Bram's message has one open

@@ -37,7 +37,8 @@ update to the user with this link)
   islands (N/3), Play with friends (opens your island; shows its multiplayer code), Join a
   friend (that code), ⚙️ Settings (the game's settings panel without the key list), ❓ How to
   play, 💡 Suggest an update, 📰 What's new, 🎃 Vote for us in October Jam, and for the owner
-  only 🛠️ Dev (· N to check: new suggestions + messages with open reports). **First launch**
+  only 🛠️ Dev (· N to check: new suggestions + messages with open reports). Under the island
+  buttons: today's daily goal and the 🔥 streak (`DailyLine`; opens 🏆 Records). **First launch**
   (v1.26, the coach review: get new players playing faster): the intro's Play goes straight
   onto a ready-made island (`App` `quickStart` → `Play` starts `quickIsland` when the slot is
   empty), no New island screen. **Save slots** (`ISLAND_SLOTS` 3, `session.islandKey`: slot 1
@@ -659,6 +660,35 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   friends on the New island screen. Realtime needs a RUN sign-in (the SDK prompts). `npm run
   dev` runs a local room server (port 9001; it never disposes rooms and matches criteria the
   same way). Ask the user to try hosting and joining by code on the live build.
+- **The daily goal** (`game/daily.ts`, v1.27; the coach review: "give players a reason to
+  come back tomorrow"): one goal per real (UTC) day, the same for everyone (`DAILY_GOALS`,
+  append only; `dailyGoal(day)` a fixed shuffle): fell 10 trees or rocks, craft 8, slay 8 of
+  the Bloom, gather 25 by hand, build 6, search 4 suitcases, cook 3, survive a night, hunt 2
+  animals. The links hand the authority the wall clock before each tick (`sim.wallMs`:
+  `LocalLink`, `IslandRoom`; `sim.wallDay()`), and `IslandSim.did(p, kind)` counts at the XP
+  sites (`DailyKind`: fell/pick/search at gathering, craft (+ cook at a fire or pot), build,
+  slay/hunt in `killMob`, night at dawn); done once, it pays `DAILY_XP` 120 and `DAILY_GIFT`
+  (2 bandages, water) with S2C event `daily` (a banner; the level-up it may bring stays the
+  island's toast). Progress is saved per survivor (`PlayerSave.daily`, `parseDaily`) and sent
+  in `MeNet.daily`; the HUD shows it under the quests (`DailyChip`, gone when done or while the
+  tutorial runs). The **streak** is account-wide, in the records (`nextStreak`, `liveStreak`).
+- **Records across islands** (`game/records.ts`, `play/records.ts`, v1.27; the coach review:
+  "keep something when you start a new island"): `Records` (furthest day, escapes and the
+  fastest, the Bloom slain (`SimPlayer.slain`, kills without animals, `MeNet.slain`), nights,
+  crafted, islands, daily goals and the streak) in appStorage `mishmash_records`, fed by the
+  client's `Telemetry.watch` (`noteHappened`: changes since the last look; a new island from
+  `session`). **Leaderboards** (`rundot/leaderboard.config.json`: modes `days`, `slain`,
+  `escapes`, period `alltime`, highest first, no seeds; `run.submitScore`/`run.topScores`):
+  a board is posted when its record beats what it was last given (`mishmash_boards`), one post
+  at a time, 65 s apart. 🏆 Records (`screens/Records.tsx`, from the title's daily button):
+  your records and the top 20 per board with your rank.
+- **Daily reminders** (`game/reminders.ts` plan, `play/remind.ts` `planReminders`, v1.27):
+  after each visit and each game the old schedule is cancelled (`REMINDER_IDS`, and anything
+  tagged `bloomReminder`) and 1, 2 and 3 days later get one (web: 1 and 3), at the visit's hour,
+  never 22:00–08:00 on the player's clock (`reminderTime`): the streak (when today's goal is
+  done), "Night is coming on <island>", or that day's goal. `run.scheduleReminders` /
+  `cancelReminders` (local notifications); Settings › Gameplay › Daily reminders
+  (`settings.reminders`).
 - **Analytics** (`play/telemetry.ts` `Telemetry`, v1.26; the coach review: "measure before
   you build more"): `client.telemetry` (made in `start`, watched every 0.25 s with the
   tutorial) sends RUN analytics events: `island_ready` (mode, day, level), `tutorial_step`
@@ -750,6 +780,9 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
   skills.ts          levels, XP table and the skill tree (branches, perks, tiers)
   tutorial.ts        Survival basics: the guided first steps, their checks, texts and targets
   news.ts            What's new: a note per update (title card once, 📰 What's new)
+  daily.ts           the daily goal: the rotation, the day, the streak, the care package
+  records.ts         records across islands and the leaderboards they feed
+  reminders.ts       daily reminders: when (quiet hours) and what each says
   content/           items, recipes, nodes, buildings, crops, monsters, landmarks (pois),
                      secrets (bunker, wreck, markers, treasure), notes
   sim/               the island authority: sim.ts (IslandSim), mobs.ts (monsters, director),
@@ -765,6 +798,7 @@ src/play/          the game client: session.ts (solo/host/join, saves), link.ts 
                    settings.ts + prefs.ts (settings), screen.ts (landscape), audio.ts +
                    music.ts, view.ts (scene), Game.tsx (canvas, frame loop, settings),
                    telemetry.ts (analytics events and the first-session funnel),
+                   records.ts (records kept and posted), remind.ts (reminders scheduled),
                    TitleScene.ts (the title backdrop), render/ (terrain, nodes, actors,
                    structures, items, props, fx, geo, wind, ambient, climate, light,
                    weather), hud/ (Hud,
@@ -773,7 +807,8 @@ src/play/          the game client: session.ts (solo/host/join, saves), link.ts 
 src/app/           community.ts (suggestions, Dev area over UgcApi), localUgc.ts (dev stand-in),
                    usePolling.ts, appEvents.ts (host lifecycle → game pause/resume), links.ts
                    (the October Jam link, copied)
-src/screens/       Play (title, home), NewIsland, Intro (first launch), Suggest, Dev (owner)
+src/screens/       Play (title, home), NewIsland, Intro (first launch), Suggest, Dev (owner),
+                   Records (🏆 records and leaderboards)
 src/ui/            Logo (the BLOOM / ISLAND wordmark, `.brand`), Notice (failure messages),
                    SubPage (a page with ‹ Back: Suggest, Dev), dragScroll (click and drag
                    scrolls every list)
@@ -789,6 +824,7 @@ art/thumbnail-source.png store thumbnail art from the user ("BLOOM ISLAND" over 
 scripts/thumbnail.mjs    `npm run thumbnail`: re-exports public/thumbnail.jpg from the art (PIL)
 rundot/realtime.config.json  room type `island` → src/server/IslandRoom.ts (max 4 players)
 rundot/ugc.config.json   UGC limits and moderation
+rundot/leaderboard.config.json  the records' boards: days, slain, escapes (all time)
 rundot/textGen.config.json  `{ "disabled": true }`: AI text generation is off (unused; without
                          this file every deploy auto-enables it with permissive spend limits)
 rundot/cli_hooks.json    RUN CLI hooks (from the template)
@@ -836,6 +872,8 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # (the tutorial: its card, the lit stick, ✋, 🎒 with the
                             # pointer, the goals, Crafting tab and recipe, steps moving on,
                             # Skip, restart from How to play, the last step's journal glow;
+                            # the daily goal: its chip, done, the streak on the title,
+                            # 🏆 Records and a board;
                             # walk, read, gather, the survivor menu: crafting by category,
                             # XP and learning a skill; touch: a swipe on the crafting grid
                             # scrolls, a mouse drag scrolls it too (and picks nothing), a

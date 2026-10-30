@@ -591,6 +591,128 @@ export async function showRewardedAd(
 }
 
 // ---------------------------------------------------------------------------
+// Leaderboards (rundot/leaderboard.config.json): one mode per record, all time.
+
+export interface BoardRow {
+  rank: number;
+  profileId: string;
+  username: string;
+  score: number;
+  mine: boolean;
+}
+
+const BOARD_PERIOD = 'alltime';
+
+/** Posts a record to its board ('accepted' when RUN kept it). */
+export async function submitScore(
+  mode: string,
+  score: number,
+  durationSec: number,
+): Promise<'accepted' | 'rejected' | 'error'> {
+  return call<'accepted' | 'rejected' | 'error'>('submitScore', 'error', async () => {
+    const res = await RundotGameAPI.leaderboard.submitScore({
+      score: Math.max(0, Math.round(score)),
+      duration: Math.max(1, Math.min(86_400, Math.round(durationSec))),
+      mode,
+      period: BOARD_PERIOD,
+    });
+    return res.accepted ? 'accepted' : 'rejected';
+  });
+}
+
+/** A board's top rows and this player's rank, or null when it can't be read. */
+export async function topScores(
+  mode: string,
+  limit: number,
+): Promise<{ rows: BoardRow[]; myRank: number | null } | null> {
+  return call('topScores', null, async () => {
+    let me = '';
+    try {
+      me = RundotGameAPI.getProfile().id;
+    } catch {
+      me = '';
+    }
+    const page = await RundotGameAPI.leaderboard.getPagedScores({
+      limit,
+      mode,
+      period: BOARD_PERIOD,
+    });
+    // The SDK mock files every score under one fixed id, unlike the player's profile id.
+    const mock = isMock() ? 'mock_profile' : '';
+    const rows = (page.entries ?? []).map((e, i) => ({
+      rank: e.rank ?? i + 1,
+      profileId: typeof e.profileId === 'string' ? e.profileId : '',
+      username: e.username || 'Survivor',
+      score: e.score,
+      mine: (!!me && e.profileId === me) || (!!mock && e.profileId === mock),
+    }));
+    return { rows, myRank: page.playerRank ?? null };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reminders (local notifications): phone notifications in the RUN app, the bell inbox on
+// run.world. The host may mute or throttle them: a schedule without an id wasn't armed.
+
+const REMINDER_TAG = 'bloomReminder';
+
+export interface LocalReminder {
+  id: string;
+  title: string;
+  body: string;
+  delaySeconds: number;
+}
+
+/** Running in a web browser (run.world) rather than the RUN app. Only meaningful after ready(). */
+export function isWeb(): boolean {
+  if (!isReady) return false;
+  try {
+    return RundotGameAPI.system.isWeb();
+  } catch {
+    return false;
+  }
+}
+
+/** Cancels pending reminders: these ids plus any of ours left on the device. */
+export async function cancelReminders(ids: readonly string[]): Promise<void> {
+  await call('reminders.cancel', undefined, async () => {
+    const all = new Set(ids);
+    const pending = await RundotGameAPI.notifications
+      .getAllScheduledLocalNotifications()
+      .catch(() => []);
+    for (const n of Array.isArray(pending) ? pending : [])
+      if (n?.id && n.payload?.[REMINDER_TAG]) all.add(n.id);
+    for (const id of all)
+      await RundotGameAPI.notifications.cancelNotification(id).catch(() => false);
+  });
+}
+
+/** Schedules reminders one at a time; returns the ids the host armed. */
+export async function scheduleReminders(list: readonly LocalReminder[]): Promise<string[]> {
+  return call('reminders.schedule', [] as string[], async () => {
+    const armed: string[] = [];
+    for (const r of list) {
+      const res = await RundotGameAPI.notifications
+        .submitMessageAsync({
+          channels: ['local'],
+          title: r.title,
+          body: r.body,
+          delaySeconds: Math.max(60, Math.round(r.delaySeconds)),
+          notificationId: r.id,
+          payload: { [REMINDER_TAG]: '1' },
+        })
+        .catch((err: unknown) => {
+          warn('reminders.submit', err);
+          return null;
+        });
+      const local = res?.results?.find((x) => x.channel === 'local');
+      if (local?.status === 'scheduled' && local.id) armed.push(local.id);
+    }
+    return armed;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Analytics and lifecycle.
 
 export function track(event: string, payload?: Record<string, string | number | boolean>): void {

@@ -104,7 +104,10 @@ function killMob(sim: IslandSim, m: Mob): void {
     return;
   }
   const killer = m.lastHitBy ? sim.players.get(m.lastHitBy) : undefined;
-  if (killer) sim.gainXp(killer, XP.kill[m.kind] ?? 5);
+  if (killer) {
+    sim.gainXp(killer, XP.kill[m.kind] ?? 5);
+    sim.did(killer, def.animal ? 'hunt' : 'slay');
+  }
   if (m.kind === 'snapjaw' && m.spot >= 0) {
     sim.snapDeadUntil.set(m.spot, sim.time + DAY);
     sim.snapMob.delete(m.spot);
@@ -129,11 +132,15 @@ function killMob(sim: IslandSim, m: Mob): void {
       text: 'The Mother Bloom burns and collapses. In the roots: the transmitter, and her heart, still beating.',
     });
     sim.broadcastProgress();
-    if (killer) killer.kills++;
+    if (killer) {
+      killer.kills++;
+      killer.slain++;
+    }
     return;
   }
   if (!killer) return;
   killer.kills++;
+  if (!def.animal) killer.slain++;
   const got: string[] = [];
   for (const drop of def.drops) {
     if ((drop.chance ?? 1) < 1 && sim.random() >= (drop.chance ?? 1)) continue;

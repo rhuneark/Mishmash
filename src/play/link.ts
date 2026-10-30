@@ -93,6 +93,7 @@ export class LocalLink implements Link {
       let steps = Math.min(10, Math.round((now - this.last) / TICK_MS));
       this.last += steps * TICK_MS;
       if (steps < 1) return;
+      this.sim.wallMs = Date.now();
       while (steps-- > 0) this.sim.tick(TICK_MS / 1000);
       this.flush();
     }, TICK_MS);

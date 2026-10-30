@@ -153,6 +153,7 @@ export default class IslandRoom extends GameRoom<Msg> {
 
   private step(): void {
     if (!this.sim) return;
+    this.sim.wallMs = Date.now();
     this.sim.tick(TICK_MS / 1000);
     this.saveAcc += TICK_MS / 1000;
     if (this.saveAcc >= SAVE_EVERY) {

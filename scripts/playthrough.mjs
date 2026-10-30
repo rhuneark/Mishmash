@@ -594,6 +594,22 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await tutCard.getByRole('button', { name: 'Yes' }).click();
   await tutCard.waitFor({ state: 'detached' });
   await page.getByText('Find the cockpit').waitFor();
+  // Today's daily goal shows under the quests; doing it pays a care package and starts a
+  // streak (kept with the records, across islands).
+  const daily = page.locator('.daily-chip');
+  await daily.waitFor({ timeout: 10000 });
+  await game(page, async () => {
+    const { dailyGoal } = await import('/src/game/daily.ts');
+    const c = window.__game.client;
+    const sim = c.link.sim;
+    const goal = dailyGoal(sim.wallDay());
+    for (let i = 0; i < goal.need; i++) sim.did(sim.players.get(c.you), goal.kind);
+  });
+  await page
+    .getByText(/Daily goal done/)
+    .first()
+    .waitFor({ timeout: 10000 });
+  await daily.waitFor({ state: 'detached' });
 
   // Build a campfire: pick it in build mode, and it's paid for straight from the bag.
   await teleport(page, 12, 272);
@@ -1493,9 +1509,24 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.waitForTimeout(900);
   await page.keyboard.up('KeyW');
   const q1 = await game(page, () => [window.__game.client.x, window.__game.client.z]);
+  const why =
+    q0[0] === q1[0] && q0[1] === q1[1]
+      ? await game(page, () => {
+          const c = window.__game.client;
+          return JSON.stringify({
+            alive: c.me?.alive,
+            hp: c.me?.hp,
+            panel: c.panel,
+            menu: c.menuOpen ?? null,
+            build: !!c.build,
+            blocks: c.panelBlocksMove(),
+            focus: document.activeElement?.tagName,
+          });
+        })
+      : '';
   check(
     q0[1] - q1[1] > 0.3 && q1[0] - q0[0] > 0.3,
-    `${tag} game: W didn't walk north-east with the bag window open (${q0.map((v) => v.toFixed(1))} → ${q1.map((v) => v.toFixed(1))})`,
+    `${tag} game: W didn't walk north-east with the bag window open (${q0.map((v) => v.toFixed(1))} → ${q1.map((v) => v.toFixed(1))}) ${why}`,
   );
   const drag = async (from, to) => {
     const a = await from.boundingBox();
@@ -2096,6 +2127,26 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page
     .getByRole('button', { name: `Continue · Day ${await dayNow(page)} on ${islandName}` })
     .waitFor();
+  // The title shows the daily goal done and the streak; 🏆 Records has the player's best and
+  // the leaderboards.
+  const titleDaily = page.locator('.title-daily');
+  await titleDaily.getByText(/Daily goal done · 🔥 1-day streak/).waitFor({ timeout: 10000 });
+  await titleDaily.click();
+  await page.getByText('Your records, every island').waitFor();
+  check(
+    (await page.locator('.records-row', { hasText: 'Islands' }).locator('dd').textContent()) ===
+      '1',
+    `${tag} records: the island wasn't counted`,
+  );
+  await page.getByRole('tab', { name: /Bloom slain/ }).click();
+  await page
+    .locator('.board')
+    .getByText(/Nobody on this board yet|can't be reached|\(you\)/)
+    .first()
+    .waitFor({ timeout: 10000 });
+  await noSideScroll('records');
+  await shot('9d-records');
+  await page.getByRole('button', { name: '‹ Back' }).click();
   // Islands keep side by side: a new one goes into a free slot, not over this one.
   await page.getByRole('button', { name: 'Your islands (1/3)' }).waitFor();
   await page.getByRole('button', { name: /New island/ }).click();

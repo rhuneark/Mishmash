@@ -13,9 +13,12 @@ import { Game } from './play/Game';
 import type { GameClient } from './play/client';
 import { FAIL_TEXT, chooseSlot, startHost, startJoin, startSolo } from './play/session';
 import { LATEST, unseenNews } from './game/news';
+import { Records } from './screens/Records';
+import { loadRecords } from './play/records';
+import { planReminders } from './play/remind';
 
 /** The title screen, or a page opened from it (each has a back button). */
-type Screen = 'play' | 'suggest' | 'dev';
+type Screen = 'play' | 'suggest' | 'dev' | 'records';
 
 const REPORT_CHECK_MS = 5 * 60_000;
 
@@ -41,6 +44,9 @@ export default function App() {
       if (cancelled) return;
       chooseSlot(next.slot);
       setSave(next);
+      void loadRecords();
+      // A visit: the next days' reminders start from now.
+      planReminders();
       void run.setItem(SAVE_KEY, JSON.stringify(next));
       run.track('app_loaded', { visits: next.visits });
       run.funnel(1, 'app_loaded');
@@ -94,6 +100,7 @@ export default function App() {
     setStarting(true);
     await g?.close();
     setStarting(false);
+    planReminders();
   };
 
   if (game) {
@@ -151,6 +158,7 @@ export default function App() {
           <Play
             onStart={(c) => void start(c)}
             onSuggest={() => setScreen('suggest')}
+            onRecords={() => setScreen('records')}
             onDev={owner ? () => setScreen('dev') : undefined}
             devCount={openReports + newIdeas}
             error={playError}
@@ -166,6 +174,11 @@ export default function App() {
         {screen === 'suggest' && (
           <SubPage title="💡 Suggestions" onBack={() => setScreen('play')}>
             <Suggest />
+          </SubPage>
+        )}
+        {screen === 'records' && (
+          <SubPage title="🏆 Records" onBack={() => setScreen('play')}>
+            <Records />
           </SubPage>
         )}
         {screen === 'dev' && owner && (

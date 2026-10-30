@@ -21,6 +21,7 @@ import { generateIsland, type Island } from '../game/world';
 import { GameClient } from './client';
 import { LocalLink } from './link';
 import { RoomLink } from './roomLink';
+import { noteHappened } from './records';
 
 export const ISLAND_KEY = 'mishmash_island';
 
@@ -174,6 +175,7 @@ export async function startSolo(fresh: NewIsland | null): Promise<Started> {
   if (!save) {
     save = makeIsland(fresh);
     await keep(save);
+    noteHappened({ island: true });
   }
   await nextFrame();
   const island = islandFor(specOf(save));
@@ -198,6 +200,7 @@ export async function startHost(fresh: NewIsland | null = null): Promise<Started
   if (!save) {
     save = makeIsland(fresh);
     await keep(save);
+    noteHappened({ island: true });
   }
   const mine = save;
   let res = await RoomLink.host(mine, (s) => void keep(s));

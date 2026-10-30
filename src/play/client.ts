@@ -354,6 +354,8 @@ export class GameClient {
   quickTab: 'bag' | 'craft' = 'bag';
   /** Settings: 🎒 opens the small window by your survivor instead of the survivor menu. */
   bagWindow = false;
+  /** When the daily goal's banner showed (a level-up right after it becomes a toast). */
+  private dailyAt = -99;
   /** What this game tells RUN's analytics (set when it starts). */
   telemetry: Telemetry | null = null;
   /** Settings: Survival basics (the tutorial) shows. */
@@ -537,12 +539,12 @@ export class GameClient {
         }
         if (before?.alive && msg.me.alive) this.gains(before.inv, msg.me.inv);
         if (before && msg.me.xp > before.xp) this.emit({ type: 'xp', n: msg.me.xp - before.xp });
-        if (before && levelFor(msg.me.xp) > levelFor(before.xp))
-          this.showBanner(
-            `⭐ Level ${levelFor(msg.me.xp)}! Spend your skill point in 🎒 › Skills.`,
-            'info',
-          );
-        else if (before && msg.me.tut === before.tut + 1) {
+        if (before && levelFor(msg.me.xp) > levelFor(before.xp)) {
+          const text = `⭐ Level ${levelFor(msg.me.xp)}! Spend your skill point in 🎒 › Skills.`;
+          // Right after the daily goal's banner (its XP did it), the island's own level-up
+          // toast is enough: the banner stays the daily goal's.
+          if (this.clock - this.dailyAt >= 3) this.showBanner(text, 'info');
+        } else if (before && msg.me.tut === before.tut + 1) {
           // A step done: the card says so; the last one gets a banner (the card goes).
           const done = TUTORIAL[before.tut];
           if (msg.me.tut >= TUT_DONE)
@@ -829,6 +831,11 @@ export class GameClient {
         this.won = true;
         this.panel = null;
         this.emit({ type: 'event', e });
+        return;
+      case 'daily':
+        // The daily goal's done (the level-up flash and sound come as an fx).
+        this.dailyAt = this.clock;
+        if (text) this.showBanner(text, 'info');
         return;
       default:
         if (text) this.showBanner(text, e);

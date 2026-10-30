@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { dailyGoal, liveStreak, utcDay } from '../game/daily';
+import { recordsStore } from '../play/records';
 import {
   CLASSIC,
   JOIN_LEN,
@@ -43,6 +45,7 @@ const isPc = () =>
 export function Play({
   onStart,
   onSuggest,
+  onRecords,
   onDev,
   devCount = 0,
   error,
@@ -56,6 +59,7 @@ export function Play({
 }: {
   onStart: (c: PlayChoice) => void;
   onSuggest: () => void;
+  onRecords: () => void;
   /** The owner's Dev area (absent for everyone else). */
   onDev?: () => void;
   /** Open reports and new suggestions waiting in the Dev area. */
@@ -201,6 +205,7 @@ export function Play({
                   🗂️ Your islands ({islands.filter(Boolean).length}/{islands.length})
                 </button>
               )}
+              <DailyLine onRecords={onRecords} />
               <button
                 className="menu-btn title-friends"
                 onClick={() => (info ? onStart({ kind: 'host', fresh: null }) : setView('new'))}
@@ -347,6 +352,24 @@ export function Play({
         </Dialog>
       )}
     </div>
+  );
+}
+
+/** Today's goal and the streak, under the island buttons; opens 🏆 Records. */
+function DailyLine({ onRecords }: { onRecords: () => void }) {
+  const r = useSyncExternalStore(recordsStore.subscribe, recordsStore.get);
+  const today = utcDay(Date.now());
+  const goal = dailyGoal(today);
+  const streak = liveStreak(r.daily, today);
+  const done = r.daily.day === today;
+  return (
+    <button className="menu-btn title-daily" onClick={onRecords}>
+      <span>
+        {done ? '✓ Daily goal done' : `🗓️ Today: ${goal.text}`}
+        {streak > 0 ? ` · 🔥 ${streak}-day streak` : ''}
+      </span>
+      <span className="title-continue-sub">🏆 Records and leaderboards</span>
+    </button>
   );
 }
 

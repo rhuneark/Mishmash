@@ -21,6 +21,7 @@ import { dayInfo } from './time';
 import { MAX_SAY } from '../chat';
 import { nextWeather, type WeatherKind } from './weather';
 import { TUTORIAL, TUT_DONE, TUT_GIFT } from '../tutorial';
+import { DAILY_GIFT, DAILY_XP, DAY_MS, dailyGoal } from '../daily';
 
 const island: Island = generateIsland(4242);
 
@@ -1628,6 +1629,35 @@ describe('the in-flight channel and Second wind (ads)', () => {
     // Kept with the survivor in the save.
     const back = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())));
     expect(back?.players['a']?.ads?.wind).toBe(Math.floor(h.sim.time / DAY));
+  });
+});
+
+describe('the daily goal', () => {
+  it('counts what a survivor does today, pays once, and starts over the next day', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a');
+    if (!p) throw new Error();
+    // Nothing counts before the link hands in the date.
+    h.sim.did(p, 'craft');
+    expect(p.daily).toBeUndefined();
+    let day = 20_000;
+    while (dailyGoal(day).kind !== 'craft') day++;
+    h.sim.wallMs = day * DAY_MS + 5_000;
+    const need = dailyGoal(day).need;
+    h.sim.did(p, 'fell');
+    expect(p.daily).toEqual({ day, n: 0, done: false });
+    const xp = p.xp;
+    for (let i = 0; i < need + 3; i++) h.sim.did(p, 'craft');
+    expect(p.daily).toEqual({ day, n: need, done: true });
+    expect(p.xp).toBe(xp + DAILY_XP);
+    for (const g of DAILY_GIFT) expect(count(p.inv, g.id)).toBeGreaterThanOrEqual(g.n);
+    const back = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())));
+    expect(back?.players['a']?.daily).toEqual({ day, n: need, done: true });
+    h.sim.wallMs += DAY_MS;
+    h.sim.did(p, dailyGoal(day + 1).kind);
+    expect(p.daily?.day).toBe(day + 1);
+    expect(p.daily?.done).toBe(dailyGoal(day + 1).need === 1);
   });
 });
 

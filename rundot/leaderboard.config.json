@@ -1,0 +1,32 @@
+{
+  "requiresToken": false,
+  "scoreOrder": "highest",
+  "minScore": 0,
+  "maxScore": 1000000,
+  "minDurationSec": 1,
+  "maxDurationSec": 86400,
+  "modes": {
+    "days": {
+      "displayName": "Days survived"
+    },
+    "slain": {
+      "displayName": "Bloom slain"
+    },
+    "escapes": {
+      "displayName": "Escapes"
+    }
+  },
+  "periods": {
+    "alltime": {
+      "displayName": "All Time",
+      "type": "alltime"
+    }
+  },
+  "antiCheat": {
+    "enableRateLimit": true,
+    "enableZScoreDetection": false
+  },
+  "displaySettings": {
+    "maxEntriesPerPage": 50
+  }
+}

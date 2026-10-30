@@ -27,6 +27,7 @@ import { prefs, usePrefs } from '../prefs';
 import { BUILD_CATS, BUILDINGS } from '../../game/content/buildings';
 import { REWARDS } from '../../game/ads';
 import { TUTORIAL, TUT_DONE, type TutStep } from '../../game/tutorial';
+import { DAILY_GOALS } from '../../game/daily';
 import { compass } from '../../game/sim/events';
 import type { Quest } from '../../game/objectives';
 import { cameraRig } from '../settings';
@@ -181,6 +182,9 @@ export function Hud(props: HudProps) {
           <QuestList quests={quests} current={settings.quests === 'current'} client={client} />
         )}
         {tut && !quick && !build && <TutorialCard client={client} pc={pc} hint={hint} />}
+        {!tut && !quick && !build && showInfo && settings.quests !== 'off' && (
+          <DailyChip client={client} />
+        )}
         {/* With the tutorial card up, big messages come under it instead of over it. */}
         {tut && !quick && !build && client.banner && (
           <div key={client.banner.id} className={`banner side ${client.banner.kind}`}>
@@ -680,6 +684,24 @@ function TutorialCard({
         </div>
       ))}
       {more > 0 && pc && <div className="tut-step next more">+{more} more</div>}
+    </div>
+  );
+}
+
+/** Today's daily goal under the quests, with how far along (gone once it's done). */
+function DailyChip({ client }: { client: GameClient }) {
+  const d = client.me?.daily;
+  const goal = d && DAILY_GOALS.find((g) => g.id === d.goal);
+  if (!d || !goal || d.done) return null;
+  return (
+    <div className="daily-chip" aria-label={`Daily goal: ${goal.text}, ${d.n} of ${goal.need}`}>
+      <span className="daily-kicker">🗓️ Daily goal</span>
+      <span className="daily-text">
+        {goal.icon} {goal.text}
+      </span>
+      <span className="daily-count">
+        {d.n}/{goal.need}
+      </span>
     </div>
   );
 }

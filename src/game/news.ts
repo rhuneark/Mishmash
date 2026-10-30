@@ -10,6 +10,15 @@ export interface News {
 
 export const NEWS: News[] = [
   {
+    version: '1.27',
+    title: 'Daily goals and records',
+    items: [
+      'A daily goal for everyone, every day: do it for a care package and keep your 🔥 streak.',
+      '🏆 Records: your best across every island, and leaderboards for days survived, Bloom slain and escapes.',
+      'Daily reminders (turn them off in Settings › Gameplay). Never at night.',
+    ],
+  },
+  {
     version: '1.26',
     title: 'Three islands, a quicker start',
     items: [

@@ -44,6 +44,8 @@ export interface Settings {
   damageNumbers: boolean;
   vibration: boolean;
   quality: Quality;
+  /** Daily reminders (local notifications) after a visit. */
+  reminders: boolean;
   /** Auto quality: levels stepped down on this device because it couldn't keep up (0–2). */
   autoDrop: number;
   /** Grass, birds, butterflies and fireflies. */
@@ -91,6 +93,7 @@ export const DEFAULT_SETTINGS: Settings = {
   damageNumbers: true,
   vibration: true,
   quality: 'auto',
+  reminders: true,
   autoDrop: 0,
   life: true,
   fps: false,
@@ -160,6 +163,7 @@ export function parseSettings(raw: unknown): Settings {
     vibration: bool(o['vibration'], d.vibration),
     quality: pick(o['quality'], QUALITIES, d.quality),
     autoDrop: Math.round(num(o['autoDrop'], d.autoDrop, 0, 2)),
+    reminders: bool(o['reminders'], d.reminders),
     life: bool(o['life'], d.life),
     fps: bool(o['fps'], d.fps),
     hudOn: bool(o['hudOn'], d.hudOn),

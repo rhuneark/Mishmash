@@ -26,6 +26,7 @@ import {
   type ActionDef,
 } from '../keys';
 import { isTouch, prefs, usePrefs } from '../prefs';
+import { planReminders } from '../remind';
 import { autoLevel, type Settings } from '../settings';
 import { RulesEditor, RulesList } from './RulesPanel';
 
@@ -453,6 +454,15 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
             desc="Survival basics: step-by-step help with your first steps on an island, with what to do and where to go."
             on={s.tutorial}
             set={(v) => set({ tutorial: v })}
+          />
+          <Toggle
+            label="Daily reminders"
+            desc="A notification a day for the next few days after you play: the daily goal, your streak, your island. Never at night."
+            on={s.reminders}
+            set={(v) => {
+              set({ reminders: v });
+              planReminders();
+            }}
           />
           <Toggle
             label="Small bag window"

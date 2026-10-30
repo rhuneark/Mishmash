@@ -3,6 +3,7 @@
 import { parseRewardDays, type RewardDays } from '../ads';
 import { parsePerks, type Perks } from '../skills';
 import { TUT_DONE, TUT_VERSION, parseTut } from '../tutorial';
+import { parseDaily, type DailyProgress } from '../daily';
 import { BUILDINGS, slotsOf } from '../content/buildings';
 import { CROP_BY_ID } from '../content/crops';
 import { MONSTERS, type MonsterKind } from '../content/monsters';
@@ -34,6 +35,8 @@ export interface SimPlayer {
   lastUse: number;
   lastPos: number;
   kills: number;
+  /** The Bloom slain (kills without the animals). */
+  slain: number;
   deaths: number;
   crafted: number;
   escaped: boolean;
@@ -52,6 +55,8 @@ export interface SimPlayer {
   /** Survival basics (tutorial.ts): the step they're on, and how many steps have paid. */
   tut: number;
   tutPaid: number;
+  /** Progress on today's daily goal (daily.ts). */
+  daily?: DailyProgress;
 }
 
 export interface Building {
@@ -164,6 +169,7 @@ export interface PlayerSave {
   alive: boolean;
   spawn: number | null;
   kills: number;
+  slain?: number;
   deaths: number;
   crafted: number;
   escaped: boolean;
@@ -178,6 +184,7 @@ export interface PlayerSave {
   tutPaid?: number;
   /** Which tutorial the step numbers are for (TUT_VERSION; missing: v1.23's). */
   tutV?: number;
+  daily?: DailyProgress;
 }
 
 export interface IslandSave {
@@ -323,6 +330,7 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
         alive: pv['alive'] !== false,
         spawn: typeof pv['spawn'] === 'number' ? pv['spawn'] : null,
         kills: Math.floor(num(pv['kills'], 0)),
+        slain: Math.floor(num(pv['slain'], 0)),
         deaths: Math.floor(num(pv['deaths'], 0)),
         crafted: Math.floor(num(pv['crafted'], 0)),
         escaped: pv['escaped'] === true,
@@ -339,6 +347,8 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
         (save.players[pid] as PlayerSave).tutPaid = parseTut(pv['tutPaid'], 0, pv['tutV']);
         (save.players[pid] as PlayerSave).tutV = TUT_VERSION;
       }
+      const daily = parseDaily(pv['daily']);
+      if (daily) (save.players[pid] as PlayerSave).daily = daily;
     }
   }
   if (Array.isArray(d['flags']))

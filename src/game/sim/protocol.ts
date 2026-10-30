@@ -128,6 +128,8 @@ export interface MeNet {
   spawnSet: boolean;
   escaped: boolean;
   kills: number;
+  /** The Bloom slain (kills without the animals). */
+  slain: number;
   crafted: number;
   deaths: number;
   xp: number;
@@ -136,6 +138,8 @@ export interface MeNet {
   ads: RewardDays;
   /** Survival basics: the step you're on (TUT_DONE: finished or skipped). */
   tut: number;
+  /** Today's daily goal (when the island knows the date): which, how far, done. */
+  daily?: { day: number; goal: string; n: number; done: boolean };
 }
 
 export interface RescueNet {
@@ -233,7 +237,7 @@ export type S2C =
   | { type: 'progress'; flags: string[]; notes: string[] }
   | {
       type: 'event';
-      e: 'dusk' | 'night' | 'bloom' | 'dawn' | 'dead' | 'respawn' | 'win' | 'note';
+      e: 'dusk' | 'night' | 'bloom' | 'dawn' | 'dead' | 'respawn' | 'win' | 'note' | 'daily';
       text?: string;
       id?: string;
     }

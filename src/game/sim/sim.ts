@@ -57,6 +57,7 @@ import {
 import { FIRST_EVENT, compass, rollLoot, runEvents, sponsorPod } from './events';
 import { isRewardKind, islandDay, rewardReady } from '../ads';
 import { TUTORIAL, TUT_DONE, TUT_GIFT, TUT_VERSION, builtBy, type TutView } from '../tutorial';
+import { DAILY_GIFT, DAILY_XP, dailyGoal, utcDay, type DailyKind } from '../daily';
 import { parseWeather, runWeather, type WeatherState } from './weather';
 import { burrowAll, damageMob, runDirector, spawnMob, updateMobs } from './mobs';
 import { MONSTERS, PET_NAMES } from '../content/monsters';
@@ -143,6 +144,9 @@ export class IslandSim {
   weather: WeatherState;
   /** Who may change the rules: the solo player, or the host of a co-op room. */
   owner = '';
+  /** The wall clock (ms), handed in by the link or the room before each tick: the daily goal's
+   * date. 0 until then. */
+  wallMs = 0;
   /** The island's multiplayer code (kept in the save). */
   readonly code: string | undefined;
   readonly parts: IslandParts;
@@ -205,6 +209,7 @@ export class IslandSim {
         lastUse: -99,
         lastPos: this.time,
         kills: p.kills,
+        slain: p.slain ?? 0,
         deaths: p.deaths,
         crafted: p.crafted,
         escaped: p.escaped,
@@ -216,6 +221,7 @@ export class IslandSim {
         lastBag: null,
         tut: p.tut ?? TUT_DONE,
         tutPaid: p.tutPaid ?? (p.tut === undefined ? TUT_DONE : 0),
+        ...(p.daily ? { daily: { ...p.daily } } : {}),
       });
     }
     for (const f of save.flags) this.flags.add(f);
@@ -339,6 +345,7 @@ export class IslandSim {
         lastUse: -99,
         lastPos: this.time,
         kills: 0,
+        slain: 0,
         deaths: 0,
         crafted: 0,
         escaped: false,
@@ -448,6 +455,7 @@ export class IslandSim {
         alive: p.alive,
         spawn: p.spawn,
         kills: p.kills,
+        slain: p.slain ?? 0,
         deaths: p.deaths,
         crafted: p.crafted,
         escaped: p.escaped,
@@ -456,6 +464,7 @@ export class IslandSim {
         tut: p.tut,
         tutPaid: p.tutPaid,
         tutV: TUT_VERSION,
+        ...(p.daily ? { daily: { ...p.daily } } : {}),
       };
     }
     return {
@@ -688,8 +697,10 @@ export class IslandSim {
         this.give(p, pick.item, yieldOf(pick.n, this.rules.yield));
       }
       this.gainXp(p, XP.luggage);
+      this.did(p, 'search');
     } else {
       this.gainXp(p, def.tool === 'hand' ? XP.pick : XP.fell);
+      this.did(p, def.tool === 'hand' ? 'pick' : 'fell');
       // Forager: sometimes one more from bushes, branches and stones; Scavenger from wreckage.
       const first = def.drops[0];
       const extra =
@@ -1331,6 +1342,8 @@ export class IslandSim {
     this.give(p, r.out, r.n);
     p.crafted++;
     this.gainXp(p, r.station === 'bench' || r.station === 'mash' ? XP.craftBench : XP.craft);
+    this.did(p, 'craft');
+    if (r.station === 'fire' || r.station === 'pot') this.did(p, 'cook');
     if (last) {
       this.fx('craft', p.x, p.z, p.id);
       this.toast(p.id, `Crafted ${r.n > 1 ? `${r.n} ` : ''}${ITEMS[r.out]?.name ?? r.out}`);
@@ -1349,6 +1362,34 @@ export class IslandSim {
 
   // -------------------------------------------------------------------------
   // Levels and skills (skills.ts).
+
+  /** Today's date (UTC days) from the wall clock the link hands in; -1 before it does. */
+  wallDay(): number {
+    return this.wallMs > 0 ? utcDay(this.wallMs) : -1;
+  }
+
+  /** Something that may count towards today's daily goal; done once, it pays once. */
+  did(p: SimPlayer, kind: DailyKind, n = 1): void {
+    const day = this.wallDay();
+    if (day < 0) return;
+    if (p.daily?.day !== day) p.daily = { day, n: 0, done: false };
+    const goal = dailyGoal(day);
+    const d = p.daily;
+    if (d.done || goal.kind !== kind) return;
+    d.n = Math.min(goal.need, d.n + n);
+    if (d.n >= goal.need) {
+      d.done = true;
+      for (const g of DAILY_GIFT) this.give(p, g.id, g.n);
+      this.gainXp(p, DAILY_XP);
+      this.fx('levelup', p.x, p.z, p.id, 0);
+      this.out(p.id, {
+        type: 'event',
+        e: 'daily',
+        text: `${goal.icon} Daily goal done: ${goal.text}! A care package: two bandages and water.`,
+      });
+    }
+    this.dirty(p);
+  }
 
   /** XP for something a player did; a new level brings a skill point. */
   gainXp(p: SimPlayer, n: number): void {
@@ -1485,6 +1526,7 @@ export class IslandSim {
     this.broadcast({ type: 'build', b: this.net(b) });
     this.fx('build', x, z, p.id);
     this.gainXp(p, XP.build);
+    this.did(p, 'build');
     this.dirty(p);
   }
 
@@ -2041,7 +2083,9 @@ export class IslandSim {
       const bloomed = dayInfo(this.time - 30, this.rules.bloomEvery).bloom;
       for (const id of this.online) {
         const q = this.players.get(id);
-        if (q?.alive && !q.escaped) this.gainXp(q, bloomed ? XP.bloomDawn : XP.dawn);
+        if (!q?.alive || q.escaped) continue;
+        this.gainXp(q, bloomed ? XP.bloomDawn : XP.dawn);
+        this.did(q, 'night');
       }
     }
   }
@@ -2329,12 +2373,23 @@ export class IslandSim {
       spawnSet: p.spawn !== null,
       escaped: p.escaped,
       kills: p.kills,
+      slain: p.slain,
       crafted: p.crafted,
       deaths: p.deaths,
       xp: p.xp,
       perks: p.perks,
       ads: p.ads,
       tut: p.tut,
+      ...(this.wallDay() >= 0
+        ? {
+            daily: {
+              day: this.wallDay(),
+              goal: dailyGoal(this.wallDay()).id,
+              n: p.daily?.day === this.wallDay() ? p.daily.n : 0,
+              done: p.daily?.day === this.wallDay() && p.daily.done,
+            },
+          }
+        : {}),
     };
     const key = JSON.stringify(me);
     if (this.lastMe.get(p.id) === key) return;

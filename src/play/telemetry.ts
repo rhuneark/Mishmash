@@ -6,6 +6,8 @@
 import * as run from '../sdk/run';
 import { TUTORIAL, TUT_DONE } from '../game/tutorial';
 import type { MeNet } from '../game/sim/protocol';
+import type { Happened } from '../game/records';
+import { noteHappened } from './records';
 
 /** First-session funnel steps (1 and 2 are the hub's: app loaded, intro done). */
 export const FUNNEL = {
@@ -22,7 +24,9 @@ interface Seen {
   alive: boolean;
   escaped: boolean;
   crafted: number;
+  slain: number;
   day: number;
+  dailyDone: boolean;
 }
 
 export class Telemetry {
@@ -52,11 +56,18 @@ export class Telemetry {
       alive: me.alive,
       escaped: me.escaped,
       crafted: me.crafted,
+      slain: me.slain,
       day,
+      dailyDone: !!me.daily?.done,
     };
     const was = this.last;
     this.last = seen;
-    if (!was) return;
+    if (!was) {
+      // The records count from here (the day reached may already be one).
+      if (me.alive) noteHappened({ day });
+      return;
+    }
+    this.records(was, seen, me);
     const sec = Math.round(now - this.startedAt);
     if (seen.tut > was.tut && seen.tut <= TUT_DONE) {
       for (let i = was.tut; i < seen.tut; i++) {
@@ -80,6 +91,20 @@ export class Telemetry {
       run.track('escaped', { day, sec });
       run.funnel(FUNNEL.escaped, 'escaped');
     }
+  }
+
+  /** What may beat a record (records.ts): changes since the last look. */
+  private records(was: Seen, seen: Seen, me: MeNet): void {
+    const h: Happened = {};
+    if (seen.day > was.day && seen.alive) {
+      h.day = seen.day;
+      h.nights = seen.day - was.day;
+    }
+    if (seen.slain > was.slain) h.slain = seen.slain - was.slain;
+    if (seen.crafted > was.crafted) h.crafted = seen.crafted - was.crafted;
+    if (!was.escaped && seen.escaped) h.escapedOn = seen.day;
+    if (!was.dailyDone && seen.dailyDone && me.daily) h.dailyOn = me.daily.day;
+    if (Object.keys(h).length) noteHappened(h);
   }
 
   tutorialSkipped(step: number): void {

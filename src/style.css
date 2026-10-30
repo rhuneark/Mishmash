@@ -1070,6 +1070,49 @@ button:disabled {
   text-decoration: none;
 }
 
+/* Today's daily goal, under the quests. */
+.daily-chip {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 8px;
+  width: 184px;
+  max-width: 48vw;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: 3px solid #7ad7ff;
+  border-radius: 10px;
+  background: rgba(10, 10, 24, 0.68);
+  color: var(--text);
+}
+
+.daily-kicker {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 800;
+  color: #9fe3ff;
+}
+
+.daily-text {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.daily-count {
+  align-self: end;
+  font-size: 14px;
+  font-weight: 900;
+  color: #9fe3ff;
+}
+
+.game.pc .hud .daily-chip {
+  width: 250px;
+}
+
+.game.landscape .daily-chip {
+  width: 210px;
+}
+
 /* The quest being tracked, and its next step. */
 .quest.tracked {
   border-color: rgba(255, 211, 106, 0.5);
@@ -3410,7 +3453,8 @@ button:disabled {
 }
 
 .title-continue,
-.title-friends {
+.title-friends,
+.title-daily {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3478,6 +3522,83 @@ button:disabled {
 
 .news-section + .news-section {
   margin-top: 10px;
+}
+
+/* Today's goal and the streak on the title (opens 🏆 Records). */
+.title-menu .menu-btn.title-daily {
+  border-color: rgba(122, 215, 255, 0.55);
+  background: rgba(20, 40, 60, 0.82);
+}
+
+/* 🏆 Records: your records and the leaderboards. */
+.records {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.records-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+}
+
+.records-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: calc(14px * var(--fs));
+}
+
+.records-row dt {
+  color: var(--text-soft);
+}
+
+.records-row dd {
+  margin: 0;
+  font-weight: 800;
+  text-align: right;
+}
+
+.board-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board-rows li {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  font-size: calc(14px * var(--fs));
+}
+
+.board-rows li.mine {
+  background: rgba(255, 211, 106, 0.16);
+  color: #ffe6a8;
+  font-weight: 800;
+}
+
+.board-rank {
+  color: var(--text-soft);
+  font-weight: 800;
+}
+
+.board-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-score {
+  font-weight: 900;
 }
 
 /* 🗂️ Your islands: the save slots. */

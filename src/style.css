@@ -4610,3 +4610,109 @@ button:disabled {
   color: var(--bg);
   animation: blink 1.6s infinite;
 }
+
+/* 👕 Wardrobe: the survivor turning in the outfit, hats and coats, the shop's sets */
+
+.wardrobe {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wardrobe-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: radial-gradient(circle at 50% 42%, #8fb6a0 0%, #4f6f63 45%, var(--panel) 80%);
+}
+
+.wardrobe-canvas {
+  width: 100%;
+  max-width: 260px;
+  height: 220px;
+  display: block;
+}
+
+.wardrobe-wearing {
+  font-weight: 800;
+  font-size: calc(15px * var(--fs));
+  text-align: center;
+}
+
+.wardrobe-lock {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  font-size: calc(14px * var(--fs));
+  text-align: center;
+}
+
+.wardrobe-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.wardrobe-tile {
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  position: relative;
+}
+
+.wardrobe-tile.on {
+  border-color: var(--accent);
+}
+
+.wardrobe-tile.locked .wardrobe-name {
+  opacity: 0.7;
+}
+
+.wardrobe-name {
+  font-weight: 800;
+  font-size: calc(15px * var(--fs));
+}
+
+.wardrobe-how {
+  font-size: calc(14px * var(--fs));
+  color: var(--text-soft);
+}
+
+.wardrobe-swatch {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid;
+}
+
+.wardrobe-shop {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wardrobe-pack {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wardrobe-pack .btn {
+  flex: none;
+}

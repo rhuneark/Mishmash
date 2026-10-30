@@ -11,14 +11,23 @@ import { SubPage } from './ui/SubPage';
 import { Play, type PlayChoice } from './screens/Play';
 import { Game } from './play/Game';
 import type { GameClient } from './play/client';
-import { FAIL_TEXT, chooseSlot, startHost, startJoin, startSolo } from './play/session';
+import {
+  FAIL_TEXT,
+  chooseSlot,
+  startHost,
+  startJoin,
+  startPublic,
+  startSolo,
+} from './play/session';
 import { LATEST, unseenNews } from './game/news';
 import { Records } from './screens/Records';
 import { loadRecords } from './play/records';
 import { planReminders } from './play/remind';
+import { Wardrobe } from './screens/Wardrobe';
+import { loadOutfits } from './play/outfits';
 
 /** The title screen, or a page opened from it (each has a back button). */
-type Screen = 'play' | 'suggest' | 'dev' | 'records';
+type Screen = 'play' | 'suggest' | 'dev' | 'records' | 'wardrobe';
 
 const REPORT_CHECK_MS = 5 * 60_000;
 
@@ -45,6 +54,7 @@ export default function App() {
       chooseSlot(next.slot);
       setSave(next);
       void loadRecords();
+      void loadOutfits();
       // A visit: the next days' reminders start from now.
       planReminders();
       void run.setItem(SAVE_KEY, JSON.stringify(next));
@@ -84,7 +94,9 @@ export default function App() {
         ? await startSolo(choice.fresh)
         : choice.kind === 'host'
           ? await startHost(choice.fresh)
-          : await startJoin(choice.code);
+          : choice.kind === 'public'
+            ? await startPublic()
+            : await startJoin(choice.code);
     setStarting(false);
     if (!res.ok) {
       setPlayError(FAIL_TEXT[res.reason]);
@@ -159,6 +171,7 @@ export default function App() {
             onStart={(c) => void start(c)}
             onSuggest={() => setScreen('suggest')}
             onRecords={() => setScreen('records')}
+            onWardrobe={() => setScreen('wardrobe')}
             onDev={owner ? () => setScreen('dev') : undefined}
             devCount={openReports + newIdeas}
             error={playError}
@@ -179,6 +192,11 @@ export default function App() {
         {screen === 'records' && (
           <SubPage title="🏆 Records" onBack={() => setScreen('play')}>
             <Records />
+          </SubPage>
+        )}
+        {screen === 'wardrobe' && (
+          <SubPage title="👕 Wardrobe" onBack={() => setScreen('play')}>
+            <Wardrobe />
           </SubPage>
         )}
         {screen === 'dev' && owner && (

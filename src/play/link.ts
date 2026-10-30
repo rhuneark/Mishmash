@@ -13,6 +13,8 @@ export interface Link {
   readonly mode: LinkMode;
   /** The island's multiplayer code (friends join with it once it's open). */
   readonly code: string;
+  /** A public island (strangers come and go; found without a code). */
+  readonly open: boolean;
   send(msg: C2S): void;
   onMessage(cb: (msg: S2C) => void): void;
   /** Connection trouble for the HUD (co-op). */
@@ -30,6 +32,7 @@ const AUTOSAVE_MS = 30_000;
 export class LocalLink implements Link {
   readonly mode = 'solo' as const;
   readonly code: string;
+  readonly open = false;
   private readonly sim: IslandSim;
   private handler: ((msg: S2C) => void) | null = null;
   private queue: S2C[] = [];
@@ -59,7 +62,7 @@ export class LocalLink implements Link {
   }
 
   send(msg: C2S): void {
-    if (msg.type === 'hello') this.sim.join(this.playerId, msg.name);
+    if (msg.type === 'hello') this.sim.join(this.playerId, msg.name, msg.look);
     else this.sim.handle(this.playerId, msg);
     this.flush();
   }

@@ -1,0 +1,120 @@
+{
+  "items": [
+    {
+      "itemId": "outfit_verdance",
+      "name": "Verdance set",
+      "description": "The hood and lab coat Kessler Station's staff wore. Looks only.",
+      "category": "non_consumable",
+      "price": {
+        "type": "bucks",
+        "value": "199"
+      },
+      "entitlements": [
+        {
+          "entitlementId": "outfit_verdance",
+          "quantity": 1,
+          "consumable": false
+        }
+      ],
+      "unique": true,
+      "active": true,
+      "regions": [],
+      "refundEligible": false,
+      "refundWindowHours": 0,
+      "tags": ["outfit"],
+      "sortOrder": 1,
+      "releasedAt": null,
+      "expiresAt": null
+    },
+    {
+      "itemId": "outfit_captain",
+      "name": "Captain's set",
+      "description": "A captain's hat and a navy coat over white trousers. Looks only.",
+      "category": "non_consumable",
+      "price": {
+        "type": "bucks",
+        "value": "199"
+      },
+      "entitlements": [
+        {
+          "entitlementId": "outfit_captain",
+          "quantity": 1,
+          "consumable": false
+        }
+      ],
+      "unique": true,
+      "active": true,
+      "regions": [],
+      "refundEligible": false,
+      "refundWindowHours": 0,
+      "tags": ["outfit"],
+      "sortOrder": 2,
+      "releasedAt": null,
+      "expiresAt": null
+    },
+    {
+      "itemId": "outfit_night",
+      "name": "Night set",
+      "description": "A top hat and a midnight suit, for Bloom nights. Looks only.",
+      "category": "non_consumable",
+      "price": {
+        "type": "bucks",
+        "value": "199"
+      },
+      "entitlements": [
+        {
+          "entitlementId": "outfit_night",
+          "quantity": 1,
+          "consumable": false
+        }
+      ],
+      "unique": true,
+      "active": true,
+      "regions": [],
+      "refundEligible": false,
+      "refundWindowHours": 0,
+      "tags": ["outfit"],
+      "sortOrder": 3,
+      "releasedAt": null,
+      "expiresAt": null
+    },
+    {
+      "itemId": "outfit_all",
+      "name": "Wardrobe bundle",
+      "description": "All three sets for less. Looks only.",
+      "category": "non_consumable",
+      "price": {
+        "type": "bucks",
+        "value": "449"
+      },
+      "entitlements": [
+        {
+          "entitlementId": "outfit_verdance",
+          "quantity": 1,
+          "consumable": false
+        },
+        {
+          "entitlementId": "outfit_captain",
+          "quantity": 1,
+          "consumable": false
+        },
+        {
+          "entitlementId": "outfit_night",
+          "quantity": 1,
+          "consumable": false
+        }
+      ],
+      "unique": true,
+      "active": true,
+      "regions": [],
+      "refundEligible": false,
+      "refundWindowHours": 0,
+      "tags": ["bundle"],
+      "sortOrder": 4,
+      "releasedAt": null,
+      "expiresAt": null
+    }
+  ],
+  "sales": [],
+  "collections": []
+}

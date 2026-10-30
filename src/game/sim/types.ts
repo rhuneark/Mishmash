@@ -17,6 +17,8 @@ export interface SimPlayer {
   id: string;
   name: string;
   color: number;
+  /** The outfit worn (outfits.ts code; not saved: it comes with each `hello`). */
+  look: string;
   x: number;
   z: number;
   ry: number;

@@ -2147,12 +2147,41 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await noSideScroll('records');
   await shot('9d-records');
   await page.getByRole('button', { name: '‹ Back' }).click();
+  // 👕 Wardrobe: a free coat goes on at once, a hat for a record isn't the player's yet,
+  // and a shop set (test mode: free) unlocks its hat.
+  await page.getByRole('button', { name: /Wardrobe/ }).click();
+  await page.locator('.wardrobe-canvas').waitFor();
+  await page.getByRole('tab', { name: /Coats/ }).click();
+  await page.locator('.wardrobe-tile', { hasText: 'Teal' }).click();
+  await page.locator('.wardrobe-wearing', { hasText: 'Teal' }).waitFor();
+  await page.getByRole('tab', { name: /Hats/ }).click();
+  await page.locator('.wardrobe-tile', { hasText: 'Pilot' }).click();
+  await page.locator('.wardrobe-lock').getByText('Escape an island').waitFor();
+  await page.getByRole('button', { name: 'Take it off' }).click();
+  await page.locator('.wardrobe-tile', { hasText: 'Verdance hood' }).click();
+  await page.getByRole('button', { name: /Get the Verdance set/ }).click();
+  await page.getByText('Verdance set is yours').waitFor({ timeout: 10000 });
+  await page.locator('.wardrobe-wearing', { hasText: 'Verdance hood' }).waitFor();
+  await page.waitForTimeout(500);
+  await noSideScroll('wardrobe');
+  await shot('9e-wardrobe');
+  await page.getByRole('button', { name: '‹ Back' }).click();
   // Islands keep side by side: a new one goes into a free slot, not over this one.
   await page.getByRole('button', { name: 'Your islands (1/3)' }).waitFor();
   await page.getByRole('button', { name: /New island/ }).click();
   const second = await page.locator('[data-testid="island-name"]').textContent();
   await page.getByRole('button', { name: /Start on/ }).click();
   await page.locator('.hud').waitFor({ timeout: 60000 });
+  // The outfit came along: the island knows it and its colour is the coat's.
+  const worn = await game(page, () => {
+    const c = window.__game.client;
+    const me = c.players.find((p) => p.id === c.you);
+    return [me?.look, me?.color];
+  });
+  check(
+    worn[0] === 'hood.teal' && worn[1] === 0x5fd3d0,
+    `${tag} wardrobe: the island didn't get the outfit (${worn})`,
+  );
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.getByRole('button', { name: /Save and quit/ }).click();
   await page.getByRole('button', { name: new RegExp(`Continue · Day 1 on ${second}`) }).waitFor();
@@ -2331,6 +2360,55 @@ async function playCoop() {
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByRole('button', { name: /Close the island and quit/ }).click();
   await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 30000 });
+  await friend.page.getByText('Island closed').waitFor({ timeout: 15000 });
+  await friend.page.getByRole('button', { name: 'Back to the title' }).click();
+  await host.page.getByRole('button', { name: /Play with strangers/ }).click();
+  await host.page.locator('.hud').waitFor({ timeout: 60000 });
+  check(
+    await game(host.page, () => {
+      const l = window.__game.client.link;
+      return l.open && l.mode === 'host' && l.code === '';
+    }),
+    'strangers: the first one in should host a public island',
+  );
+  const publicSeed = await game(host.page, () => window.__game.client.island.spec.seed);
+  await friend.page.getByRole('button', { name: /Play with strangers/ }).click();
+  await friend.page.locator('.hud').waitFor({ timeout: 60000 });
+  check(
+    (await game(friend.page, () => window.__game.client.island.spec.seed)) === publicSeed,
+    "strangers: the second one didn't land on the open public island",
+  );
+  await until(
+    friend.page,
+    () => window.__game.client.others.size === 1,
+    'strangers: the stranger never saw the host',
+  );
+  await friend.page.getByRole('button', { name: 'Menu' }).click();
+  await friend.page.getByRole('button', { name: /Public island/ }).click();
+  await friend.page.getByText('survivors from anywhere').waitFor();
+  await friend.page.keyboard.press('Escape');
+  await friend.page.keyboard.press('Escape');
+  await host.page.getByRole('button', { name: 'Menu' }).click();
+  await host.page.getByRole('button', { name: /Leave the island/ }).click();
+  await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 30000 });
+  // The host left: the island goes on, and the stranger hosts it now.
+  await until(
+    friend.page,
+    () => window.__game.client.link.mode === 'host',
+    "strangers: the island didn't pass to the one still there",
+    20000,
+  );
+  await friend.page.getByText('You host this public island now').waitFor({ timeout: 15000 });
+  check(
+    (await friend.page.getByText('Island closed').count()) === 0,
+    'strangers: the island closed when its host left',
+  );
+  await friend.page.getByRole('button', { name: 'Menu' }).click();
+  await friend.page.getByRole('button', { name: /Leave the island/ }).click();
+  await friend.page
+    .getByRole('button', { name: /Play with strangers/ })
+    .waitFor({ timeout: 30000 });
+  console.log('strangers: done');
   for (const who of [host, friend]) {
     check(who.errors.length === 0, `co-op console errors: ${who.errors.join(' | ')}`);
     await who.context.close();

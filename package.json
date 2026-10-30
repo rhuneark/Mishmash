@@ -14,7 +14,8 @@
     "format": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --write",
     "format:check": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --check",
     "playthrough": "node scripts/playthrough.mjs",
-    "thumbnail": "node scripts/thumbnail.mjs"
+    "thumbnail": "node scripts/thumbnail.mjs",
+    "shop-config": "tsx scripts/shop-config.ts && prettier --write rundot/shop.config.json"
   },
   "keywords": [
     "react",

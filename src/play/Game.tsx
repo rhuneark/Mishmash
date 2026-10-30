@@ -369,9 +369,16 @@ export function Game(props: {
     };
   }, [client, ready, input]);
 
-  // Hosting: say which code friends join with.
+  // Hosting: say which code friends join with (a public island needs none).
   useEffect(() => {
-    if (ready && client.link.mode === 'host')
+    if (!ready) return;
+    if (client.link.open)
+      client.toast(
+        client.link.mode === 'host'
+          ? 'You opened a public island: survivors from anywhere can land here.'
+          : 'A public island: be kind, and stick together at night.',
+      );
+    else if (client.link.mode === 'host')
       client.toast(`Your island is open: friends join with ${showJoinCode(client.link.code)}.`);
   }, [client, ready]);
 
@@ -380,7 +387,7 @@ export function Game(props: {
     if (!ready || !client.island) return;
     let cancelled = false;
     const image = islandImage(client.island);
-    void loadFog(fogKey(client.link.mode === 'guest'), seed).then((fog) => {
+    void loadFog(fogKey(client.link.mode === 'guest' || client.link.open), seed).then((fog) => {
       if (!cancelled) setMap({ fog, image });
     });
     return () => {
@@ -412,7 +419,7 @@ export function Game(props: {
     let last = performance.now();
     let fogAcc = 0;
     let fogSave = 0;
-    const fogAt = fogKey(client.link.mode === 'guest');
+    const fogAt = fogKey(client.link.mode === 'guest' || client.link.open);
     let fpsAcc = 0;
     let frames = 0;
     // How smoothly it runs: Auto quality steps down on a device that can't keep up, and a
@@ -616,7 +623,7 @@ export function Game(props: {
         <div className="game-loading">
           <div className="loading-island">🏝️</div>
           <div className="loading-text">{client.waitText}</div>
-          {client.link.mode === 'guest' && (
+          {client.link.mode === 'guest' && client.link.code && (
             <div className="muted">Island code {showJoinCode(client.link.code)}</div>
           )}
           <button className="btn ghost" onClick={props.onLeave}>

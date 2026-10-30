@@ -1,6 +1,8 @@
 // Co-op: the island authority runs in a RUN room (src/server/IslandRoom.ts), found
 // by the island's multiplayer code. The host uploads their island save; the room
-// sends it back every minute so the host keeps the progress.
+// sends it back every minute so the host keeps the progress. A public island (strangers)
+// is found by `open: 'public'`: the room says who hosts (S2C `role`), and the host can
+// change when the one before leaves.
 
 import * as run from '../sdk/run';
 import { PartBuffer, splitParts, type C2S, type S2C } from '../game/sim/protocol';
@@ -11,9 +13,11 @@ export type RoomOpen =
   { ok: true; link: RoomLink } | { ok: false; reason: 'login' | 'notfound' | 'full' | 'error' };
 
 export class RoomLink implements Link {
-  readonly mode: LinkMode;
-  /** The island's multiplayer code. */
+  /** A public island's host can change while it runs (S2C `role`). */
+  mode: LinkMode;
+  /** The island's multiplayer code ('' on a public island: it's found without one). */
   readonly code: string;
+  readonly open: boolean;
   readonly playerId: string;
   private readonly conn: run.RoomConn;
   private readonly saves = new PartBuffer();
@@ -25,14 +29,23 @@ export class RoomLink implements Link {
     mode: LinkMode,
     code: string,
     private readonly onSave: (save: IslandSave) => void,
+    /** A public island: what to upload when the room asks this player to host. */
+    private readonly mine: (() => Promise<IslandSave>) | null = null,
   ) {
     this.conn = conn;
     this.mode = mode;
     this.code = code;
+    this.open = !!mine;
     this.playerId = conn.playerId;
     conn.onMessage((raw) => {
       const msg = raw as S2C;
       if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return;
+      if (msg.type === 'role') {
+        if (!this.open || !msg.host) return;
+        this.mode = 'host';
+        if (msg.upload && this.mine) void this.mine().then((save) => this.upload(save));
+        return;
+      }
       if (msg.type === 'save') {
         if (this.mode !== 'host') return;
         const whole = this.saves.add(msg.part, msg.parts, msg.data);
@@ -59,9 +72,30 @@ export class RoomLink implements Link {
     const res = await run.islandRoom('island', save.code);
     if (!res.ok) return res;
     const link = new RoomLink(res.room, 'host', save.code, onSave);
-    const parts = splitParts(JSON.stringify(save));
-    parts.forEach((data, part) => res.room.send({ type: 'init', part, parts: parts.length, data }));
+    link.upload(save);
     return { ok: true, link };
+  }
+
+  /**
+   * A public island with strangers: joins one that's open, or opens yours (`mine`) when
+   * the room asks (nobody's there yet). Its saves come here while this player hosts it.
+   */
+  static async quick(
+    mine: () => Promise<IslandSave>,
+    onSave: (save: IslandSave) => void,
+  ): Promise<RoomOpen> {
+    const res = await run.publicRoom('island');
+    if (!res.ok) return res;
+    const link = new RoomLink(res.room, 'guest', '', onSave, mine);
+    res.room.send({ type: 'quick' });
+    return { ok: true, link };
+  }
+
+  private upload(save: IslandSave): void {
+    const parts = splitParts(JSON.stringify(save));
+    parts.forEach((data, part) =>
+      this.conn.send({ type: 'init', part, parts: parts.length, data }),
+    );
   }
 
   /** Joins a friend's island by its multiplayer code (waits there until it's open). */

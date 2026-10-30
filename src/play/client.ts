@@ -72,6 +72,7 @@ import { WEATHER_KINDS, type WeatherKind } from '../game/sim/weather';
 import { footprint, pushOutOfBox } from '../game/sim/types';
 import { DEEP, HALF, forNodesNear, heightAt, poolNear, type Island } from '../game/world';
 import type { Link } from './link';
+import { wornLook } from './outfits';
 import { Telemetry } from './telemetry';
 
 export const WALK = 4.2;
@@ -435,8 +436,8 @@ export class GameClient {
   }
 
   start(): void {
-    this.telemetry = new Telemetry(this.link.mode, this.clock);
-    this.link.send({ type: 'hello', name: this.name });
+    this.telemetry = new Telemetry(this.link.open ? 'public' : this.link.mode, this.clock);
+    this.link.send({ type: 'hello', name: this.name, look: wornLook() });
   }
 
   // -------------------------------------------------------------------------

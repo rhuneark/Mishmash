@@ -34,7 +34,9 @@ import { STEPS } from './Intro';
 export type PlayChoice =
   | { kind: 'solo'; fresh: NewIsland | null }
   | { kind: 'host'; fresh: NewIsland | null }
-  | { kind: 'join'; code: string };
+  | { kind: 'join'; code: string }
+  /** A public island with strangers. */
+  | { kind: 'public' };
 
 /** The island behind the title when there's no save yet (autumn, for October). */
 const SHOWCASE: IslandSpec = { seed: 7207, ...CLASSIC, climate: 'autumn' };
@@ -46,6 +48,7 @@ export function Play({
   onStart,
   onSuggest,
   onRecords,
+  onWardrobe,
   onDev,
   devCount = 0,
   error,
@@ -60,6 +63,7 @@ export function Play({
   onStart: (c: PlayChoice) => void;
   onSuggest: () => void;
   onRecords: () => void;
+  onWardrobe: () => void;
   /** The owner's Dev area (absent for everyone else). */
   onDev?: () => void;
   /** Open reports and new suggestions waiting in the Dev area. */
@@ -258,6 +262,16 @@ export function Play({
                   🔑 Join a friend
                 </button>
               )}
+              <button
+                className="menu-btn title-friends"
+                onClick={() => onStart({ kind: 'public' })}
+              >
+                <span>🌍 Play with strangers</span>
+                <span className="title-continue-sub">A public island, up to 4 survivors</span>
+              </button>
+              <button className="menu-btn" onClick={onWardrobe}>
+                👕 Wardrobe
+              </button>
               <div className="title-row">
                 <button className="menu-btn" onClick={() => setDialog('settings')}>
                   ⚙️ Settings

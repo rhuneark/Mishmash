@@ -58,6 +58,7 @@ import { FIRST_EVENT, compass, rollLoot, runEvents, sponsorPod } from './events'
 import { isRewardKind, islandDay, rewardReady } from '../ads';
 import { TUTORIAL, TUT_DONE, TUT_GIFT, TUT_VERSION, builtBy, type TutView } from '../tutorial';
 import { DAILY_GIFT, DAILY_XP, dailyGoal, utcDay, type DailyKind } from '../daily';
+import { lookCode, parseLook, shirtOf } from '../outfits';
 import { parseWeather, runWeather, type WeatherState } from './weather';
 import { burrowAll, damageMob, runDirector, spawnMob, updateMobs } from './mobs';
 import { MONSTERS, PET_NAMES } from '../content/monsters';
@@ -144,6 +145,8 @@ export class IslandSim {
   weather: WeatherState;
   /** Who may change the rules: the solo player, or the host of a co-op room. */
   owner = '';
+  /** A public island (strangers): only who built a piece, or the host, takes it down. */
+  open = false;
   /** The wall clock (ms), handed in by the link or the room before each tick: the daily goal's
    * date. 0 until then. */
   wallMs = 0;
@@ -193,6 +196,7 @@ export class IslandSim {
         id,
         name: p.name,
         color: p.color,
+        look: '',
         x: p.x,
         z: p.z,
         ry: 0,
@@ -317,7 +321,7 @@ export class IslandSim {
   // -------------------------------------------------------------------------
   // Joining.
 
-  join(id: string, name: string): void {
+  join(id: string, name: string, look?: string): void {
     let p = this.players.get(id);
     if (!p) {
       const inv = emptyInv();
@@ -329,6 +333,7 @@ export class IslandSim {
         id,
         name: name.slice(0, 24) || 'Survivor',
         color: colorFor(id),
+        look: '',
         x: spawn.x + Math.cos(a) * 2,
         z: spawn.z + Math.sin(a) * 2,
         ry: Math.PI,
@@ -362,6 +367,10 @@ export class IslandSim {
     } else if (name) {
       p.name = name.slice(0, 24);
     }
+    // The outfit (looks only): its coat is the survivor's colour on the island.
+    const worn = parseLook(look);
+    p.look = lookCode(worn);
+    p.color = shirtOf(worn, colorFor(id));
     p.lastPos = this.time;
     this.online.add(id);
     const data = JSON.stringify(this.snapshot());
@@ -382,7 +391,7 @@ export class IslandSim {
   playerList() {
     return [...this.online].map((id) => {
       const p = this.players.get(id) as SimPlayer;
-      return { id, name: p.name, color: p.color };
+      return { id, name: p.name, color: p.color, look: p.look };
     });
   }
 
@@ -1533,6 +1542,11 @@ export class IslandSim {
   private onDemolish(p: SimPlayer, id: number): void {
     const b = this.buildings.get(id);
     if (!p.alive || !b || dist(p.x, p.z, b.x, b.z) > BUILD_REACH + 1) return;
+    if (this.open && b.owner !== p.id && p.id !== this.owner) {
+      this.toast(p.id, 'On a public island only who built it takes it down.');
+      this.fx('deny', b.x, b.z, p.id);
+      return;
+    }
     const def = BUILDINGS[b.kind];
     this.buildings.delete(id);
     this.broadcast({ type: 'unbuild', id });

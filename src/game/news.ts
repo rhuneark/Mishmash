@@ -10,6 +10,15 @@ export interface News {
 
 export const NEWS: News[] = [
   {
+    version: '1.28',
+    title: 'Strangers and outfits',
+    items: [
+      '🌍 Play with strangers: land on a public island with up to 3 other survivors. When its host leaves, the island goes on.',
+      '👕 Wardrobe: hats and coats for your survivor. Some free, some earned with your records, three sets in the shop.',
+      'Outfits are looks only: everyone on your island sees them, and they never change how you play.',
+    ],
+  },
+  {
     version: '1.27',
     title: 'Daily goals and records',
     items: [

@@ -35,7 +35,7 @@ update to the user with this link)
   slot: straight onto a ready-made one, `session.quickIsland`: tropical, classic terrain, any
   layout, default rules), New island / Choose your island (the New island screen), 🗂️ Your
   islands (N/3), Play with friends (opens your island; shows its multiplayer code), Join a
-  friend (that code), ⚙️ Settings (the game's settings panel without the key list), ❓ How to
+  friend (that code), 🌍 Play with strangers (a public island), 👕 Wardrobe, ⚙️ Settings (the game's settings panel without the key list), ❓ How to
   play, 💡 Suggest an update, 📰 What's new, 🎃 Vote for us in October Jam, and for the owner
   only 🛠️ Dev (· N to check: new suggestions + messages with open reports). Under the island
   buttons: today's daily goal and the 🔥 streak (`DailyLine`; opens 🏆 Records). **First launch**
@@ -660,6 +660,40 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   friends on the New island screen. Realtime needs a RUN sign-in (the SDK prompts). `npm run
   dev` runs a local room server (port 9001; it never disposes rooms and matches criteria the
   same way). Ask the user to try hosting and joining by code on the live build.
+- **Public islands: 🌍 Play with strangers** (v1.28; the coach review: "co-op with
+  strangers"): `run.publicRoom` = `joinOrCreateRoom('island', { criteria: { open: 'public' } })`
+  (friends' rooms have `island: code`, so they never mix; RUN pairs on the same server
+  instance). The client sends C2S `quick`; the room answers S2C `role` (`IslandRoom`): the
+  first one in hosts (`upload`: `RoomLink.quick` uploads their public island, kept apart from
+  the slots in `mishmash_island_public` (`session.PUBLIC_KEY`, `startPublic`; a random island
+  with the default rules the first time), the others land on it as guests. When the host
+  leaves while others play, the island goes on (`handOff`: the next connected survivor gets
+  `role {host}`, `sim.owner`, the saves and a toast; `RoomLink.mode` turns 'host', and their
+  device keeps the island as its public island); alone, it closes as before. `link.open`
+  (public): no code, menus say 🌍 Public island, the host leaves with 🚪 Leave the island, the
+  friends' fog. On a public island (`sim.open`) only a piece's builder (`Building.owner`) or the
+  host takes it down. Chat between strangers is the island chat (RUN's word filter, 🔇 mute).
+- **Outfits and the 👕 Wardrobe** (`game/outfits.ts`, `play/outfits.ts`, `screens/Wardrobe.tsx`,
+  v1.28; the coach review: "cosmetics"): looks only. A hat (`HATS`: none, bandana, straw, flight
+  crew cap, ranger, flower crown, thorn crown, pilot's cap, Verdance hood, captain's hat, top
+  hat) and a coat (`COATS`: your colour, 8 colours, khaki, Bloom hunter, lab coat, captain's
+  coat, midnight: shirt and trousers). `Unlock`: free, a record (`records.ts`: day 5 / 10,
+  15 nights, a 7-day streak, 100 / 300 Bloom slain, an escape) or a shop set. The look is kept
+  in appStorage `mishmash_look` and goes to the island in `hello {look}` (`wornLook()`: what
+  isn't the player's comes off); the authority keeps known ids only (`parseLook`) and the
+  coat's shirt becomes the survivor's colour (`SimPlayer.look`, not saved; `PlayerInfo.look`).
+  The rig wears it (`actors.ts` `Actor(…, look)`, `hatParts`); `view.ts` `dressed` rebuilds a
+  survivor whose look changes. The wardrobe page: a turning preview (`play/WardrobeScene.ts`,
+  made 60 ms after mount like the title backdrop), hat and coat tiles (a locked one is tried on
+  and says how to get it), the shop's sets. **The shop** (`game/shop.ts` `PACKS`, RUN Bits,
+  100 = $1): Verdance set, Captain's set, Night set (199 each) and the Wardrobe bundle (449,
+  offered while no set is owned, `packsFor`); non-consumable entitlements named like the sets
+  (`SETS`), read with `run.listOwned` (mirrored in `mishmash_outfits`), bought with
+  `run.shopPurchase` (one idempotency key per intended purchase, as in The Dood).
+  `rundot/shop.config.json` is generated (`npm run shop-config`; `outfits.test.ts` fails when
+  they differ). Outside RUN the shop is in test mode (free, forgotten on reload). The shop
+  config reaches public players only with the next publish (RUN's storefront reads the
+  `public` tag).
 - **The daily goal** (`game/daily.ts`, v1.27; the coach review: "give players a reason to
   come back tomorrow"): one goal per real (UTC) day, the same for everyone (`DAILY_GOALS`,
   append only; `dailyGoal(day)` a fixed shuffle): fell 10 trees or rocks, craft 8, slay 8 of
@@ -725,6 +759,10 @@ Most features are data first, then a little code:
   reorder), a rig in `render/actors.ts`, behaviour in `sim/mobs.ts` (walkers reuse `walker`),
   spawn rules in `runDirector`, a name in `client.ts` `MOB_NAMES`. Give it a part to drop
   (`drops`) and something the Mashbench makes from it.
+- **New outfit**: a hat or coat in `game/outfits.ts` (an id without dots, its `unlock`), a hat's
+  model in `actors.ts` `hatParts`. A shop one belongs to a set in `game/shop.ts` (new sets:
+  append to `SETS` and `PACKS`, then `npm run shop-config`); never sell anything that helps
+  on the island.
 - **Every new item needs a picture** in `hud/itemIcons.ts` (the test enforces it); draw it on
   the 48×48 grid with the `O`/`T` outline styles and check it on a contact sheet.
 - **New lore**: a note in `content/notes.ts` plus a spot in an existing POI, or another
@@ -783,6 +821,8 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
   daily.ts           the daily goal: the rotation, the day, the streak, the care package
   records.ts         records across islands and the leaderboards they feed
   reminders.ts       daily reminders: when (quiet hours) and what each says
+  outfits.ts         hats and coats, how each is unlocked, look codes
+  shop.ts            the shop's outfit sets (RUN Bits) and the shop config made from them
   content/           items, recipes, nodes, buildings, crops, monsters, landmarks (pois),
                      secrets (bunker, wreck, markers, treasure), notes
   sim/               the island authority: sim.ts (IslandSim), mobs.ts (monsters, director),
@@ -799,6 +839,7 @@ src/play/          the game client: session.ts (solo/host/join, saves), link.ts 
                    music.ts, view.ts (scene), Game.tsx (canvas, frame loop, settings),
                    telemetry.ts (analytics events and the first-session funnel),
                    records.ts (records kept and posted), remind.ts (reminders scheduled),
+                   outfits.ts (the look worn, sets owned, buying), WardrobeScene.ts (preview),
                    TitleScene.ts (the title backdrop), render/ (terrain, nodes, actors,
                    structures, items, props, fx, geo, wind, ambient, climate, light,
                    weather), hud/ (Hud,
@@ -808,7 +849,7 @@ src/app/           community.ts (suggestions, Dev area over UgcApi), localUgc.ts
                    usePolling.ts, appEvents.ts (host lifecycle → game pause/resume), links.ts
                    (the October Jam link, copied)
 src/screens/       Play (title, home), NewIsland, Intro (first launch), Suggest, Dev (owner),
-                   Records (🏆 records and leaderboards)
+                   Records (🏆 records and leaderboards), Wardrobe (👕 outfits and the shop)
 src/ui/            Logo (the BLOOM / ISLAND wordmark, `.brand`), Notice (failure messages),
                    SubPage (a page with ‹ Back: Suggest, Dev), dragScroll (click and drag
                    scrolls every list)
@@ -825,6 +866,8 @@ scripts/thumbnail.mjs    `npm run thumbnail`: re-exports public/thumbnail.jpg fr
 rundot/realtime.config.json  room type `island` → src/server/IslandRoom.ts (max 4 players)
 rundot/ugc.config.json   UGC limits and moderation
 rundot/leaderboard.config.json  the records' boards: days, slain, escapes (all time)
+rundot/shop.config.json  the shop's outfit sets, GENERATED from src/game/shop.ts (npm run shop-config)
+scripts/shop-config.ts   writes it
 rundot/textGen.config.json  `{ "disabled": true }`: AI text generation is off (unused; without
                          this file every deploy auto-enables it with permissive spend limits)
 rundot/cli_hooks.json    RUN CLI hooks (from the template)
@@ -873,7 +916,8 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # pointer, the goals, Crafting tab and recipe, steps moving on,
                             # Skip, restart from How to play, the last step's journal glow;
                             # the daily goal: its chip, done, the streak on the title,
-                            # 🏆 Records and a board;
+                            # 🏆 Records and a board; 👕 Wardrobe: a coat, a locked hat,
+                            # a shop set bought in test mode, the look on the island;
                             # walk, read, gather, the survivor menu: crafting by category,
                             # XP and learning a skill; touch: a swipe on the crafting grid
                             # scrolls, a mouse drag scrolls it too (and picks nothing), a
@@ -896,7 +940,9 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # settings and local co-op on a made island with Relaxed rules by
                             # its multiplayer code (a friend waits for the host, island chat:
                             # log, bubble, badge, Enter, mute; the host leaves: Island closed;
-                            # reopened with the same code);
+                            # reopened with the same code; 🌍 strangers: the first hosts
+                            # a public island, the second lands on it, the host leaves and
+                            # it passes to the one still there);
                             # must print "clean"
 ```
 
@@ -969,7 +1015,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   2026-10-29 at the user's request** ("publish public"), so Explore gets v1.16–v1.25 once
   RUN's review passes. v1.26.0 (2026-10-30, the coach review's first batch: analytics and
   the first-session funnel, the intro's Play straight onto an island, three save slots,
-  What's new, 🏗️ Mark built, Auto quality stepping down) is a private build. **Waiting:**
+  What's new, 🏗️ Mark built, Auto quality stepping down), v1.27.0 (the daily goal and streak,
+  records and leaderboards, daily reminders) and v1.28.0 (public islands with strangers,
+  outfits and the wardrobe with the first shop) are private builds. **Waiting:**
   the coach review's item 3: when the October Jam closes, swap the 🎃 Vote for us button
   for something lasting (Invite a friend with the island's code) and decide on the
   halloween/spooky tags (the user: "reserve 3 until after the jam").

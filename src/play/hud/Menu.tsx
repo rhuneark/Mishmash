@@ -51,7 +51,11 @@ export function PauseMenu(props: {
         </MenuCard>
       )}
       {page === 'friends' && (
-        <MenuCard title="👥 Play with friends" onBack={back} onClose={close}>
+        <MenuCard
+          title={client.link.open ? '🌍 Public island' : '👥 Play with friends'}
+          onBack={back}
+          onClose={close}
+        >
           <Friends client={client} onHost={props.onHost} />
         </MenuCard>
       )}
@@ -139,7 +143,9 @@ function MainPage(props: { client: GameClient; onClose: () => void; onLeave: () 
           🗺️ Map
         </button>
         <button className="menu-btn" onClick={go('friends')}>
-          👥 {solo ? 'Play with friends' : `Friends · ${showJoinCode(client.link.code)}`}
+          {client.link.open
+            ? '🌍 Public island'
+            : `👥 ${solo ? 'Play with friends' : `Friends · ${showJoinCode(client.link.code)}`}`}
         </button>
         <button className="menu-btn" onClick={go('island')}>
           🏝️ This island
@@ -150,7 +156,7 @@ function MainPage(props: { client: GameClient; onClose: () => void; onLeave: () 
         <button className="menu-btn leave" onClick={props.onLeave}>
           {solo
             ? '💾 Save and quit'
-            : mode === 'host'
+            : mode === 'host' && !client.link.open
               ? '💾 Close the island and quit'
               : '🚪 Leave the island'}
         </button>
@@ -185,6 +191,36 @@ function Friends({ client, onHost }: { client: GameClient; onHost: () => void })
         </button>
       </>
     );
+  const crew = (
+    <div className="crew">
+      {client.players.map((p) => (
+        <span
+          key={p.id}
+          className="crew-name"
+          style={{ borderColor: `#${p.color.toString(16).padStart(6, '0')}` }}
+        >
+          {p.name}
+          {p.id === client.you ? ' (you)' : ''}
+        </span>
+      ))}
+    </div>
+  );
+  if (client.link.open)
+    return (
+      <>
+        <p className="small-text">
+          🌍 A public island: survivors from anywhere play here, up to 4 at a time. Chat is
+          filtered, and 💬 › 👥 mutes anyone. Boxes are shared; only who built a piece (or the
+          island's host) takes it down.
+        </p>
+        {crew}
+        <p className="muted small-text">
+          {mode === 'host'
+            ? 'You host it: it runs on your device, and when you leave the next survivor takes over.'
+            : 'What you carry is saved on the island, with whoever hosts it.'}
+        </p>
+      </>
+    );
   return (
     <>
       <p className="small-text">
@@ -195,18 +231,7 @@ function Friends({ client, onHost }: { client: GameClient; onHost: () => void })
       <div className="room-code" aria-label={`Multiplayer code ${code}`}>
         {code}
       </div>
-      <div className="crew">
-        {client.players.map((p) => (
-          <span
-            key={p.id}
-            className="crew-name"
-            style={{ borderColor: `#${p.color.toString(16).padStart(6, '0')}` }}
-          >
-            {p.name}
-            {p.id === client.you ? ' (you)' : ''}
-          </span>
-        ))}
-      </div>
+      {crew}
       {mode === 'guest' && (
         <p className="muted small-text">
           You're on a friend's island. What you carry is saved on their island.
@@ -222,6 +247,7 @@ function IslandPage({ client }: { client: GameClient }) {
   if (!spec) return null;
   // The solo player and a co-op host may change the rules; guests play by them.
   const owner = client.link.mode !== 'guest';
+  const open = client.link.open;
   const layout = `${['North up', 'Turned ¼', 'Turned ½', 'Turned ¾'][spec.turn]}${spec.mirror ? ', mirrored' : ''}`;
   return (
     <>
@@ -241,8 +267,9 @@ function IslandPage({ client }: { client: GameClient }) {
           Map code <b>{specCode(spec)}</b>
         </div>
         <p className="muted small-text">
-          Friends join this island with its multiplayer code. The map code makes the same map on the
-          New island screen. Friends who join play by this island's rules
+          {open
+            ? "A public island: strangers find it with 🌍 Play with strangers. The map code makes the same map on the New island screen. Everyone plays by this island's rules"
+            : "Friends join this island with its multiplayer code. The map code makes the same map on the New island screen. Friends who join play by this island's rules"}
           {owner ? '; you can change them here.' : '.'}
         </p>
       </div>

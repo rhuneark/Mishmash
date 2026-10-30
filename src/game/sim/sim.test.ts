@@ -934,6 +934,37 @@ describe('the build menu', () => {
     expect(count(p.inv, 'wood')).toBe(5);
   });
 
+  it('on a public island, only who built a piece (or the host) takes it down', () => {
+    const h = harness();
+    h.sim.open = true;
+    h.sim.owner = 'host';
+    for (const id of ['a', 'b', 'host']) h.sim.join(id, id);
+    const at = spotFor(h, 'wall_wood');
+    h.sim.give(h.sim.players.get('a')!, 'wood', 8);
+    h.sim.handle('a', { type: 'build', kind: 'wall_wood', ...at, rot: 0 });
+    const wall = [...h.sim.buildings.values()].find((b) => b.kind === 'wall_wood')!;
+    const b = h.sim.players.get('b')!;
+    b.x = at.x + 1;
+    b.z = at.z;
+    h.sim.handle('b', { type: 'demolish', id: wall.id });
+    expect(h.sim.buildings.has(wall.id)).toBe(true);
+    expect(h.toasts('b').slice(-1)[0]).toMatch(/only who built it/);
+    const host = h.sim.players.get('host')!;
+    host.x = at.x - 1;
+    host.z = at.z;
+    h.sim.handle('host', { type: 'demolish', id: wall.id });
+    expect(h.sim.buildings.has(wall.id)).toBe(false);
+  });
+
+  it('dresses a survivor in the outfit they come with (looks only)', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann', 'pilot.teal');
+    h.sim.join('b', 'Bo', 'crown.gold');
+    const list = h.sim.playerList();
+    expect(list.find((p) => p.id === 'a')).toMatchObject({ look: 'pilot.teal', color: 0x5fd3d0 });
+    expect(list.find((p) => p.id === 'b')?.look).toBe('none.auto');
+  });
+
   it('uses a piece made before the build menu first', () => {
     const h = harness();
     h.sim.join('a', 'Ann');

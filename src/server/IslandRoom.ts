@@ -3,6 +3,11 @@
 // authority (the same IslandSim as solo play) and sends saves back to them. Friends who
 // come before the host wait; when the host leaves, everyone goes and the room waits
 // for the host to open the island again.
+//
+// A public island (🌍 Play with strangers, found by `open: 'public'`) works the same,
+// except that the first one in is asked to upload their public island (S2C `role`), and
+// when the host leaves while others play on, the next survivor hosts it (the saves go to
+// them from then on).
 
 import { GameRoom, type GameMessage, type Player } from '@series-inc/rundot-game-sdk/mp-server';
 import { rng } from '../game/rng';
@@ -23,13 +28,17 @@ const NOBODY =
   'Nobody opened this island. Check the code with your friend: they open it from ⚙️ › Play with friends.';
 const HOST_LEFT = 'Your friend closed the island. What you carry is saved there.';
 const TAKEN = 'Another island is open with this code right now. Try again in a few minutes.';
+const FINDING = 'Finding a public island…';
+const PUBLIC_LEFT = 'The public island closed. Try 🌍 Play with strangers again.';
 
 export default class IslandRoom extends GameRoom<Msg> {
   private sim: IslandSim | null = null;
   private hostId = '';
   private init = new PartBuffer();
-  private readonly pending = new Map<string, string>();
+  private readonly pending = new Map<string, { name: string; look?: string }>();
   private saveAcc = 0;
+  /** A public island (strangers come and go). */
+  private open = false;
 
   onCreate(): void {
     this.clock.setInterval('tick', () => this.step(), TICK_MS);
@@ -42,6 +51,20 @@ export default class IslandRoom extends GameRoom<Msg> {
   onGameMessage(message: GameMessage<Msg>): void {
     const { sender, payload } = message;
     switch (payload.type) {
+      case 'quick': {
+        // A stranger looking for a public island: the first one in brings theirs (a
+        // friend's island stays what it is).
+        if (!this.sim) this.open = true;
+        if (this.sim || this.hostId) {
+          this.sendTo(sender.id, { type: 'role', host: false });
+          if (!this.sim) this.sendTo(sender.id, { type: 'wait', text: FINDING });
+          return;
+        }
+        this.hostId = sender.id;
+        this.sendTo(sender.id, { type: 'role', host: true, upload: true });
+        this.sendTo(sender.id, { type: 'wait', text: 'The island is loading…' });
+        return;
+      }
       case 'init': {
         // The first to upload the island hosts it; nobody takes over an open one.
         if (!this.hostId && !this.sim) {
@@ -62,14 +85,14 @@ export default class IslandRoom extends GameRoom<Msg> {
         // socket only drops after this; the room hears of it a reconnect window later).
         if (sender.id !== this.hostId) return;
         this.sendSave();
-        this.close(sender.id);
+        if (!this.handOff(sender.id)) this.close(sender.id);
         return;
       case 'hello':
         if (this.sim) {
-          this.sim.join(sender.id, payload.name || sender.username);
+          this.sim.join(sender.id, payload.name || sender.username, payload.look);
           return;
         }
-        this.pending.set(sender.id, payload.name || sender.username);
+        this.pending.set(sender.id, { name: payload.name || sender.username, look: payload.look });
         this.clock.setTimeout(`wait:${sender.id}`, () => this.giveUp(sender.id), HOST_WAIT_MS);
         return;
       default:
@@ -82,10 +105,24 @@ export default class IslandRoom extends GameRoom<Msg> {
     this.clock.clear(`wait:${player.id}`);
     if (player.id === this.hostId) {
       this.sendSave();
-      this.close();
+      if (!this.handOff(player.id)) this.close();
       return;
     }
     this.sim?.leave(player.id);
+  }
+
+  /** A public island goes on when its host leaves: the next survivor in hosts it. */
+  private handOff(leaving: string): boolean {
+    if (!this.open || !this.sim) return false;
+    const next = [...this.players.values()].find((p) => p.id !== leaving && p.connected);
+    if (!next) return false;
+    this.sim.leave(leaving);
+    this.hostId = next.id;
+    this.sim.owner = next.id;
+    this.sendTo(next.id, { type: 'role', host: true });
+    this.sim.toast(next.id, 'You host this public island now: it keeps going on your device.');
+    this.sendSave();
+    return true;
   }
 
   /** A friend waited and nobody opened the island. */
@@ -111,7 +148,7 @@ export default class IslandRoom extends GameRoom<Msg> {
     this.pending.clear();
     for (const id of [...this.players.keys()]) {
       this.clock.clear(`wait:${id}`);
-      if (id !== host) this.letGo(id, HOST_LEFT);
+      if (id !== host) this.letGo(id, this.open ? PUBLIC_LEFT : HOST_LEFT);
     }
   }
 
@@ -138,9 +175,10 @@ export default class IslandRoom extends GameRoom<Msg> {
       rng((save.seed ^ Date.now()) >>> 0),
     );
     this.sim.owner = this.hostId;
-    for (const [id, name] of this.pending) {
+    this.sim.open = this.open;
+    for (const [id, p] of this.pending) {
       this.clock.clear(`wait:${id}`);
-      this.sim.join(id, name);
+      this.sim.join(id, p.name, p.look);
     }
     this.pending.clear();
     this.log.info('Island ready', { seed: save.seed, players: this.playerCount });
@@ -171,11 +209,14 @@ export default class IslandRoom extends GameRoom<Msg> {
   }
 
   protected getPersistState(): Record<string, unknown> {
-    return this.sim ? { save: this.sim.serialize(), hostId: this.hostId } : { hostId: this.hostId };
+    return this.sim
+      ? { save: this.sim.serialize(), hostId: this.hostId, open: this.open }
+      : { hostId: this.hostId, open: this.open };
   }
 
   onRestore(snapshot: Record<string, unknown>): void {
     this.hostId = typeof snapshot['hostId'] === 'string' ? snapshot['hostId'] : '';
+    this.open = snapshot['open'] === true;
     const save = parseIslandSave(snapshot['save']);
     if (save) this.boot(save);
     this.clock.setInterval('tick', () => this.step(), TICK_MS);

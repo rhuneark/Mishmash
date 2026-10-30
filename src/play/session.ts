@@ -1,5 +1,6 @@
 // Starting and ending a game: solo on your own island (saved to appStorage),
-// hosting it for friends, or joining a friend's island by its multiplayer code.
+// hosting it for friends, joining a friend's island by its multiplayer code, or a public
+// island with strangers (kept apart from the slots: it's shared).
 
 import * as run from '../sdk/run';
 import {
@@ -24,6 +25,8 @@ import { RoomLink } from './roomLink';
 import { noteHappened } from './records';
 
 export const ISLAND_KEY = 'mishmash_island';
+/** The public island this player brings when nobody's on one (strangers). */
+export const PUBLIC_KEY = 'mishmash_island_public';
 
 /** Where an island slot is kept (slot 1 is the key from before there were slots). */
 export function islandKey(slot: number): string {
@@ -104,19 +107,22 @@ export function quickIsland(random: () => number = Math.random): NewIsland {
 export async function loadIsland(
   n: number = slot,
 ): Promise<(IslandSave & { code: string }) | null> {
-  const raw = await run.getItem(islandKey(n));
-  if (!raw) return null;
-  let save: IslandSave | null;
-  try {
-    save = parseIslandSave(JSON.parse(raw));
-  } catch {
-    return null;
-  }
+  const save = await readSave(islandKey(n));
   if (!save) return null;
   if (save.code) return save as IslandSave & { code: string };
   const coded = { ...save, code: newJoinCode(Math.random) };
   await keeper(n)(coded);
   return coded;
+}
+
+async function readSave(key: string): Promise<IslandSave | null> {
+  const raw = await run.getItem(key);
+  if (!raw) return null;
+  try {
+    return parseIslandSave(JSON.parse(raw));
+  } catch {
+    return null;
+  }
 }
 
 /** Every slot's island (null: empty). */
@@ -224,6 +230,35 @@ export async function startJoin(typed: string): Promise<Started> {
   const client = new GameClient(res.link, run.myName(), islandFor);
   client.start();
   run.track('island_start', { mode: 'guest' });
+  return { ok: true, client };
+}
+
+/**
+ * A public island with strangers: one that's open, or yours (made the first time) when
+ * nobody's on one. Saves come back while you host it, also after taking it over.
+ */
+export async function startPublic(): Promise<Started> {
+  const keep = (save: IslandSave) => void run.setItem(PUBLIC_KEY, JSON.stringify(save));
+  const mine = async (): Promise<IslandSave> => {
+    const saved = await readSave(PUBLIC_KEY);
+    if (saved) return saved;
+    const r = Math.random;
+    const save = makeIsland({
+      seed: randomSeed(r),
+      parts: randomParts(r),
+      rules: { ...DEFAULT_RULES },
+    });
+    keep(save);
+    noteHappened({ island: true });
+    return save;
+  };
+  let res = await RoomLink.quick(mine, keep);
+  if (!res.ok && res.reason === 'login' && (await run.promptLogin()))
+    res = await RoomLink.quick(mine, keep);
+  if (!res.ok) return res;
+  const client = new GameClient(res.link, run.myName(), islandFor);
+  client.start();
+  run.track('island_start', { mode: 'public' });
   return { ok: true, client };
 }
 

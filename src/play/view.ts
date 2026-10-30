@@ -23,6 +23,7 @@ import {
 } from './client';
 import { STAR_ICON, itemIconUrl } from './hud/itemIcons';
 import { buzz } from './prefs';
+import { lookCode, parseLook } from '../game/outfits';
 import { Actor, setBlobShadows } from './render/actors';
 import { Ambient } from './render/ambient';
 import { climateLook } from './render/climate';
@@ -376,9 +377,17 @@ export class View {
 
   private newPlayer(id: string): Actor {
     const info = this.client.players.find((p) => p.id === id);
-    const a = new Actor('player', id, info?.color ?? colorFor(id));
+    const a = new Actor('player', id, info?.color ?? colorFor(id), parseLook(info?.look));
     this.scene.add(a.root);
     return a;
+  }
+
+  /** A survivor whose outfit changed (it came after they did) is dressed again. */
+  private dressed(id: string, a: Actor): Actor {
+    const info = this.client.players.find((p) => p.id === id);
+    if (!info?.look || (a.look && lookCode(a.look) === info.look)) return a;
+    this.scene.remove(a.root);
+    return this.newPlayer(id);
   }
 
   /** Rebuilds buildings and drops from the client's mirror (after a snapshot). */
@@ -992,6 +1001,7 @@ export class View {
     const adt = this.hitStop > 0 ? dt * 0.1 : dt;
     this.hitStop -= dt;
     // Survivors.
+    if (this.me.dying === 0) this.me = this.dressed(c.you, this.me);
     const meVisible = !!c.me && !c.me.escaped && (c.me.alive || this.me.dying > 0);
     this.me.root.visible = meVisible;
     this.me.root.position.set(c.x, this.y(c.x, c.z), c.z);
@@ -1010,6 +1020,9 @@ export class View {
       if (!a) {
         a = this.newPlayer(o.id);
         this.others.set(o.id, a);
+      } else if (a.dying === 0) {
+        const now = this.dressed(o.id, a);
+        if (now !== a) this.others.set(o.id, (a = now));
       }
       a.root.visible = o.alive;
       a.root.position.set(o.x, this.y(o.x, o.z), o.z);

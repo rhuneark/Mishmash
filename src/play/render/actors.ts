@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { MOB_STATE } from '../../game/sim/protocol';
 import { MAT, box, cone, cyl, ico, mesh, sphere } from './geo';
 import { heldModel } from './items';
+import { coatOf, shirtOf, type Look } from '../../game/outfits';
 
 export type ActorKind =
   | 'player'
@@ -70,7 +71,11 @@ export class Actor {
   private shadow: THREE.Mesh;
   private t = Math.random() * 10;
 
-  constructor(kind: ActorKind, seedKey: string, color = 0xe8664a) {
+  /** What a survivor wears (outfits.ts; others: none). */
+  readonly look: Look | null;
+
+  constructor(kind: ActorKind, seedKey: string, color = 0xe8664a, look: Look | null = null) {
+    this.look = look;
     this.kind = kind;
     this.root.add(this.body);
     this.shadow = new THREE.Mesh(SHADOW_GEO, SHADOW_MAT);
@@ -79,7 +84,14 @@ export class Actor {
     const v = hashStr(seedKey);
     switch (kind) {
       case 'player':
-        this.buildHuman(color, 0x2d3a5a, 0xe0b48a, false, v);
+        this.buildHuman(
+          look ? shirtOf(look, color) : color,
+          look ? coatOf(look.coat).pants : 0x2d3a5a,
+          0xe0b48a,
+          false,
+          v,
+          look?.hat,
+        );
         this.shadow.scale.setScalar(0.5);
         break;
       case 'husk': {
@@ -222,7 +234,14 @@ export class Actor {
     Object.assign(this.parts, { torso, head, l0: legL, l1: legR });
   }
 
-  private buildHuman(shirt: number, pants: number, skin: number, husk: boolean, v: number): void {
+  private buildHuman(
+    shirt: number,
+    pants: number,
+    skin: number,
+    husk: boolean,
+    v: number,
+    hat = 'none',
+  ): void {
     const hips = pivot(0, 0.9, 0);
     this.body.add(hips);
     const legGeo = () =>
@@ -282,6 +301,8 @@ export class Actor {
           box(0.05, 0.05, 0.02, 0x222222, { x: 0.07, y: 0.18, z: 0.16 }),
         ]),
       );
+      const worn = hatParts(hat);
+      if (worn.length) head.add(mesh(worn));
     }
     const armGeo = () =>
       mesh([
@@ -692,6 +713,89 @@ export class Actor {
   private sinkY = 0;
   private emerging = false;
   private legTop = 0.6;
+}
+
+/** A survivor's hat (outfits.ts), on the head pivot (the hair tops out near y 0.39). */
+function hatParts(id: string): THREE.BufferGeometry[] {
+  const ring = (
+    n: number,
+    r: number,
+    make: (x: number, z: number, k: number) => THREE.BufferGeometry,
+  ) =>
+    Array.from({ length: n }, (_, k) => {
+      const a = (k / n) * Math.PI * 2;
+      return make(Math.sin(a) * r, Math.cos(a) * r, k);
+    });
+  switch (id) {
+    case 'bandana':
+      return [
+        box(0.34, 0.09, 0.34, 0xc0392b, { y: 0.36 }),
+        box(0.1, 0.08, 0.06, 0xa83224, { y: 0.32, z: -0.19 }),
+        box(0.05, 0.14, 0.03, 0xa83224, { x: 0.03, y: 0.24, z: -0.2, rz: 0.3 }),
+      ];
+    case 'straw':
+      return [
+        cyl(0.36, 0.36, 0.03, 12, 0xe0c070, { y: 0.4 }),
+        cyl(0.16, 0.19, 0.15, 10, 0xd8b860, { y: 0.48 }),
+        cyl(0.192, 0.192, 0.035, 10, 0x8a4a2a, { y: 0.43 }),
+      ];
+    case 'cap':
+      return [
+        cyl(0.18, 0.19, 0.11, 10, 0x1f2a4a, { y: 0.42 }),
+        box(0.24, 0.025, 0.14, 0x1a2340, { y: 0.38, z: 0.19 }),
+        box(0.06, 0.04, 0.01, 0xf2c14e, { y: 0.43, z: 0.19 }),
+      ];
+    case 'ranger':
+      return [
+        cyl(0.34, 0.34, 0.03, 12, 0x6b5a3a, { y: 0.4 }),
+        cyl(0.15, 0.18, 0.17, 10, 0x75633f, { y: 0.49 }),
+        cyl(0.182, 0.182, 0.035, 10, 0x3a2e1c, { y: 0.43 }),
+      ];
+    case 'flowers':
+      return [
+        torus2(0.17, 0.03, 0x4f9a3a, { y: 0.39 }),
+        ...ring(7, 0.17, (x, z, k) =>
+          sphere(0.05, 5, 4, [0xf28fb0, 0xf2e24e, 0xf4f4f0][k % 3] as number, { x, y: 0.41, z }),
+        ),
+      ];
+    case 'thorns':
+      return [
+        torus2(0.17, 0.035, 0x2c4f2a, { y: 0.39 }),
+        ...ring(6, 0.17, (x, z) => cone(0.035, 0.16, 4, 0x3a5a2a, { x, y: 0.47, z })),
+        sphere(0.05, 5, 4, 0xe85fa8, { x: 0.12, y: 0.42, z: 0.12 }),
+      ];
+    case 'pilot':
+      return [
+        cyl(0.21, 0.19, 0.08, 12, 0xf4f4f0, { y: 0.45 }),
+        cyl(0.19, 0.19, 0.05, 12, 0x1a1a1e, { y: 0.39 }),
+        box(0.24, 0.025, 0.13, 0x111114, { y: 0.37, z: 0.19 }),
+        box(0.16, 0.03, 0.01, 0xf2c14e, { y: 0.41, z: 0.195 }),
+      ];
+    case 'hood':
+      return [
+        box(0.38, 0.1, 0.38, 0xe8f0e8, { y: 0.37 }),
+        box(0.38, 0.36, 0.08, 0xe8f0e8, { y: 0.2, z: -0.17 }),
+        box(0.05, 0.34, 0.34, 0xdde6dd, { x: -0.18, y: 0.2 }),
+        box(0.05, 0.34, 0.34, 0xdde6dd, { x: 0.18, y: 0.2 }),
+        box(0.07, 0.07, 0.01, 0x4f9a3a, { x: 0.12, y: 0.37, z: 0.19 }),
+      ];
+    case 'captain':
+      return [
+        cyl(0.22, 0.19, 0.08, 12, 0xf4f4f0, { y: 0.45 }),
+        cyl(0.19, 0.19, 0.05, 12, 0x1a1a1e, { y: 0.39 }),
+        box(0.24, 0.025, 0.13, 0x111114, { y: 0.37, z: 0.19 }),
+        box(0.07, 0.06, 0.01, 0xf2c14e, { y: 0.43, z: 0.2 }),
+        box(0.22, 0.015, 0.01, 0xf2c14e, { y: 0.4, z: 0.195 }),
+      ];
+    case 'tophat':
+      return [
+        cyl(0.26, 0.26, 0.025, 12, 0x1a1a1e, { y: 0.39 }),
+        cyl(0.15, 0.15, 0.3, 12, 0x1e1e24, { y: 0.55 }),
+        cyl(0.153, 0.153, 0.05, 12, 0x7a1f2a, { y: 0.44 }),
+      ];
+    default:
+      return [];
+  }
 }
 
 function torus2(

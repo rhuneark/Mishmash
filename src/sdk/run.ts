@@ -542,6 +542,28 @@ export async function islandRoom(type: string, island: string): Promise<RoomResu
   }
 }
 
+/**
+ * A public island for strangers: joins an open one with room to spare, or makes one
+ * (the room asks the first player to bring their island). RUN pairs players on the same
+ * server instance, so two strangers far apart may each start their own.
+ */
+export async function publicRoom(type: string): Promise<RoomResult> {
+  await ready();
+  try {
+    return {
+      ok: true,
+      room: wrapRoom(
+        await RundotGameAPI.realtime.joinOrCreateRoom(type, {
+          criteria: { open: 'public' },
+          createOptions: { maxPlayers: 4 },
+        }),
+      ),
+    };
+  } catch (err) {
+    return roomFail(err);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Game chat: RUN's word filter (the one its servers use), run on each phone.
 
@@ -766,4 +788,103 @@ export function onLifecycle(handlers: LifecycleHandlers): void {
   hook('resume', (cb) => RundotGameAPI.lifecycles.onResume(cb));
   hook('sleep', (cb) => RundotGameAPI.lifecycles.onSleep(cb));
   hook('quit', (cb) => RundotGameAPI.lifecycles.onQuit(cb));
+}
+
+// ---------------------------------------------------------------------------
+// The shop (rundot/shop.config.json, outfit sets priced in RUN Bits) and the
+// entitlements its purchases grant. Outside the RUN host (mock) purchases are simulated
+// so the flow can be tested: they cost nothing and last until the page reloads.
+
+export interface ShopPrice {
+  bits: number;
+  /** Price before a sale. */
+  originalBits: number;
+}
+
+/** Live prices by item id, or null when the shop can't be reached (or in mock). */
+export async function shopPrices(): Promise<Map<string, ShopPrice> | null> {
+  if (isMock()) return null;
+  return call('shopCatalog', null, async () => {
+    const catalog = await RundotGameAPI.shop.getCatalog();
+    const out = new Map<string, ShopPrice>();
+    for (const item of catalog.items ?? []) {
+      const final = item.resolvedPrice?.finalPrice;
+      const original = item.resolvedPrice?.originalPrice ?? item.price;
+      if (final?.type !== 'bucks') continue;
+      const bits = Number(final.value);
+      const originalBits = Number(original?.value);
+      if (Number.isFinite(bits) && bits > 0)
+        out.set(item.itemId, {
+          bits,
+          originalBits: Number.isFinite(originalBits) ? originalBits : bits,
+        });
+    }
+    return out;
+  });
+}
+
+export type PurchaseOutcome = 'done' | 'cancelled' | 'pending' | 'failed';
+
+/** Test-mode entitlements (mock only). */
+const mockOwned = new Map<string, { quantity: number; consumable: boolean }>();
+
+/**
+ * Buy a shop item. Reuse the same `idempotencyKey` when retrying the same intended
+ * purchase, so a retry can never charge twice. `mockGrants` is what test mode grants.
+ */
+export async function shopPurchase(
+  itemId: string,
+  idempotencyKey: string,
+  mockGrants: ReadonlyArray<{ entitlementId: string; quantity: number; consumable: boolean }>,
+): Promise<PurchaseOutcome> {
+  await ready();
+  if (isMock()) {
+    for (const g of mockGrants) {
+      const had = mockOwned.get(g.entitlementId)?.quantity ?? 0;
+      mockOwned.set(g.entitlementId, {
+        quantity: g.consumable ? had + g.quantity : 1,
+        consumable: g.consumable,
+      });
+    }
+    return 'done';
+  }
+  try {
+    const res = await RundotGameAPI.shop.purchase(itemId, idempotencyKey);
+    return res.success ? 'done' : 'cancelled';
+  } catch (err) {
+    warn('shopPurchase', err);
+    const code = (err as { code?: string } | null)?.code;
+    if (code === 'USER_CANCELLED') return 'cancelled';
+    if (code === 'direct-purchase-pending') return 'pending';
+    return 'failed';
+  }
+}
+
+export interface Owned {
+  id: string;
+  quantity: number;
+  consumable: boolean;
+}
+
+/** Everything this player owns in the game's shop, or null if it can't be read. */
+export async function listOwned(): Promise<Owned[] | null> {
+  if (isMock()) {
+    await ready();
+    return [...mockOwned].map(([id, o]) => ({ id, ...o }));
+  }
+  return call('listEntitlements', null, async () => {
+    const list = await RundotGameAPI.entitlements.listEntitlements();
+    return (list ?? [])
+      .filter((e) => e && e.status === 'active' && typeof e.entitlementId === 'string')
+      .map((e) => ({
+        id: e.entitlementId,
+        quantity: Number(e.quantity) || 0,
+        consumable: Boolean(e.consumable),
+      }));
+  });
+}
+
+/** True when purchases are simulated (local testing outside RUN). */
+export function shopTestMode(): boolean {
+  return isMock();
 }

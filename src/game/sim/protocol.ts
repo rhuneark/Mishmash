@@ -18,7 +18,10 @@ export interface Slot {
 export type UseKind = 'node' | 'mob' | 'build' | 'spot' | 'drop' | 'pool' | 'dig';
 
 export type C2S =
-  | { type: 'hello'; name: string }
+  /** `look`: the outfit worn (outfits.ts code), looks only. */
+  | { type: 'hello'; name: string; look?: string }
+  /** Looking for a public island (the room says who hosts it). */
+  | { type: 'quick' }
   | { type: 'init'; part: number; parts: number; data: string }
   | { type: 'pos'; x: number; z: number; ry: number; mv: number }
   | { type: 'use'; kind: UseKind; id: number | string }
@@ -115,6 +118,8 @@ export interface PlayerInfo {
   id: string;
   name: string;
   color: number;
+  /** The outfit (outfits.ts code). */
+  look?: string;
 }
 
 export interface MeNet {
@@ -224,6 +229,8 @@ export type S2C =
   | { type: 'wait'; text: string }
   /** Co-op: the island isn't open (any more) for you; the room lets you go. */
   | { type: 'closed'; text: string }
+  /** A public island: this player hosts it (`upload`: bring your island, it's empty). */
+  | { type: 'role'; host: boolean; upload?: boolean }
   | { type: 'tick'; t: number; p: PlayerNet[]; m: MobNet[] }
   | { type: 'me'; me: MeNet }
   | { type: 'players'; list: PlayerInfo[] }

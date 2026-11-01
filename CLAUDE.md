@@ -1017,7 +1017,10 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   the first-session funnel, the intro's Play straight onto an island, three save slots,
   What's new, 🏗️ Mark built, Auto quality stepping down), v1.27.0 (the daily goal and streak,
   records and leaderboards, daily reminders) and v1.28.0 (public islands with strangers,
-  outfits and the wardrobe with the first shop) are private builds. **Waiting:**
+  outfits and the wardrobe with the first shop) were private builds; **v1.28.0 was submitted
+  with the Publish workflow on 2026-11-01 at the user's request** ("publish public"), so
+  Explore gets v1.16–v1.28 once RUN's review passes, and the shop config (outfit sets) goes
+  live with it. **Waiting:**
   the coach review's item 3: when the October Jam closes, swap the 🎃 Vote for us button
   for something lasting (Invite a friend with the island's code) and decide on the
   halloween/spooky tags (the user: "reserve 3 until after the jam").

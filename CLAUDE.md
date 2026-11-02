@@ -1037,7 +1037,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   outfits and the wardrobe with the first shop) were private builds; **v1.28.0 was submitted
   with the Publish workflow on 2026-11-01 at the user's request** ("publish public"), so
   Explore gets v1.16–v1.28 once RUN's review passes, and the shop config (outfit sets) goes
-  live with it. **Waiting:**
+  live with it. **v1.29.0** (2026-11-02: the faster start, the game loading in parts) **was
+  submitted with the Publish workflow the same day at the user's request** ("Faster load,
+  then publish public"), so Explore gets v1.16–v1.29 once RUN's review passes. **Waiting:**
   the coach review's item 3: when the October Jam closes, swap the 🎃 Vote for us button
   for something lasting (Invite a friend with the island's code) and decide on the
   halloween/spooky tags (the user: "reserve 3 until after the jam").

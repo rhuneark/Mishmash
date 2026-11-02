@@ -2388,17 +2388,23 @@ async function playCoop() {
   await friend.page.getByText('survivors from anywhere').waitFor();
   await friend.page.keyboard.press('Escape');
   await friend.page.keyboard.press('Escape');
+  // The host leaves: the island goes on, and the stranger hosts it now (the toast only lasts
+  // a few seconds, so watch for it from before the host leaves).
+  const handedOver = friend.page
+    .getByText('You host this public island now')
+    .waitFor({ timeout: 45000 })
+    .then(() => true)
+    .catch(() => false);
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByRole('button', { name: /Leave the island/ }).click();
   await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 30000 });
-  // The host left: the island goes on, and the stranger hosts it now.
   await until(
     friend.page,
     () => window.__game.client.link.mode === 'host',
     "strangers: the island didn't pass to the one still there",
     20000,
   );
-  await friend.page.getByText('You host this public island now').waitFor({ timeout: 15000 });
+  check(await handedOver, "strangers: the new host wasn't told");
   check(
     (await friend.page.getByText('Island closed').count()) === 0,
     'strangers: the island closed when its host left',

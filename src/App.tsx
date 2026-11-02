@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import * as run from './sdk/run';
 import { SAVE_KEY, parseSave, recordVisit, type SaveData } from './game/save';
 import { isOwner, newSuggestionCount, openReportCount } from './app/community';
@@ -6,25 +6,23 @@ import { usePolling } from './app/usePolling';
 import { Logo } from './ui/Logo';
 import { Intro } from './screens/Intro';
 import { Suggest } from './screens/Suggest';
-import { Dev } from './screens/Dev';
 import { SubPage } from './ui/SubPage';
-import { Play, type PlayChoice } from './screens/Play';
-import { Game } from './play/Game';
+import { Loading, Play, type PlayChoice } from './screens/Play';
 import type { GameClient } from './play/client';
-import {
-  FAIL_TEXT,
-  chooseSlot,
-  startHost,
-  startJoin,
-  startPublic,
-  startSolo,
-} from './play/session';
+import { chooseSlot } from './play/slots';
 import { LATEST, unseenNews } from './game/news';
-import { Records } from './screens/Records';
 import { loadRecords } from './play/records';
 import { planReminders } from './play/remind';
-import { Wardrobe } from './screens/Wardrobe';
 import { loadOutfits } from './play/outfits';
+
+// The game and the bigger pages load when first needed (the game also in the background a
+// few seconds after the title shows), so the title comes up sooner.
+const loadGame = () => Promise.all([import('./play/session'), import('./play/Game')]);
+const Game = lazy(() => import('./play/Game').then((m) => ({ default: m.Game })));
+const Dev = lazy(() => import('./screens/Dev').then((m) => ({ default: m.Dev })));
+const Records = lazy(() => import('./screens/Records').then((m) => ({ default: m.Records })));
+const Wardrobe = lazy(() => import('./screens/Wardrobe').then((m) => ({ default: m.Wardrobe })));
+const PRELOAD_MS = 3000;
 
 /** The title screen, or a page opened from it (each has a back button). */
 type Screen = 'play' | 'suggest' | 'dev' | 'records' | 'wardrobe';
@@ -62,8 +60,11 @@ export default function App() {
       run.funnel(1, 'app_loaded');
     })();
     void isOwner().then((yes) => !cancelled && setOwner(yes));
+    // The title is up: fetch the game while the player looks at it.
+    const preload = setTimeout(() => void loadGame().catch(() => undefined), PRELOAD_MS);
     return () => {
       cancelled = true;
+      clearTimeout(preload);
     };
   }, []);
 
@@ -89,17 +90,25 @@ export default function App() {
   const start = async (choice: PlayChoice) => {
     setPlayError(null);
     setStarting(true);
+    let session: Awaited<ReturnType<typeof loadGame>>[0];
+    try {
+      [session] = await loadGame();
+    } catch {
+      setStarting(false);
+      setPlayError("Couldn't load the game. Check your connection and try again.");
+      return;
+    }
     const res =
       choice.kind === 'solo'
-        ? await startSolo(choice.fresh)
+        ? await session.startSolo(choice.fresh)
         : choice.kind === 'host'
-          ? await startHost(choice.fresh)
+          ? await session.startHost(choice.fresh)
           : choice.kind === 'public'
-            ? await startPublic()
-            : await startJoin(choice.code);
+            ? await session.startPublic()
+            : await session.startJoin(choice.code);
     setStarting(false);
     if (!res.ok) {
-      setPlayError(FAIL_TEXT[res.reason]);
+      setPlayError(session.FAIL_TEXT[res.reason]);
       setScreen('play');
       return;
     }
@@ -118,17 +127,19 @@ export default function App() {
   if (game) {
     return (
       <div className="app game-app">
-        <Game
-          client={game}
-          onLeave={() => void leave()}
-          onHost={() => void leave().then(() => start({ kind: 'host', fresh: null }))}
-          onNewIsland={() =>
-            void leave().then(() => {
-              setWantNew(true);
-              setScreen('play');
-            })
-          }
-        />
+        <Suspense fallback={<GameLoading />}>
+          <Game
+            client={game}
+            onLeave={() => void leave()}
+            onHost={() => void leave().then(() => start({ kind: 'host', fresh: null }))}
+            onNewIsland={() =>
+              void leave().then(() => {
+                setWantNew(true);
+                setScreen('play');
+              })
+            }
+          />
+        </Suspense>
       </div>
     );
   }
@@ -136,10 +147,7 @@ export default function App() {
   if (starting) {
     return (
       <div className="app">
-        <div className="game-loading">
-          <div className="loading-island">🏝️</div>
-          <div className="loading-text">Getting the island ready…</div>
-        </div>
+        <GameLoading />
       </div>
     );
   }
@@ -191,20 +199,35 @@ export default function App() {
         )}
         {screen === 'records' && (
           <SubPage title="🏆 Records" onBack={() => setScreen('play')}>
-            <Records />
+            <Suspense fallback={<Loading />}>
+              <Records />
+            </Suspense>
           </SubPage>
         )}
         {screen === 'wardrobe' && (
           <SubPage title="👕 Wardrobe" onBack={() => setScreen('play')}>
-            <Wardrobe />
+            <Suspense fallback={<Loading />}>
+              <Wardrobe />
+            </Suspense>
           </SubPage>
         )}
         {screen === 'dev' && owner && (
           <SubPage title="🛠️ Dev" onBack={() => setScreen('play')}>
-            <Dev onOpenCount={setOpenReports} onNewCount={setNewIdeas} />
+            <Suspense fallback={<Loading />}>
+              <Dev onOpenCount={setOpenReports} onNewCount={setNewIdeas} />
+            </Suspense>
           </SubPage>
         )}
       </main>
+    </div>
+  );
+}
+
+function GameLoading() {
+  return (
+    <div className="game-loading">
+      <div className="loading-island">🏝️</div>
+      <div className="loading-text">Getting the island ready…</div>
     </div>
   );
 }

@@ -21,7 +21,8 @@ import { DEFAULT_RULES, type WorldRules } from '../game/rules';
 import { islandImage } from '../play/hud/map';
 import { Choice, Toggle } from '../play/hud/Menu';
 import { RulesEditor } from '../play/hud/RulesPanel';
-import { islandFor, type NewIsland } from '../play/session';
+import { islandFor } from '../play/islandCache';
+import type { NewIsland } from '../play/slots';
 import { CELL, GRID, HALF } from '../game/world';
 
 const CLIMATE_ICONS: Record<Climate, string> = {

@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { rundotGameLibrariesPlugin, rundotMultiplayerPlugin } from '@series-inc/rundot-game-sdk/vite';
+import {
+  rundotGameLibrariesPlugin,
+  rundotMultiplayerPlugin,
+} from '@series-inc/rundot-game-sdk/vite';
 
 // CDN assets in cdn/ folder are automatically served in dev mode
 
@@ -26,5 +29,10 @@ export default defineConfig({
   },
   build: {
     target: 'es2022', // Support top-level await for embedded libraries
+    rollupOptions: {
+      // The game loads in parts (the title first); fold tiny shared parts into bigger ones
+      // so a phone makes fewer requests.
+      output: { experimentalMinChunkSize: 20_000 },
+    },
   },
 });

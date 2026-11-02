@@ -18,7 +18,7 @@ import { PACKS, packsFor, type Pack } from '../game/shop';
 import { colorFor } from '../game/sim/types';
 import { buyPack, loadOutfits, outfitStore, syncOwned, wear } from '../play/outfits';
 import { loadRecords, recordsStore } from '../play/records';
-import { playerId } from '../play/session';
+import { playerId } from '../play/slots';
 import { WardrobeScene } from '../play/WardrobeScene';
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;

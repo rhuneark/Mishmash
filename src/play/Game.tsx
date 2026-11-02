@@ -14,7 +14,7 @@ import { isTouch, prefs, usePrefs } from './prefs';
 import { rotationFor, setRotation, toLocal, turnInsets } from './screen';
 import { SLOW_FPS, SLOW_SECONDS, autoLevel, gain, graphicsFor, type Settings } from './settings';
 import { View } from './view';
-import { fogKey } from './session';
+import { fogKey } from './slots';
 
 export const sound = new Sound();
 

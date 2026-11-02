@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { dailyGoal, liveStreak, utcDay } from '../game/daily';
 import { recordsStore } from '../play/records';
 import {
@@ -12,24 +20,35 @@ import {
 import type { IslandSave } from '../game/sim/types';
 import { JAM_URL, copyText } from '../app/links';
 import * as run from '../sdk/run';
-import { HowTo, SettingsPanel } from '../play/hud/Menu';
 import {
   currentSlot,
   deleteIsland,
   describeSave,
-  islandFor,
   listIslands,
   playerId,
   quickIsland,
   chooseSlot,
   type NewIsland,
-} from '../play/session';
+} from '../play/slots';
 import { NEWS, type News } from '../game/news';
 import { CLIMATE_NAMES } from '../game/islands';
-import { TitleScene } from '../play/TitleScene';
+import type { TitleScene } from '../play/TitleScene';
 import { Logo } from '../ui/Logo';
-import { NewIslandScreen } from './NewIsland';
 import { STEPS } from './Intro';
+
+// The game's own parts load when they're first needed, so the title shows sooner.
+const NewIslandScreen = lazy(() =>
+  import('./NewIsland').then((m) => ({ default: m.NewIslandScreen })),
+);
+const SettingsPanel = lazy(() =>
+  import('../play/hud/Menu').then((m) => ({ default: m.SettingsPanel })),
+);
+const HowTo = lazy(() => import('../play/hud/Menu').then((m) => ({ default: m.HowTo })));
+
+/** What shows while a part of the game loads. */
+export function Loading() {
+  return <p className="muted center loading-part">Loading…</p>;
+}
 
 export type PlayChoice =
   | { kind: 'solo'; fresh: NewIsland | null }
@@ -133,14 +152,16 @@ export function Play({
     const there = islands?.[newTarget - 1];
     const old = there ? describeSave(there, playerId()) : null;
     return (
-      <NewIslandScreen
-        replacing={old && { day: old.day, name: old.name }}
-        onBack={() => {
-          setTarget(null);
-          setView('title');
-        }}
-        onStart={fresh}
-      />
+      <Suspense fallback={<Loading />}>
+        <NewIslandScreen
+          replacing={old && { day: old.day, name: old.name }}
+          onBack={() => {
+            setTarget(null);
+            setView('title');
+          }}
+          onStart={fresh}
+        />
+      </Suspense>
     );
   }
 
@@ -304,7 +325,9 @@ export function Play({
 
       {dialog === 'settings' && (
         <Dialog title="⚙️ Settings" name="settings" onClose={() => setDialog(null)}>
-          <SettingsPanel />
+          <Suspense fallback={<Loading />}>
+            <SettingsPanel />
+          </Suspense>
           <p className="muted small-text">
             Keys for a keyboard and mouse are under Menu › Settings › Controls in a game.
           </p>
@@ -351,7 +374,9 @@ export function Play({
       )}
       {dialog === 'howto' && (
         <Dialog title="❓ How to play" name="how to play" onClose={() => setDialog(null)}>
-          <HowTo pc={isPc()} bloomEvery={7} />
+          <Suspense fallback={<Loading />}>
+            <HowTo pc={isPc()} bloomEvery={7} />
+          </Suspense>
           <p className="muted small-text">
             Every island can have its own rules: pick them on the New island screen.
           </p>
@@ -531,17 +556,23 @@ function Backdrop({ spec }: { spec: IslandSpec }) {
     const canvas = ref.current;
     if (!canvas) return;
     let scene: TitleScene | null = null;
-    // Let the menu paint first: making the island takes a moment.
+    let gone = false;
+    // Let the menu paint first: the backdrop's code loads after it, and making the island
+    // takes a moment.
     const timer = setTimeout(() => {
-      try {
-        scene = new TitleScene(canvas, islandFor(spec));
-        scene.start();
-        setReady(true);
-      } catch {
-        scene = null;
-      }
+      void Promise.all([import('../play/TitleScene'), import('../play/islandCache')])
+        .then(([{ TitleScene }, { islandFor }]) => {
+          if (gone) return;
+          scene = new TitleScene(canvas, islandFor(spec));
+          scene.start();
+          setReady(true);
+        })
+        .catch(() => {
+          scene = null;
+        });
     }, 60);
     return () => {
+      gone = true;
       clearTimeout(timer);
       scene?.dispose();
     };

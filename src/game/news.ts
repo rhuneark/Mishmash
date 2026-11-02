@@ -10,6 +10,13 @@ export interface News {
 
 export const NEWS: News[] = [
   {
+    version: '1.29',
+    title: 'A faster start',
+    items: [
+      'The title screen comes up in about half the time: the island itself loads while you look at the menu.',
+    ],
+  },
+  {
     version: '1.28',
     title: 'Strangers and outfits',
     items: [

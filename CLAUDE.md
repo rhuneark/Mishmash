@@ -32,7 +32,7 @@ update to the user with this link)
   slowly around the crash site (`play/TitleScene.ts`: the game's own terrain, nodes, grass and
   landmarks, 30 fps, gives the WebGL context back on unmount; no save: an autumn showcase
   island). Buttons: Continue (island name · Day N) or **Start surviving** (no island in the
-  slot: straight onto a ready-made one, `session.quickIsland`: tropical, classic terrain, any
+  slot: straight onto a ready-made one, `slots.quickIsland`: tropical, classic terrain, any
   layout, default rules), New island / Choose your island (the New island screen), 🗂️ Your
   islands (N/3), Play with friends (opens your island; shows its multiplayer code), Join a
   friend (that code), 🌍 Play with strangers (a public island), 👕 Wardrobe, ⚙️ Settings (the game's settings panel without the key list), ❓ How to
@@ -41,7 +41,7 @@ update to the user with this link)
   buttons: today's daily goal and the 🔥 streak (`DailyLine`; opens 🏆 Records). **First launch**
   (v1.26, the coach review: get new players playing faster): the intro's Play goes straight
   onto a ready-made island (`App` `quickStart` → `Play` starts `quickIsland` when the slot is
-  empty), no New island screen. **Save slots** (`ISLAND_SLOTS` 3, `session.islandKey`: slot 1
+  empty), no New island screen. **Save slots** (`ISLAND_SLOTS` 3, `slots.islandKey`: slot 1
   keeps `mishmash_island`, then `mishmash_island_2`/`_3`; `currentSlot`/`chooseSlot`, the hub
   save's `slot` remembers the last one; `listIslands`, `deleteIsland`; saves are kept per slot
   by `keeper(slot)` bound when a game starts; the minimap fog per slot, `fogKey`, and one for
@@ -55,6 +55,21 @@ update to the user with this link)
   map code box (the `specCode`; called "map code" in the UI since v1.22 so it isn't mixed up
   with the multiplayer code), then the world rules (`hud/RulesPanel.tsx`); Start on X or 👥
   Start with friends (hosts it right away); starting asks before it replaces a save. The win screen's New island lands here too (`App` `wantNew`).
+- **Loading in parts** (v1.29; the advice: "a faster first load"): the title comes up on the
+  SDK and a light slice of the game (`App`, `Play`, `Intro`, `Suggest`, `play/slots.ts`,
+  records, outfits, reminders, prefs; ~445 KB of our own code, was 870 KB), and everything else
+  loads when first needed: the game (`App` `loadGame` = `play/session.ts` + `play/Game.tsx`,
+  `React.lazy` with the 🏝️ loading screen; also fetched in the background `PRELOAD_MS` 3 s after
+  the title shows), the title backdrop (`Backdrop` imports `TitleScene` and
+  `play/islandCache.ts` after the menu paints), the New island screen, the title's Settings
+  and How to play (`Menu.tsx`), and the Records, Wardrobe and Dev pages (`Loading` while they
+  come). So **don't import the game into the title's tree**: the title side uses `slots.ts`
+  (saves, slots, `describeSave`, `quickIsland`, `playerId`, `fogKey`) and
+  `islandCache.ts` (`islandFor`); `session.ts` (starting games) is only loaded on demand.
+  `vite.config.ts` folds parts under 20 KB into bigger ones (`experimentalMinChunkSize`), so
+  the first screen is ~4 requests. Measured (a 4× slower CPU, 12 Mbit/s, a standalone build):
+  the first screen in ~1.0 s instead of ~2.0–2.9 s. three.js, React and ReactDOM come from
+  RUN's host (embedded libraries, loaded and cached before the game runs).
 - **October Jam button** (`app/links.ts`): RUN runs the game in a sandbox without
   `allow-popups` and the SDK has no call to open an outside page (preflight fails on
   `window.open` as critical), so the button copies `JAM_URL`
@@ -145,7 +160,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   night" follows the rules (`noteText(…, world)`, `bloomOrdinal`). `specCode` ("AU-I1M-4242":
   climate, terrain, turn, M, seed) shares an island; `islandName` names it. Landmark models
   are built in the classic layout and turned/mirrored by their group (`buildPois`). Islands are
-  generated on the client from the snapshot's `island` parts (`session.islandFor`, the last one
+  generated on the client from the snapshot's `island` parts (`islandCache.islandFor`, the last one
   cached by `specKey`) and on the room server from the save. **Generator versions**
   (`IslandParts.gen`, `GEN` 2 since v1.25): new islands (`randomParts`, a typed map code, the
   default new island) get today's generator; saves keep the one they were made with (missing
@@ -644,7 +659,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   (v1.22, the user: "any island should be able to be multiplayer, and should have a unique
   Island multiplayer code to join"): 6 characters from `JOIN_CHARS` (no I/L/O/0/1), made with
   the island (`islands.ts` `newJoinCode`, `IslandSave.code`; older saves get one in
-  `session.loadIsland`), shown as "ABC-234" (`showJoinCode`; `cleanJoinCode` reads typed ones)
+  `slots.loadIsland`), shown as "ABC-234" (`showJoinCode`; `cleanJoinCode` reads typed ones)
   on the title's Play with friends button, the pause menu (Friends · code, This island) and
   the host's toast. RUN's room codes are random per room, so the island's room is found by
   `run.islandRoom` = `realtime.joinOrCreateRoom('island', { criteria: { island: code } })`:
@@ -665,7 +680,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   (friends' rooms have `island: code`, so they never mix; RUN pairs on the same server
   instance). The client sends C2S `quick`; the room answers S2C `role` (`IslandRoom`): the
   first one in hosts (`upload`: `RoomLink.quick` uploads their public island, kept apart from
-  the slots in `mishmash_island_public` (`session.PUBLIC_KEY`, `startPublic`; a random island
+  the slots in `mishmash_island_public` (`slots.PUBLIC_KEY`, `session.startPublic`; a random island
   with the default rules the first time), the others land on it as guests. When the host
   leaves while others play, the island goes on (`handOff`: the next connected survivor gets
   `role {host}`, `sim.owner`, the saves and a toast; `RoomLink.mode` turns 'host', and their
@@ -833,7 +848,9 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
 src/sdk/run.ts     THE ONLY client module that imports the RUN SDK. Waits for start-up,
                    catches everything. UgcApi + run.ugc, realtime rooms (createRoom/joinRoom).
 src/server/IslandRoom.ts  co-op GameRoom (imports the SDK's mp-server; runs IslandSim)
-src/play/          the game client: session.ts (solo/host/join, saves), link.ts (LocalLink),
+src/play/          the game client: slots.ts (the islands kept: slots, loading, summaries;
+                   light, for the title), session.ts (starting solo/host/join/public games;
+                   loaded on demand), islandCache.ts (islandFor), link.ts (LocalLink),
                    roomLink.ts, client.ts (GameClient), input.ts, keys.ts (PC bindings),
                    settings.ts + prefs.ts (settings), screen.ts (landscape), audio.ts +
                    music.ts, view.ts (scene), Game.tsx (canvas, frame loop, settings),

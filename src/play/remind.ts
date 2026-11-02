@@ -5,7 +5,7 @@ import * as run from '../sdk/run';
 import { REMINDER_IDS, reminderPlan } from '../game/reminders';
 import { prefs } from './prefs';
 import { loadRecords } from './records';
-import { describeSave, loadIsland, playerId } from './session';
+import { describeSave, loadIsland, playerId } from './slots';
 
 let chain: Promise<void> = Promise.resolve();
 

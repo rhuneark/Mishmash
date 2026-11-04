@@ -545,6 +545,8 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
       h.camp();
       h.clearMobs();
+      h.weather('clear');
+      window.__game.view.wet = 0;
       h.give([['jawblade', 1], ['firebomb', 4]]);
       const p = h.p();
       const blade = p.inv.findIndex((it) => it && it.id === 'jawblade');
@@ -552,24 +554,43 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       s.handle(c.you, { type: 'equip', slot: 0 });
       h.time(7, 0.86);
       h.calm(false);
-      const px = cx - 6, pz = cz + 3;
-      h.go(px, pz, Math.atan2(-1, -1));
-      h.tidy(px - 4, pz, 12);
-      for (const [dx, dz] of [[0.6, -3.0], [-2.2, -4.2], [-0.8, 2.2]]) s.handle(c.you, { type: 'build', kind: 'torch_post', x: px + dx, z: pz + dz, rot: 0 });
-      spawnMob(s, 'husk', px - 1.4, pz - 1.4, { enraged: true });
-      spawnMob(s, 'husk', px - 3.4, pz - 2.6, { enraged: true });
-      window.__shot = { px, pz };
-      await new Promise((r) => setTimeout(r, 600));
+      // By the campfire, the Husks coming in from the open side (south-east).
+      const px = cx + 2.6, pz = cz + 5.7;
+      h.go(px, pz, Math.atan2(1, 1));
+      h.tidy(px, pz, 14);
+      spawnMob(s, 'husk', px + 1.5, pz + 1.5, { enraged: true });
+      spawnMob(s, 'husk', px + 3.6, pz + 2.4, { enraged: true });
+      spawnMob(s, 'husk', px + 2.2, pz + 4.2, { enraged: true });
+      window.__shot = { px, pz, hx: px + 1.5, hz: pz + 1.5, cx, cz };
+      window.__fc = null;
+      await new Promise((r) => setTimeout(r, 400));
     }),
     () => {
-      const h = window.__h, c = h.c(), sh = window.__shot;
+      const h = window.__h, s = h.s(), c = h.c(), sh = window.__shot;
       h.p().hp = 100;
       const i = Math.round((window.__t - 16.0) * 30);
       if (i % 8 === 0) c.use();
-      const k = i / 45;
-      // Side on: the fight runs along (-1, -1), the camera stands off to its (-1, 1) side.
-      const mx = sh.px - 1.2, mz = sh.pz - 1.2, off = h.lerp(6.2, 5.4, k);
-      window.__cam = (cam) => h.look(cam, mx - off * 0.707 + 0.8, h.y(mx, mz) + 2.4, mz + off * 0.707 + 0.8, mx, h.y(mx, mz) + 1.1, mz, 58);
+      // Side on to the survivor and the nearest Husk, the cabin behind them; eased so it
+      // doesn't jump when they move.
+      let near = null, nd = 8;
+      for (const m of s.mobs.values()) {
+        if (m.tame) continue;
+        const d = Math.hypot(m.x - c.x, m.z - c.z);
+        if (d < nd) { nd = d; near = m; }
+      }
+      const hx = near ? near.x : sh.hx, hz = near ? near.z : sh.hz;
+      const ul = Math.hypot(hx - c.x, hz - c.z) || 1;
+      let nx = -(hz - c.z) / ul, nz = (hx - c.x) / ul;
+      const mx = (c.x + hx) / 2, mz = (c.z + hz) / 2;
+      if (nx * (mx - sh.cx) + nz * (mz - sh.cz) < 0) { nx = -nx; nz = -nz; }
+      const f = window.__fc ?? (window.__fc = { x: mx, z: mz, nx, nz });
+      const e = 0.12;
+      f.x += (mx - f.x) * e; f.z += (mz - f.z) * e;
+      f.nx += (nx - f.nx) * e; f.nz += (nz - f.nz) * e;
+      const nl = Math.hypot(f.nx, f.nz) || 1;
+      const off = h.lerp(5.4, 4.8, i / 45);
+      const ex = f.x + (f.nx / nl) * off, ez = f.z + (f.nz / nl) * off;
+      window.__cam = (cam) => h.look(cam, ex, h.y(f.x, f.z) + 2.3, ez, f.x, h.y(f.x, f.z) + 1.1, f.z, 56);
     },
   );
   await shot(
@@ -636,7 +657,11 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.tidy(fx, fz, 14);
       const friends = [['trailer-a', 'Nova', 'captain.navy'], ['trailer-b', 'Pip', 'flowers.rose'], ['trailer-c', 'Bram', 'ranger.khaki']];
       for (const [id, name, look] of friends) if (!s.players.has(id) || !s.online.has(id)) s.join(id, name, look);
-      const seats = [[0.0, 2.1], [1.6, 2.2], [3.3, 2.0], [4.8, 2.2]];
+      // The camera stands on the side away from the wreck (its wing and debris lie there);
+      // the four sit on the far side of the fire, facing it and the camera.
+      const crash = h.c().island.poiById.crash;
+      const A = Math.atan2(fz - crash.z, fx - crash.x);
+      const seats = [[A + Math.PI - 1.25, 2.0], [A + Math.PI - 0.42, 1.9], [A + Math.PI + 0.42, 1.9], [A + Math.PI + 1.25, 2.0]];
       const ids = [h.c().you, ...friends.map((f) => f[0])];
       ids.forEach((id, i) => {
         const q = s.players.get(id);
@@ -647,15 +672,15 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
         q.lastPos = s.time;
       });
       h.go(s.players.get(h.c().you).x, s.players.get(h.c().you).z, s.players.get(h.c().you).ry);
-      window.__shot = { fx, fz, ids };
+      window.__shot = { fx, fz, ids, A };
       await new Promise((r) => setTimeout(r, 1500));
     }),
     () => {
       const h = window.__h, sh = window.__shot;
       window.__game.view.me.root.visible = true;
       const k = (window.__t - 20.5) / 3;
-      const a = 2.3 + k * 0.6;
-      window.__cam = (cam) => h.look(cam, sh.fx + Math.cos(a) * 9.5, h.y(sh.fx, sh.fz) + 4.6, sh.fz + Math.sin(a) * 9.5, sh.fx, h.y(sh.fx, sh.fz) + 1.0, sh.fz, 60);
+      const a = sh.A - 0.3 + k * 0.6;
+      window.__cam = (cam) => h.look(cam, sh.fx + Math.cos(a) * 8.5, h.y(sh.fx, sh.fz) + 4.2, sh.fz + Math.sin(a) * 8.5, sh.fx, h.y(sh.fx, sh.fz) + 1.0, sh.fz, 58);
     },
   );
   await g(() => {

@@ -1145,26 +1145,35 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     if (clear) await teleport(page, clear[0], clear[1]);
     await page.waitForTimeout(1500);
     const from = await game(page, () => [window.__game.client.x, window.__game.client.z]);
-    // A spot a few metres away that shows on the island (not under a button or a card).
+    // A spot a few metres away that shows on the island (not under a button or a card): the
+    // open island first, then the stick's area (a short tap there walks too). A ring of them,
+    // since the HUD's cards and buttons cover different parts of a small screen.
     let spot = null;
-    for (const [dx, dz] of [
-      [3.5, -3.5],
-      [-3.5, -3.5],
-      [4.5, 0],
-      [-4.5, 0],
-      [0, -4.5],
-      [3, 3],
-      [-3, 3],
-    ]) {
-      const at = await onIsland(page, from[0] + dx, 0, from[1] + dz);
-      // Plain ground: not a note, a bag or a tree that a tap there would walk to and use.
-      const what = at[2] && (await game(page, ([x, y]) => window.__view.pickAt(x, y)?.kind, at));
-      if (what === 'ground') {
-        spot = at;
-        break;
+    let fallback = null;
+    const seen = [];
+    for (const r of [4.5, 3.5, 6])
+      for (let k = 0; k < 12 && !spot; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        const dx = Math.sin(a) * r;
+        const dz = Math.cos(a) * r;
+        const at = await onIsland(page, from[0] + dx, 0, from[1] + dz);
+        const el = await game(
+          page,
+          ([x, y]) => {
+            const e = document.elementFromPoint(x, y);
+            return String(e?.className?.baseVal ?? e?.className ?? e?.tagName ?? '');
+          },
+          at,
+        );
+        // Plain ground: not a note, a bag or a tree that a tap there would walk to and use.
+        const what = at[2] && (await game(page, ([x, y]) => window.__view.pickAt(x, y)?.kind, at));
+        seen.push(`${dx.toFixed(1)},${dz.toFixed(1)}:${el}/${what || '-'}`);
+        if (what !== 'ground') continue;
+        if (/game-canvas/.test(el)) spot = at;
+        else fallback ??= at;
       }
-    }
-    check(!!spot, `${tag} tap: no plain ground to walk to on screen`);
+    spot ??= fallback;
+    check(!!spot, `${tag} tap: no plain ground to walk to on screen (${seen.join(' ')})`);
     if (spot) {
       // Headless frames stall now and then and a stalled tap reads as a hold: tap again.
       for (let k = 0; k < 4; k++) {

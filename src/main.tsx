@@ -1,3 +1,6 @@
+import '@fontsource/caveat/700.css';
+import '@fontsource/courier-prime/400.css';
+import '@fontsource/courier-prime/700.css';
 import './style.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -7,6 +10,7 @@ import * as run from './sdk/run';
 import { appEvents } from './app/appEvents';
 import { prefs } from './play/prefs';
 import { installDragScroll } from './ui/dragScroll';
+import { InkDefs } from './ui/Icon';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) throw new Error('[mishmash] Root element not found');
@@ -38,6 +42,7 @@ run.onLifecycle({
 createRoot(rootElement).render(
   <StrictMode>
     <ErrorBoundary>
+      <InkDefs />
       <App />
     </ErrorBoundary>
   </StrictMode>,

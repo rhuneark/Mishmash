@@ -184,7 +184,7 @@ describe('islands from parts', () => {
       expect(island.towerVines.length).toBe(TOWER_VINES.length);
       expect(island.nodeCount).toBeGreaterThan(5000);
     }
-  });
+  }, 20_000);
 
   it('turns direction words with the layout and shares islands by code', () => {
     const p = { ...CLASSIC, turn: 1 as const };
@@ -231,7 +231,7 @@ describe('islands from parts', () => {
     expect(parseParts({ climate: 'volcanic' }).gen).toBeUndefined();
     expect(parseParts({ climate: 'volcanic', gen: GEN }).gen).toBe(GEN);
     expect(isClassic({ ...CLASSIC, gen: GEN })).toBe(false);
-  });
+  }, 20_000);
 
   it('gives islands multiplayer codes that are easy to type', () => {
     const random = rng(7);

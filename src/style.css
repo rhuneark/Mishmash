@@ -1,18 +1,34 @@
 /* Bloom Island: the game and its community hub. Phone-first, portrait. */
 
 :root {
-  --bg: #1d1b2f;
-  --panel: #2a2742;
-  --panel-2: #353151;
-  --line: #45405f;
-  --text: #f6f1e7;
-  --text-soft: #b9b3c9;
-  --tile-0: #ff5d73;
-  --tile-1: #ffc145;
-  --tile-2: #3ddc97;
-  --tile-3: #4cc9f0;
-  --accent: var(--tile-1);
-  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* The field journal: ink on paper. */
+  --bg: #eadbb8;
+  --panel: #f6eedb;
+  --panel-2: #efe2c4;
+  --line: #3b2d1f;
+  --text: #2a2017;
+  --text-soft: #6b5842;
+  --tile-0: #c8453a;
+  --tile-1: #d99a2b;
+  --tile-2: #4d8a3a;
+  --tile-3: #3d7bb4;
+  --accent: #b5342b;
+  --ink: #2a2017;
+  --ink-soft: #6b5842;
+  --red: #b5342b;
+  --green: #3f7a33;
+  --blue: #2f6ea8;
+  --hl: #ffe46b;
+  --pink: #e0508c;
+  --kraft: #c9a36c;
+  --tape: rgba(236, 222, 160, 0.86);
+  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .3  0 0 0 0 .22  0 0 0 0 .12  0 0 0 .16 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  --ruled: repeating-linear-gradient(transparent 0 23px, rgba(70, 110, 180, 0.16) 23px 24px);
+  --wob: 255px 14px 225px 14px / 14px 225px 14px 255px;
+  --wob-sm: 10px 4px 12px 5px / 5px 11px 4px 10px;
+  --paper-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 6px 16px rgba(30, 20, 10, 0.32);
+  --font: 'Courier Prime', ui-monospace, Menlo, monospace;
+  --hand: 'Caveat', 'Segoe Print', 'Bradley Hand', cursive;
   --fs: 1;
   --safe-top: 0px;
   --safe-bottom: 0px;
@@ -4720,4 +4736,1544 @@ button:disabled {
 /* A part of the game loading on demand (a page or a panel) */
 .loading-part {
   padding: 24px 0;
+}
+
+/* ==========================================================================================
+   Field journal: the survivor's notebook. Paper, ink, tape and pencil over every screen.
+   Layout lives above; this layer only paints (colours, fonts, borders, paper).
+   ========================================================================================== */
+
+.ink-icon {
+  display: inline-block;
+  flex: none;
+  width: 1.3em;
+  height: 1.3em;
+  vertical-align: -0.25em;
+}
+
+.ink-icon.inline {
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0 0.1em;
+  vertical-align: -0.22em;
+}
+
+html,
+body,
+#root {
+  background: var(--grain), var(--bg);
+}
+
+body {
+  color: var(--ink);
+}
+
+/* Handwriting for titles and buttons, typewriter for the rest. */
+.page-title,
+.intro-title,
+.menu-title,
+.menu-head-title,
+.subpage-title,
+.sheet-title,
+.capture-title,
+.island-name,
+.rules-title,
+.survivor-name,
+.chat-box-title,
+.overlay-card h2,
+.tut-title,
+.quest-title,
+.banner,
+.title-group {
+  font-family: var(--hand);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.page-title,
+.subpage-title,
+.menu-head-title,
+.sheet-title {
+  font-size: calc(28px * var(--fs));
+  line-height: 1;
+}
+
+.intro-title {
+  font-size: calc(34px * var(--fs));
+}
+
+.menu-title {
+  font-size: calc(40px * var(--fs));
+}
+
+.btn,
+.menu-btn,
+.tab-btn,
+.char-tab,
+.segment,
+.seg button,
+.topic,
+.craft-cat,
+.key {
+  font-family: var(--hand);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.btn {
+  font-size: calc(21px * var(--fs));
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.btn.small {
+  font-size: calc(19px * var(--fs));
+}
+
+.btn.big {
+  font-size: calc(24px * var(--fs));
+}
+
+.menu-btn {
+  font-size: calc(22px * var(--fs));
+}
+
+.tab-btn,
+.char-tab,
+.segment,
+.craft-cat,
+.topic {
+  font-size: calc(19px * var(--fs));
+}
+
+.seg button {
+  font-size: calc(18px * var(--fs));
+}
+
+.label {
+  font-family: var(--hand);
+  font-size: calc(19px * var(--fs));
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--red);
+}
+
+/* Paper: cards, notes, pages. */
+.card,
+.step,
+.menu-card,
+.char-menu,
+.sheet,
+.overlay-card,
+.capture-card,
+.quick-panel,
+.quick-window > .quick-panel,
+.chat-box,
+.notice {
+  background: var(--grain), var(--panel);
+  border: 1.6px solid var(--line);
+  border-radius: var(--wob);
+  box-shadow: var(--paper-shadow);
+  color: var(--ink);
+}
+
+.menu-card,
+.sheet,
+.char-menu {
+  background: var(--ruled), var(--grain), var(--panel);
+}
+
+.sheet {
+  border-radius: 6px 6px 0 0;
+}
+
+.char-menu,
+.menu-card {
+  border-radius: 6px;
+}
+
+.notice {
+  border-color: var(--red);
+}
+
+/* Buttons: ink on paper, the main one a block of ink. */
+.btn,
+.menu-btn,
+.tab-btn,
+.key,
+.key-btn {
+  border: 2px solid var(--line);
+  border-radius: var(--wob);
+  background: rgba(255, 255, 255, 0.38);
+  color: var(--ink);
+}
+
+.btn.primary,
+.menu-btn.primary {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--panel);
+}
+
+.btn.danger {
+  border-color: var(--red);
+  background: var(--red);
+  color: #fff4e0;
+}
+
+.menu-btn.leave {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.tab-btn.on,
+.segment.active,
+.seg button.on,
+.topic.on,
+.craft-cat.on {
+  border-color: var(--red);
+  background: linear-gradient(transparent 18%, var(--hl) 18% 86%, transparent 86%);
+  color: var(--red);
+}
+
+.segmented {
+  background: rgba(255, 255, 255, 0.3);
+  border: 1.6px solid var(--line);
+  border-radius: var(--wob);
+}
+
+.segment {
+  color: var(--ink-soft);
+}
+
+.topic,
+.craft-cat,
+.seg button {
+  border: 1.8px solid var(--line);
+  border-radius: var(--wob);
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--ink);
+}
+
+.badge {
+  border: 1.4px solid var(--line);
+  background: rgba(255, 255, 255, 0.4);
+  color: var(--ink);
+}
+
+.badge.hidden {
+  background: var(--hl);
+  color: var(--ink);
+}
+
+.badge.visible {
+  border-color: var(--green);
+  background: transparent;
+  color: var(--green);
+}
+
+.preview-tag {
+  border: 1.4px dashed var(--red);
+  background: transparent;
+  color: var(--red);
+}
+
+.suggest-text,
+.code-input,
+.jam-url,
+.chat-input input {
+  border: 1.8px solid var(--line);
+  border-radius: 4px;
+  background: var(--ruled), rgba(255, 255, 255, 0.55);
+  color: var(--ink);
+}
+
+.code-input {
+  font-family: var(--font);
+}
+
+.code-input:focus,
+.suggest-text:focus {
+  border-color: var(--red);
+}
+
+/* Taped notes: a strip of tape over the top edge. */
+.news-card,
+.tut-card,
+.title-menu,
+.recipe-detail,
+.perk-detail,
+.overlay-card {
+  position: relative;
+}
+
+.news-card::before,
+.tut-card::before,
+.title-menu::before,
+.overlay-card::before {
+  content: '';
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  width: 78px;
+  height: 22px;
+  transform: translateX(-50%) rotate(-3deg);
+  background: var(--tape);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+/* Hub pages: the journal's pages. */
+.app {
+  background: var(--ruled), var(--grain), var(--bg);
+}
+
+.subpage-head {
+  border-bottom: 2px solid var(--line);
+  background: var(--grain), var(--kraft);
+}
+
+.actions {
+  border-top: 2px solid var(--line);
+  background: var(--grain), var(--bg);
+}
+
+.intro-lead,
+.muted,
+.step-text span,
+.tips,
+.flag-hint,
+.set-desc,
+.records-row dt,
+.board-rank,
+.item-desc,
+.build-desc,
+.build-tip,
+.map-hint,
+.quick-hint,
+.quick-note,
+.wardrobe-how,
+.island-code,
+.skill-points,
+.recipe-where,
+.survivor-facts,
+.xp-num,
+.stat-num,
+.branch-spent,
+.tut-link,
+.tut-skip-ask {
+  color: var(--ink-soft);
+}
+
+.step-icon {
+  border: 2px solid var(--line);
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+.step:nth-child(odd) {
+  transform: rotate(-0.6deg);
+}
+
+.step:nth-child(even) {
+  transform: rotate(0.5deg);
+}
+
+.callout {
+  border-color: var(--red);
+}
+
+.brand {
+  font-family: var(--hand);
+  font-weight: 700;
+  font-size: calc(min(20vw, 84px) * var(--fs));
+  line-height: 0.85;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--panel);
+  text-shadow:
+    3px 4px 0 var(--ink),
+    0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.brand span {
+  color: var(--pink);
+  transform: rotate(-3deg);
+}
+
+.brand.small {
+  font-size: calc(min(13vw, 52px) * var(--fs));
+}
+
+.intro .brand,
+.page .brand {
+  color: var(--ink);
+  text-shadow: 2px 3px 0 rgba(42, 32, 23, 0.18);
+}
+
+/* Settings rows, switches, sliders. */
+.set-row,
+.rules-item,
+.island-tags span,
+.note-row,
+.item-info,
+.skills-top,
+.room-code {
+  border: 1.6px solid var(--line);
+  border-radius: var(--wob-sm);
+  background: rgba(255, 255, 255, 0.4);
+  color: var(--ink);
+}
+
+.switch {
+  border: 2px solid var(--line);
+  background: transparent;
+}
+
+.switch-knob {
+  top: 1px;
+  left: 1px;
+  background: var(--ink);
+}
+
+.toggle.on .switch {
+  border-color: var(--green);
+  background: rgba(77, 138, 58, 0.25);
+}
+
+.toggle.on .switch-knob {
+  background: var(--green);
+}
+
+.set-row.slider input {
+  accent-color: var(--red);
+}
+
+.rules-item dd,
+.island-code b,
+.rules-title,
+.xp-level,
+.level-num,
+.link-btn,
+.skill-points.some,
+.suggest-ok {
+  color: var(--red);
+}
+
+.control-row {
+  border-bottom: 1px dashed var(--ink-soft);
+}
+
+.key-cap {
+  border: 1.5px solid var(--ink);
+  border-radius: 4px 2px 5px 3px;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--ink);
+  font-family: var(--font);
+  font-weight: 700;
+}
+
+.key-btn.waiting {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* Notes and the journal. */
+.note-paper {
+  background: var(--ruled), var(--grain), #f8f1de;
+  border: 1px solid rgba(42, 32, 23, 0.25);
+  border-radius: 2px;
+  font-family: var(--font);
+  font-size: calc(15px * var(--fs));
+  line-height: 24px;
+  color: var(--ink);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+}
+
+.objectives li.done {
+  text-decoration: line-through;
+}
+
+/* Records and boards. */
+.board-rows li.mine {
+  background: linear-gradient(transparent 12%, var(--hl) 12% 88%, transparent 88%);
+  color: var(--ink);
+}
+
+.slot-card.on {
+  border-color: var(--red);
+}
+
+.slot-tag {
+  border: 1.4px solid var(--red);
+  background: transparent;
+  color: var(--red);
+}
+
+/* ---------------- The title screen: a journal page over the island ---------------- */
+
+.title-screen {
+  background: radial-gradient(circle at 50% 30%, #5a4a34, #1c140c 75%);
+}
+
+.title-shade {
+  background: linear-gradient(
+    to bottom,
+    rgba(28, 20, 12, 0.55) 0%,
+    rgba(28, 20, 12, 0.05) 30%,
+    rgba(28, 20, 12, 0.15) 46%,
+    rgba(28, 20, 12, 0.7) 100%
+  );
+}
+
+.title-kicker {
+  font-family: var(--font);
+  color: #fff4e0;
+  letter-spacing: 0.14em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.title-tag {
+  font-family: var(--font);
+  font-weight: 400;
+  color: #fff4e0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.title-menu {
+  gap: 9px;
+  padding: 16px 14px 12px 24px;
+  border-radius: 3px;
+  background:
+    linear-gradient(
+      90deg,
+      transparent 13px,
+      rgba(196, 60, 60, 0.4) 13px 14.5px,
+      transparent 14.5px
+    ),
+    var(--grain), var(--panel);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.title-menu .menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 48px;
+  padding: 6px 12px;
+  border: 2px solid var(--line);
+  border-radius: var(--wob);
+  background: rgba(255, 255, 255, 0.38);
+  box-shadow: none;
+  color: var(--ink);
+  text-align: left;
+}
+
+.title-menu .menu-btn.primary {
+  background: var(--ink);
+  color: var(--panel);
+}
+
+.title-continue {
+  min-height: 72px;
+  font-size: calc(32px * var(--fs));
+  flex-direction: row;
+}
+
+.title-play {
+  width: 28px;
+  height: 28px;
+  color: var(--hl);
+}
+
+.title-continue-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1;
+}
+
+.title-continue-sub {
+  font-family: var(--font);
+  font-size: calc(13px * var(--fs));
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.title-continue .title-continue-sub {
+  color: #e9dab7;
+  margin-top: 4px;
+}
+
+.title-stamp {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  border: 2.5px solid var(--red);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--red);
+  font-family: var(--font);
+  line-height: 1;
+  transform: rotate(-12deg);
+}
+
+.title-stamp i {
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.title-stamp b {
+  font-size: 22px;
+}
+
+.title-row {
+  gap: 8px;
+}
+
+.title-row .menu-btn {
+  justify-content: center;
+  font-size: calc(21px * var(--fs));
+}
+
+.title-row.three .menu-btn {
+  flex-direction: column;
+  gap: 1px;
+  min-height: 64px;
+  padding: 6px 2px;
+}
+
+.title-row.three .menu-btn.on {
+  background: linear-gradient(transparent 14%, var(--hl) 14% 88%, transparent 88%);
+}
+
+.title-code {
+  font-family: var(--font);
+  font-size: calc(12px * var(--fs));
+  font-weight: 700;
+  color: var(--red);
+}
+
+.title-group {
+  margin: 2px 0 -5px 2px;
+  font-size: calc(20px * var(--fs));
+  color: var(--ink-soft);
+}
+
+.title-menu .menu-btn.title-daily {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(transparent 10%, var(--hl) 10% 88%, transparent 88%);
+  font-family: var(--font);
+  font-size: calc(14px * var(--fs));
+  font-weight: 700;
+}
+
+.title-daily .ink-icon {
+  color: var(--red);
+}
+
+.title-dock {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1.5px dashed var(--ink-soft);
+}
+
+.dock-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 6px;
+  border: 1.8px solid var(--line);
+  border-radius: var(--wob-sm);
+  background: rgba(255, 255, 255, 0.38);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: calc(14px * var(--fs));
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dock-btn .ink-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.dock-btn.jam {
+  border-color: #c2571a;
+  color: #a8460f;
+}
+
+.news-card {
+  border-color: var(--line);
+  background: var(--grain), #fff1a8;
+}
+
+.news-head {
+  color: var(--ink);
+}
+
+.jam-link {
+  background: var(--grain), var(--panel);
+}
+
+/* ---------------- The game HUD: notes and pencil over the island ---------------- */
+
+.hud {
+  color: var(--ink);
+}
+
+.hud-player {
+  gap: 4px;
+  padding: 6px 9px 7px;
+  border: 2px solid var(--line);
+  border-radius: var(--wob);
+  background: var(--grain), var(--panel);
+  box-shadow: var(--paper-shadow);
+}
+
+.hud-clock {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  background: none;
+  font-family: var(--hand);
+  font-size: calc(21px * var(--fs));
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: none;
+}
+
+.hud-clock .ink-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.hud-clock .ink-icon.bloom {
+  color: var(--pink);
+}
+
+.hud-weather .ink-icon {
+  color: var(--blue);
+}
+
+.bar-icon {
+  width: 17px;
+  height: 17px;
+  font-size: 0;
+}
+
+.bar.hp .bar-icon {
+  color: #b52f27;
+}
+
+.bar.food .bar-icon {
+  color: #a8701a;
+}
+
+.bar.water .bar-icon {
+  color: var(--blue);
+}
+
+.bar-track,
+.bossbar-track,
+.xp-track,
+.stat-track,
+.level-track,
+.tut-bar {
+  border: 1.6px solid var(--line);
+  border-radius: 8px 3px 7px 4px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.bar.hp .bar-fill,
+.stat-track.hp > span {
+  background: repeating-linear-gradient(-50deg, #c33a31 0 3px, #e06a5f 3px 5px);
+}
+
+.bar.hp.poisoned .bar-fill {
+  background: repeating-linear-gradient(-50deg, #5f9a2c 0 3px, #9ccf5f 3px 5px);
+}
+
+.bar.food .bar-fill,
+.stat-track.food > span {
+  background: repeating-linear-gradient(-50deg, #c98a20 0 3px, #e8b55a 3px 5px);
+}
+
+.bar.water .bar-fill,
+.stat-track.water > span {
+  background: repeating-linear-gradient(-50deg, #2f6ea8 0 3px, #6aa2d4 3px 5px);
+}
+
+.xp-track > span,
+.level-track > span,
+.tut-bar span {
+  background: repeating-linear-gradient(-45deg, var(--red) 0 2px, #e27a6f 2px 4px);
+}
+
+.level-badge {
+  padding: 0;
+  background: none;
+  font-family: var(--hand);
+  font-size: calc(19px * var(--fs));
+}
+
+.level-plus {
+  font-family: var(--font);
+  font-size: 13px;
+  background: var(--red);
+  color: #fff4e0;
+}
+
+.chip {
+  border: 1.6px solid var(--line);
+  border-radius: var(--wob);
+  background: var(--grain), var(--panel);
+  color: var(--ink);
+}
+
+.chip.ok {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.chip.poison {
+  color: var(--green);
+}
+
+.chip.rescue.go {
+  background: var(--hl);
+  color: var(--ink);
+}
+
+.minimap {
+  border: 3px solid var(--line);
+  box-shadow:
+    0 0 0 4px var(--panel),
+    0 0 0 6px var(--line),
+    0 8px 16px rgba(0, 0, 0, 0.4);
+}
+
+.minimap canvas,
+.fullmap {
+  filter: sepia(0.35) saturate(0.85);
+}
+
+.round-btn {
+  border: 2px solid var(--line);
+  border-radius: 50% 46% 52% 48%;
+  background: var(--grain), var(--panel);
+  box-shadow: 0 3px 8px rgba(30, 20, 10, 0.35);
+  color: var(--ink);
+}
+
+.round-btn .ink-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.round-btn.big .ink-icon {
+  width: 27px;
+  height: 27px;
+}
+
+.round-btn.on {
+  border-color: var(--red);
+  background: var(--grain), var(--hl);
+}
+
+.round-btn.danger {
+  border-color: var(--red);
+  background: var(--red);
+  color: #fff4e0;
+}
+
+.chat-btn .chat-badge {
+  background: var(--red);
+  color: #fff4e0;
+}
+
+.stamina {
+  background: var(--red);
+}
+
+.btn-tip,
+.drag-hint,
+.toast,
+.action-label,
+.banner,
+.tut-pointer-tip {
+  border: 1.6px solid var(--line);
+  border-radius: var(--wob);
+  background: var(--grain), var(--panel);
+  box-shadow: 0 3px 10px rgba(30, 20, 10, 0.3);
+  color: var(--ink);
+  text-shadow: none;
+}
+
+.toast,
+.action-label {
+  font-weight: 700;
+}
+
+.action-label.blocked {
+  color: var(--red);
+}
+
+.banner {
+  padding: 8px 14px;
+  font-size: calc(28px * var(--fs));
+  line-height: 1.05;
+}
+
+.banner.night,
+.banner-toast.night {
+  color: #2a4a8a;
+}
+
+.banner.bloom,
+.banner-toast.bloom {
+  border-color: var(--pink);
+  color: #b0205f;
+}
+
+.banner.dawn,
+.banner-toast.dawn {
+  color: #a8701a;
+}
+
+.banner.dusk,
+.banner-toast.dusk {
+  color: #b0501a;
+}
+
+.banner-toast {
+  border-color: var(--line);
+}
+
+.banner.side {
+  font-size: calc(22px * var(--fs));
+}
+
+.bossbar-name {
+  font-family: var(--hand);
+  font-size: calc(20px * var(--fs));
+}
+
+.build-empty {
+  color: #fff4e0;
+}
+
+.joy-base {
+  border: 2px dashed rgba(42, 32, 23, 0.6);
+  background: rgba(243, 232, 207, 0.25);
+}
+
+.joy-knob {
+  border: 2px solid var(--line);
+  background: var(--grain), var(--panel);
+}
+
+.joy-hint {
+  border: 2px dashed rgba(42, 32, 23, 0.5);
+  background: rgba(243, 232, 207, 0.18);
+  opacity: 0.85;
+}
+
+.use-btn {
+  border: 2.5px solid var(--line);
+  border-radius: 49% 51% 47% 53%;
+  background: var(--grain), var(--panel);
+  box-shadow:
+    0 0 0 4px var(--panel),
+    0 0 0 6.5px var(--red),
+    0 8px 18px rgba(0, 0, 0, 0.4);
+  color: var(--ink);
+}
+
+.use-btn .ink-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.use-btn.attack {
+  background: var(--grain), #f6d9cf;
+}
+
+.use-btn.place {
+  background: var(--grain), #dcebc9;
+  box-shadow:
+    0 0 0 4px var(--panel),
+    0 0 0 6.5px var(--green),
+    0 8px 18px rgba(0, 0, 0, 0.4);
+}
+
+.use-btn.eat {
+  background: var(--grain), #d6e6f3;
+  box-shadow:
+    0 0 0 4px var(--panel),
+    0 0 0 6.5px var(--blue),
+    0 8px 18px rgba(0, 0, 0, 0.4);
+}
+
+.hotbar {
+  padding: 5px;
+  border-radius: 3px;
+  background: var(--grain), var(--panel);
+  box-shadow: var(--paper-shadow);
+}
+
+.hotbar::before,
+.hotbar::after {
+  content: '';
+  position: absolute;
+  top: -9px;
+  width: 44px;
+  height: 18px;
+  background: var(--tape);
+  pointer-events: none;
+}
+
+.hotbar::before {
+  left: -12px;
+  transform: rotate(-32deg);
+}
+
+.hotbar::after {
+  right: -12px;
+  transform: rotate(30deg);
+}
+
+.slot,
+.recipe-tile,
+.perk {
+  border: 1.6px solid var(--line);
+  border-radius: 7px 3px 8px 4px;
+  background: rgba(255, 255, 255, 0.38);
+  color: var(--ink);
+}
+
+.slot.held {
+  border-color: var(--red);
+  background: var(--hl);
+  box-shadow: 0 0 0 2px var(--red);
+}
+
+.slot.sel {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px var(--blue);
+}
+
+.slot.hot {
+  box-shadow: inset 0 -3px 0 rgba(181, 52, 43, 0.35);
+}
+
+.slot.drop-over {
+  border-color: var(--green);
+  background: rgba(77, 138, 58, 0.22);
+}
+
+.slot-n,
+.slot-ammo {
+  color: var(--ink);
+  text-shadow:
+    0 0 2px var(--panel),
+    0 0 3px var(--panel);
+}
+
+.slot-ammo.out {
+  color: var(--red);
+}
+
+.slot-dur {
+  background: rgba(42, 32, 23, 0.25);
+}
+
+.slot-dur span {
+  background: var(--green);
+}
+
+/* Quests, the daily goal and the tutorial: pages pinned under the minimap. */
+.quest,
+.daily-chip {
+  border: 1.6px solid var(--line);
+  border-left-width: 1.6px;
+  border-radius: var(--wob-sm);
+  background: var(--grain), var(--panel);
+  box-shadow: 0 3px 10px rgba(30, 20, 10, 0.3);
+  color: var(--ink);
+}
+
+.daily-chip {
+  background: var(--grain), #fff1a8;
+}
+
+.quest-title {
+  font-size: calc(20px * var(--fs));
+  line-height: 1;
+  color: var(--ink);
+  text-shadow: none;
+}
+
+.game.pc .quest-title {
+  font-size: calc(22px * var(--fs));
+}
+
+.quest.tracked {
+  border-color: var(--red);
+  background: var(--grain), var(--panel);
+}
+
+.quest-steps li::before {
+  color: var(--red);
+}
+
+.quest-steps li.done::before,
+.tut-flash {
+  color: var(--green);
+}
+
+.quest-steps li.now {
+  color: var(--ink);
+  background: linear-gradient(transparent 20%, rgba(255, 228, 107, 0.75) 20% 85%, transparent 85%);
+}
+
+.quest-steps li.now::before {
+  color: var(--red);
+}
+
+.daily-kicker,
+.daily-count {
+  color: var(--red);
+}
+
+.tut-card {
+  padding-left: 22px;
+  border: 1px solid rgba(42, 32, 23, 0.3);
+  border-left: 1px solid rgba(42, 32, 23, 0.3);
+  border-radius: 2px;
+  background:
+    linear-gradient(
+      90deg,
+      transparent 14px,
+      rgba(196, 60, 60, 0.45) 14px 15.5px,
+      transparent 15.5px
+    ),
+    var(--ruled), var(--grain), #f8f1de;
+  box-shadow: 0 6px 16px rgba(30, 20, 10, 0.35);
+  color: var(--ink);
+}
+
+.tut-kicker {
+  color: var(--ink-soft);
+}
+
+.tut-title {
+  font-size: calc(23px * var(--fs));
+  line-height: 1;
+  text-shadow: none;
+}
+
+.game.pc .tut-title {
+  font-size: calc(26px * var(--fs));
+}
+
+.tut-now {
+  background: none;
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+.tut-check {
+  border: 1.6px solid var(--ink);
+  border-radius: 3px 5px 2px 4px;
+  color: var(--red);
+}
+
+.tut-goals li.done .tut-check,
+.tut-step.done .tut-check {
+  border-color: var(--ink);
+  background: transparent;
+  color: var(--red);
+}
+
+.tut-count {
+  color: var(--red);
+}
+
+.tut-goals li.done .tut-count {
+  color: var(--green);
+}
+
+.tut-where {
+  font-family: var(--hand);
+  font-size: calc(19px * var(--fs));
+  color: var(--red);
+}
+
+.build-tut {
+  background: linear-gradient(transparent 12%, var(--hl) 12% 88%, transparent 88%);
+  color: var(--ink);
+}
+
+.tut-glow {
+  animation-name: tut-glow-ink;
+}
+
+@keyframes tut-glow-ink {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 3px var(--hl),
+      0 0 0 5px var(--red),
+      0 0 8px 3px rgba(255, 228, 107, 0.6);
+  }
+  50% {
+    box-shadow:
+      0 0 0 5px var(--hl),
+      0 0 0 7px var(--red),
+      0 0 20px 8px rgba(255, 228, 107, 0.9);
+  }
+}
+
+.tut-pointer-tip {
+  border-color: var(--red);
+  font-family: var(--hand);
+  font-size: calc(19px * var(--fs));
+}
+
+.tut-pointer-arrow,
+.game-labels > .tut-edge {
+  color: var(--hl);
+}
+
+/* Build mode. */
+.build-panel {
+  border: 1.6px solid var(--line);
+  border-radius: var(--wob-sm);
+  background: var(--grain), var(--panel);
+  box-shadow: var(--paper-shadow);
+  color: var(--ink);
+}
+
+.build-title {
+  font-family: var(--hand);
+  font-size: calc(21px * var(--fs));
+  color: var(--red);
+}
+
+.pill-btn,
+.build-tab {
+  border: 1.8px solid var(--line);
+  border-radius: var(--wob);
+  background: var(--grain), var(--panel);
+  color: var(--ink);
+}
+
+.pill-btn.on,
+.build-tab.on {
+  border-color: var(--red);
+  background: var(--grain), var(--hl);
+}
+
+.build-need.short,
+.recipe-needs .need,
+.need-row.need {
+  color: var(--red);
+}
+
+.recipe-needs .have,
+.need-row.have {
+  color: var(--green);
+}
+
+/* Sheets and windows. */
+.sheet-backdrop,
+.capture {
+  background: rgba(30, 20, 10, 0.45);
+}
+
+.sheet-head,
+.quick-head {
+  border-bottom: 1.6px solid var(--line);
+}
+
+.quick-window::after {
+  border-right: 1.6px solid var(--line);
+  border-bottom: 1.6px solid var(--line);
+  background: var(--panel);
+}
+
+.recipe {
+  border: 1.6px solid transparent;
+  border-radius: var(--wob-sm);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.recipe.ok {
+  border-color: var(--green);
+}
+
+.keypad-screen {
+  border: 2px solid var(--line);
+}
+
+.key.go {
+  border-color: var(--green);
+  background: var(--green);
+  color: #fff4e0;
+}
+
+.channel {
+  color: #e8f0ff;
+}
+
+.channel.used {
+  color: var(--ink);
+}
+
+.ad-btn {
+  border-color: #5ab4ff;
+  background: #173352;
+  color: #e8f0ff;
+}
+
+.overlay-card {
+  border-radius: 4px;
+}
+
+.menu-screen {
+  background: radial-gradient(circle at 50% 35%, rgba(60, 44, 28, 0.7), rgba(20, 14, 8, 0.9));
+}
+
+.menu-btn {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.fullmap {
+  border: 3px solid var(--line);
+}
+
+.fps {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.map-preview {
+  border: 2px solid var(--line);
+  filter: sepia(0.25);
+}
+
+.map-busy {
+  background: rgba(234, 219, 184, 0.75);
+  color: var(--ink);
+}
+
+.chat-box {
+  color: var(--ink);
+}
+
+.chat-people {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.chat-note {
+  color: var(--red);
+}
+
+.chat-lines .chat-line {
+  text-shadow: none;
+}
+
+/* The survivor menu: a notebook with index tabs. */
+.char-head {
+  border-bottom: 2px solid var(--line);
+  background: var(--grain), var(--kraft);
+}
+
+.char-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1.8px solid var(--line);
+  border-radius: 10px 10px 2px 2px;
+  background: var(--grain), #dcc08e;
+}
+
+.char-tab.on {
+  border-color: var(--line);
+  background: var(--grain), var(--panel);
+  color: var(--red);
+}
+
+.char-tab .ink-icon {
+  width: 19px;
+  height: 19px;
+}
+
+.char-dot,
+.btn-dot {
+  background: var(--red);
+  color: #fff4e0;
+}
+
+.btn-dot {
+  border-color: var(--panel);
+}
+
+.survivor-card {
+  border: 1.6px solid var(--line);
+  border-radius: var(--wob-sm);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.survivor-figure {
+  background: radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.5), transparent 70%);
+}
+
+.item-stat,
+.need-row {
+  border: 1.2px solid rgba(42, 32, 23, 0.35);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.need-name {
+  color: var(--ink);
+}
+
+.recipe-tile.ok {
+  border-color: var(--green);
+}
+
+.recipe-tile.ok::after {
+  content: '✓';
+  position: absolute;
+  top: -4px;
+  right: 3px;
+  font-family: var(--hand);
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.recipe-tile.sel {
+  border-color: var(--red);
+  box-shadow:
+    0 0 0 3px var(--hl),
+    0 0 0 5px var(--red);
+}
+
+.recipe-detail,
+.perk-detail,
+.survivor > .item-info {
+  border: 1.6px solid var(--line);
+  background: var(--grain), #fff1a8;
+  box-shadow: 0 -6px 16px rgba(30, 20, 10, 0.25);
+}
+
+.branch-tab {
+  border: 1.8px solid var(--line);
+  border-radius: var(--wob-sm);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.branch-tab.on {
+  border-color: var(--red);
+  background: linear-gradient(transparent 10%, var(--hl) 10% 90%, transparent 90%);
+}
+
+.skill-tier {
+  border: 1.4px dashed var(--ink-soft);
+  border-radius: var(--wob-sm);
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.tier-label {
+  font-family: var(--hand);
+  font-size: calc(19px * var(--fs));
+}
+
+.perk.has {
+  border-color: var(--green);
+}
+
+.perk.can {
+  border-color: var(--red);
+  box-shadow: 0 0 0 2px rgba(255, 228, 107, 0.9);
+}
+
+.perk.sel {
+  background: rgba(255, 228, 107, 0.6);
+}
+
+.perk-pips i {
+  border: 1.4px solid var(--ink);
+}
+
+.perk-pips i.on {
+  border-color: var(--green);
+  background: var(--green);
+}
+
+/* The wardrobe. */
+.wardrobe-preview {
+  background: radial-gradient(circle at 50% 42%, #c9d8c0 0%, #9fb59a 45%, var(--panel) 80%);
+}
+
+.wardrobe-tile {
+  border: 1.8px solid var(--line);
+  border-radius: var(--wob-sm);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.wardrobe-tile.on {
+  border-color: var(--red);
+  background: linear-gradient(transparent 6%, rgba(255, 228, 107, 0.7) 6% 94%, transparent 94%);
+}
+
+.game-loading {
+  background: var(--ruled), var(--grain), var(--bg);
+  color: var(--ink);
+}
+
+.loading-text {
+  font-family: var(--hand);
+  font-size: calc(26px * var(--fs));
+}
+
+/* The player box is a card now: the column of toasts starts under it. */
+.hud-left {
+  --left-top: 136px;
+}
+
+.tut-kicker {
+  font-family: var(--hand);
+  font-size: calc(17px * var(--fs));
+  font-weight: 700;
+  line-height: 1;
+}
+
+.recipe-detail .item-info,
+.perk-detail .item-info {
+  border: 0;
 }

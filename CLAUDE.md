@@ -28,17 +28,37 @@ update to the user with this link)
   the players build" → it starts as a survival game → play / suggest / we build it (`STEPS`,
   also in the title's ❓ How to play) → "Built by you" (what players asked for and got).
   Buttons (pinned under the text): Play, Suggest an idea.
+- **The look: a field journal** (v1.31; the user picked mockup A of three: "A, field
+  journal"). Everything outside the 3D view is the survivor's notebook: ink on paper. Tokens
+  in `style.css` `:root` (`--bg`/`--panel` paper, `--line`/`--text` ink, `--red` pencil,
+  `--hl` highlighter, `--grain` (an SVG noise texture), `--ruled` lines, `--wob` hand-drawn
+  border radius, `--tape`), and a **Field journal layer** at the end of `style.css` that paints
+  every component (layout stays above it): paper cards and notes with tape, ruled sheets,
+  wobbly ink borders, hatched pencil bars, highlighter for what's picked, a sticky note for the
+  picked recipe/skill, kraft index tabs on the survivor menu. Fonts are bundled
+  (`@fontsource/caveat` 700 for titles and buttons = `--hand`, `@fontsource/courier-prime`
+  400/700 for text = `--font`; imported in `main.tsx`). **Ink icons** (`ui/Icon.tsx`: `Icon`
+  over 24-grid stroke paths, `InkDefs` renders the `#ink-wobble` filter once in `main.tsx`,
+  `InkText` draws the HUD-button emoji in a text (✋ 🎒 🔨 📖 ⚙️ 🏃) as the same icons): the HUD's
+  buttons, bars, clock and weather, the survivor menu's tabs and the title use them; item
+  pictures stay `itemIcons.ts`. Don't tilt big elements drawn over the 3D view (a rotated card
+  over the WebGL canvas glitched in the headless check); small ones are fine. The playthrough
+  finds lit HUD buttons by `aria-label`, not emoji.
 - **Play** (`screens/Play.tsx`): a game title screen. Behind the menu your saved island turns
   slowly around the crash site (`play/TitleScene.ts`: the game's own terrain, nodes, grass and
   landmarks, 30 fps, gives the WebGL context back on unmount; no save: an autumn showcase
-  island). Buttons: Continue (island name · Day N) or **Start surviving** (no island in the
-  slot: straight onto a ready-made one, `slots.quickIsland`: tropical, classic terrain, any
-  layout, default rules), New island / Choose your island (the New island screen), 🗂️ Your
-  islands (N/3), Play with friends (opens your island; shows its multiplayer code), Join a
-  friend (that code), 🌍 Play with strangers (a public island), 👕 Wardrobe, ⚙️ Settings (the game's settings panel without the key list), ❓ How to
-  play, 💡 Suggest an update, 📰 What's new, 🎃 Vote for us in October Jam, and for the owner
-  only 🛠️ Dev (· N to check: new suggestions + messages with open reports). Under the island
-  buttons: today's daily goal and the 🔥 streak (`DailyLine`; opens 🏆 Records). **First launch**
+  island). The menu is a taped-in journal page: Continue (island name · Day N, a red DAY stamp) or
+  **Start surviving** (no island in the slot: straight onto a ready-made one,
+  `slots.quickIsland`: tropical, classic terrain, any layout, default rules); a row of New
+  island / Choose your island (the New island screen) and Your islands (N/3); today's daily
+  goal and the streak, highlighted (`DailyLine`; opens 🏆 Records); "Play together": Friends
+  (opens your island; shows its multiplayer code; named "Play with friends · open X · code"),
+  Join (named "Join a friend": opens the code form) and Strangers ("Play with strangers": a
+  public island); then a dock of framed buttons (`DockButton`, an icon and a word, named in
+  full): Wardrobe, Settings (the game's settings panel without the key list), Help ("How to
+  play"), Suggest ("Suggest an update"), News ("What's new"), Jam ("Vote for us in October
+  Jam") and for the owner only Dev ("Dev · N to check": new suggestions + messages with open
+  reports). **First launch**
   (v1.26, the coach review: get new players playing faster): the intro's Play goes straight
   onto a ready-made island (`App` `quickStart` → `Play` starts `quickIsland` when the slot is
   empty), no New island screen. **Save slots** (`ISLAND_SLOTS` 3, `slots.islandKey`: slot 1

@@ -2,6 +2,7 @@
 // the skill tree. Tap something to see what it is and what you can do with it; drag items
 // between slots, or onto the island to drop them.
 
+import { Icon, type IconName } from '../../ui/Icon';
 import { useState, type ReactNode } from 'react';
 import { ITEMS, type ItemDef } from '../../game/content/items';
 import { RECIPES, RECIPE_LIST, STATION_NAMES, type Recipe } from '../../game/content/recipes';
@@ -37,17 +38,17 @@ export function CharacterMenu({
   // Survival basics lights the tab it wants (and the pointer names it).
   const litTab = (id: CharTab) =>
     (id === 'craft' && glow === 'tab-craft') || (id === 'skills' && glow === 'tab-skills');
-  const tabs: [CharTab, string][] = [
-    ['bag', '🎒 Survivor'],
-    ['craft', '🔨 Crafting'],
-    ['skills', '⭐ Skills'],
+  const tabs: [CharTab, string, IconName][] = [
+    ['bag', 'Survivor', 'bag'],
+    ['craft', 'Crafting', 'hammer'],
+    ['skills', 'Skills', 'star'],
   ];
   return (
     <div className="sheet-backdrop char-backdrop" onClick={() => client.openPanel(null)}>
       <div className="char-menu" data-panel="character" onClick={(e) => e.stopPropagation()}>
         <div className="char-head">
           <div className="char-tabs" role="tablist" aria-label="Survivor menu">
-            {tabs.map(([id, label]) => (
+            {tabs.map(([id, label, icon]) => (
               <button
                 key={id}
                 role="tab"
@@ -56,6 +57,7 @@ export function CharacterMenu({
                 data-tip={litTab(id) ? (id === 'craft' ? 'Crafting' : 'Skills') : undefined}
                 onClick={() => client.openPanel(id)}
               >
+                <Icon name={icon} />
                 {label}
                 {id === 'skills' && prog.points > 0 && (
                   <span className="char-dot" aria-label={`${prog.points} skill points`}>
@@ -66,7 +68,7 @@ export function CharacterMenu({
             ))}
           </div>
           <button className="round-btn" onClick={() => client.openPanel(null)} aria-label="Close">
-            ✕
+            <Icon name="close" />
           </button>
         </div>
         <div className="char-body">

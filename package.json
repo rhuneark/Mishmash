@@ -40,6 +40,8 @@
     "vitest": "^3.2.7"
   },
   "dependencies": {
+    "@fontsource/caveat": "5.2.8",
+    "@fontsource/courier-prime": "5.2.8",
     "@series-inc/rundot-game-sdk": "5.28.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",

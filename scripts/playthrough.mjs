@@ -380,7 +380,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   // The tutorial asks for a stone axe and lights the way: 🎒, Crafting, then Craft.
   await tutCard.getByText('Your first tool').waitFor({ timeout: 15000 });
   await page
-    .locator('.round-btn.tut-glow', { hasText: '🎒' })
+    .locator('.round-btn.tut-glow[aria-label="Bag and crafting"]')
     .waitFor({ timeout: 5000 })
     .catch(() => check(false, `${tag} tutorial: 🎒 isn't lit for the axe`));
   // An arrow points at it, saying what to press; the card ticks off what's done so far.
@@ -587,7 +587,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   // stones), to the campfire; skipping it brings the quests back.
   await tutCard.getByText('Light a fire before dark').waitFor({ timeout: 15000 });
   check(
-    (await page.locator('.round-btn.tut-glow', { hasText: '🔨' }).count()) === 1,
+    (await page.locator('.round-btn.tut-glow[aria-label="Build mode"]').count()) === 1,
     `${tag} tutorial: 🔨 isn't lit for the campfire`,
   );
   await tutCard.getByRole('button', { name: 'Skip' }).click();
@@ -1937,7 +1937,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   );
   await tutCard.getByText('Now find a way off').waitFor({ timeout: 15000 });
   await page
-    .locator('.round-btn.tut-glow', { hasText: '📖' })
+    .locator('.round-btn.tut-glow[aria-label="Journal"]')
     .waitFor({ timeout: 5000 })
     .catch(() => check(false, `${tag} tutorial: the journal isn't lit at the end`));
   check(
@@ -2130,7 +2130,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   // The title shows the daily goal done and the streak; 🏆 Records has the player's best and
   // the leaderboards.
   const titleDaily = page.locator('.title-daily');
-  await titleDaily.getByText(/Daily goal done · 🔥 1-day streak/).waitFor({ timeout: 10000 });
+  await titleDaily.getByText(/Daily goal done · 1-day streak/).waitFor({ timeout: 10000 });
   await titleDaily.click();
   await page.getByText('Your records, every island').waitFor();
   check(
@@ -2552,7 +2552,7 @@ for (const [width, height] of VIEWPORTS) {
   // Dev area (owner only; ?owner plays the owner in the local preview), from a title
   // button that counts new suggestions (3 seeded) and open reports (2).
   await page.goto(`${URL}?owner`);
-  await page.getByRole('button', { name: '🛠️ Dev · 5 to check' }).click();
+  await page.getByRole('button', { name: 'Dev · 5 to check' }).click();
   // Suggestions first: star one, mark one done, delete one.
   const nova = page.locator('.idea', { hasText: 'Boats so we can sail' });
   const pip = page.locator('.idea', { hasText: 'A cave under the mountain' });
@@ -2603,7 +2603,7 @@ for (const [width, height] of VIEWPORTS) {
   await spamCard.getByText('Resolved: deleted').waitFor();
   await bramCard.getByText('Resolved: kept').waitFor();
   await page.getByRole('button', { name: '‹ Back' }).click();
-  await page.getByRole('button', { name: '🛠️ Dev', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Dev', exact: true }).waitFor();
 
   await playGame(page, tag, width, height, shot, noSideScroll);
 

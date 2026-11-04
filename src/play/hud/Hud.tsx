@@ -1,6 +1,7 @@
 // Everything drawn over the 3D view: stats, clock, objective, minimap,
 // joystick, action buttons, hotbar, toasts, banners and the sheets.
 
+import { Icon, InkText, type IconName } from '../../ui/Icon';
 import {
   useEffect,
   useRef,
@@ -52,12 +53,12 @@ export function useClient(client: GameClient): number {
 export const isPc = (): boolean =>
   typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: fine)').matches;
 
-const WEATHER_ICONS: Record<WeatherKind, string> = {
-  clear: '☀️',
-  cloudy: '☁️',
-  rain: '🌧️',
-  storm: '⛈️',
-  fog: '🌫️',
+const WEATHER_ICONS: Record<WeatherKind, IconName> = {
+  clear: 'sun',
+  cloudy: 'cloud',
+  rain: 'rain',
+  storm: 'storm',
+  fog: 'fog',
 };
 
 const WEATHER_NAMES: Record<WeatherKind, string> = {
@@ -112,11 +113,11 @@ export function Hud(props: HudProps) {
       <div className="hud-player">
         {showInfo && settings.clock && (
           <div className="hud-clock">
-            {info.night ? (info.bloom ? '🌑' : '🌙') : '☀️'} {clockLabel(client.now())}
+            <Icon name={info.night ? 'moon' : 'sun'} className={info.bloom ? 'bloom' : ''} />
+            {clockLabel(client.now())}
             {client.weather !== 'clear' && (
               <span className="hud-weather" title={WEATHER_NAMES[client.weather]}>
-                {' '}
-                {WEATHER_ICONS[client.weather]}
+                <Icon name={WEATHER_ICONS[client.weather]} />
               </span>
             )}
           </div>
@@ -124,9 +125,9 @@ export function Hud(props: HudProps) {
         {badge && <LevelBadge client={client} glow={glow === 'level'} tip={tip('level')} />}
         {showInfo && settings.stats && (
           <div className="hud-stats">
-            <Bar icon="❤️" value={me.hp} cls={`hp${me.poison > 0 ? ' poisoned' : ''}`} />
-            <Bar icon="🍖" value={me.food} cls="food" />
-            <Bar icon="💧" value={me.water} cls="water" />
+            <Bar icon="heart" value={me.hp} cls={`hp${me.poison > 0 ? ' poisoned' : ''}`} />
+            <Bar icon="food" value={me.food} cls="food" />
+            <Bar icon="drop" value={me.water} cls="water" />
           </div>
         )}
         {me.poison > 0 && <div className="chip poison">☠️ Poisoned</div>}
@@ -152,7 +153,7 @@ export function Hud(props: HudProps) {
                 aria-label="Journal"
                 title={withKey('Journal', hint('journal'))}
               >
-                📖
+                <Icon name="book" />
               </button>
             )}
             {coop && (
@@ -162,7 +163,7 @@ export function Hud(props: HudProps) {
                 aria-label={client.unread ? `Chat, ${client.unread} new` : 'Chat'}
                 title={withKey('Chat', hint('chat'))}
               >
-                💬
+                <Icon name="chat" />
                 {client.unread > 0 && (
                   <span className="chat-badge">{Math.min(client.unread, 9)}</span>
                 )}
@@ -174,7 +175,7 @@ export function Hud(props: HudProps) {
               aria-label="Menu"
               title="Menu and settings (Esc)"
             >
-              ⚙️
+              <Icon name="gear" />
             </button>
           </div>
         </div>
@@ -255,7 +256,7 @@ export function Hud(props: HudProps) {
                 aria-label="Turn"
                 title={withKey('Turn', hint('turn'))}
               >
-                🔄
+                <Icon name="turn" />
               </button>
             )}
             <button
@@ -265,7 +266,7 @@ export function Hud(props: HudProps) {
               aria-label={build ? 'Leave build mode' : 'Build mode'}
               title={withKey('Build mode', hint('build'))}
             >
-              🔨
+              <Icon name="hammer" />
             </button>
             {!client.ghost && client.target?.building !== undefined && (
               <TakeDown
@@ -282,7 +283,7 @@ export function Hud(props: HudProps) {
                 aria-label="Bag and crafting"
                 title={withKey('Survivor, bag and crafting', hint('quick'))}
               >
-                🎒
+                <Icon name="bag" />
                 {client.progress().points > 0 && <span className="btn-dot" aria-hidden="true" />}
               </button>
             )}
@@ -296,7 +297,7 @@ export function Hud(props: HudProps) {
                 aria-label="Sprint"
                 title={withKey('Sprint', hint('sprint'))}
               >
-                🏃
+                <Icon name="run" />
                 <span className="stamina" style={{ height: `${client.stamina}%` }} />
               </button>
             )}
@@ -477,11 +478,11 @@ function formatTime(s: number): string {
   return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 }
 
-function Bar({ icon, value, cls }: { icon: string; value: number; cls: string }) {
+function Bar({ icon, value, cls }: { icon: IconName; value: number; cls: string }) {
   const low = value < 20;
   return (
     <div className={`bar ${cls}${low ? ' low' : ''}`}>
-      <span className="bar-icon">{icon}</span>
+      <Icon name={icon} className="bar-icon" />
       <div className="bar-track">
         <div className="bar-fill" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
       </div>
@@ -512,18 +513,18 @@ function UseButton({
   const up = () => {
     input.useButton = false;
   };
-  const icon =
+  const icon: IconName =
     kind === 'place'
-      ? '🔨'
+      ? 'hammer'
       : kind === 'attack'
-        ? '⚔️'
+        ? 'swords'
         : kind === 'throw'
-          ? '💣'
+          ? 'bomb'
           : kind === 'eat'
-            ? '😋'
+            ? 'eat'
             : kind === 'use'
-              ? '✋'
-              : '👊';
+              ? 'hand'
+              : 'fist';
   return (
     <button
       className={`use-btn ${kind}${tip !== undefined ? ' tut-glow' : ''}`}
@@ -534,7 +535,7 @@ function UseButton({
       onPointerLeave={up}
       aria-label="Action"
     >
-      {icon}
+      <Icon name={icon} />
     </button>
   );
 }
@@ -557,7 +558,7 @@ function TakeDown({ onConfirm }: { onConfirm: () => void }) {
       }}
       aria-label="Take down"
     >
-      {armed ? '✔️' : <ItemIcon id="axe_stone" className="btn-icon" />}
+      {armed ? <Icon name="check" /> : <ItemIcon id="axe_stone" className="btn-icon" />}
       {armed && <span className="btn-tip">Tap again to take it down</span>}
     </button>
   );
@@ -635,7 +636,9 @@ function TutorialCard({
         <div className="tut-title">
           {s.icon} {s.title}
         </div>
-        <p className="tut-text">{pc ? s.pc : s.touch}</p>
+        <p className="tut-text">
+          <InkText text={pc ? s.pc : s.touch} />
+        </p>
         <ul className="tut-goals">
           {goals.map((g, i) => {
             const key = pc && g.key && !g.done ? hint(g.key as Action) : '';
@@ -645,7 +648,9 @@ function TutorialCard({
                   {g.done ? '✓' : ''}
                 </span>
                 {g.item && <ItemIcon id={g.item} className="tut-goal-icon" />}
-                <span className="tut-goal-text">{g.text}</span>
+                <span className="tut-goal-text">
+                  <InkText text={g.text} />
+                </span>
                 {g.count && (
                   <span className="tut-count">
                     {g.count[0]}/{g.count[1]}

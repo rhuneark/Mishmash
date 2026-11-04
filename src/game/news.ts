@@ -10,6 +10,14 @@ export interface News {
 
 export const NEWS: News[] = [
   {
+    version: '1.31',
+    title: 'The survivor’s journal',
+    items: [
+      'A new look for every menu: your survivor’s field journal, in ink and pencil on taped-in pages.',
+      'Hand-drawn buttons in place of the old emoji, and a tidier title page.',
+    ],
+  },
+  {
     version: '1.30',
     title: 'A new look for the island',
     items: [

@@ -1,3 +1,4 @@
+import { Icon, type IconName } from '../ui/Icon';
 import {
   Suspense,
   lazy,
@@ -208,41 +209,71 @@ export function Play({
                   aria-label={`Continue · Day ${info.day} on ${info.name}`}
                   onClick={() => onStart({ kind: 'solo', fresh: null })}
                 >
-                  <span>▶ Continue</span>
-                  <span className="title-continue-sub">
-                    {info.name} · Day {info.day}
-                    {info.escaped ? ' · escaped' : ''}
+                  <Icon name="play" className="title-play" />
+                  <span className="title-continue-text">
+                    <span>Continue</span>
+                    <span className="title-continue-sub">
+                      {info.name} · Day {info.day}
+                      {info.escaped ? ' · escaped' : ''}
+                    </span>
+                  </span>
+                  <span className="title-stamp" aria-hidden="true">
+                    <i>Day</i>
+                    <b>{String(info.day).padStart(2, '0')}</b>
                   </span>
                 </button>
               ) : (
                 <button
-                  className="menu-btn primary"
+                  className="menu-btn primary title-continue"
                   onClick={() => onStart({ kind: 'solo', fresh: quickIsland() })}
                 >
-                  ▶ Start surviving
+                  <Icon name="play" className="title-play" />
+                  <span className="title-continue-text">Start surviving</span>
                 </button>
               )}
-              <button className="menu-btn" onClick={() => setView('new')}>
-                {info ? '🏝️ New island' : '🏝️ Choose your island'}
-              </button>
-              {islands?.some(Boolean) && (
-                <button className="menu-btn" onClick={() => setDialog('islands')}>
-                  🗂️ Your islands ({islands.filter(Boolean).length}/{islands.length})
+              <div className="title-row">
+                <button className="menu-btn" onClick={() => setView('new')}>
+                  <Icon name="island" />
+                  {info ? 'New island' : 'Choose your island'}
                 </button>
-              )}
-              <DailyLine onRecords={onRecords} />
-              <button
-                className="menu-btn title-friends"
-                onClick={() => (info ? onStart({ kind: 'host', fresh: null }) : setView('new'))}
-              >
-                <span>👥 Play with friends</span>
-                {info?.code && (
-                  <span className="title-continue-sub">
-                    Open {info.name} · code {showJoinCode(info.code)}
-                  </span>
+                {islands?.some(Boolean) && (
+                  <button className="menu-btn" onClick={() => setDialog('islands')}>
+                    <Icon name="stack" />
+                    Your islands ({islands.filter(Boolean).length}/{islands.length})
+                  </button>
                 )}
-              </button>
-              {joining ? (
+              </div>
+              <DailyLine onRecords={onRecords} />
+              <div className="title-group">Play together</div>
+              <div className="title-row three">
+                <button
+                  className="menu-btn title-friends"
+                  aria-label={`Play with friends${info?.code ? ` · open ${info.name} · code ${showJoinCode(info.code)}` : ''}`}
+                  onClick={() => (info ? onStart({ kind: 'host', fresh: null }) : setView('new'))}
+                >
+                  <Icon name="people" />
+                  <span>Friends</span>
+                  {info?.code && <code className="title-code">{showJoinCode(info.code)}</code>}
+                </button>
+                <button
+                  className={`menu-btn title-friends${joining ? ' on' : ''}`}
+                  aria-label="Join a friend"
+                  aria-expanded={joining}
+                  onClick={() => setJoining(!joining)}
+                >
+                  <Icon name="key" />
+                  <span>Join</span>
+                </button>
+                <button
+                  className="menu-btn title-friends"
+                  aria-label="Play with strangers · a public island, up to 4 survivors"
+                  onClick={() => onStart({ kind: 'public' })}
+                >
+                  <Icon name="globe" />
+                  <span>Strangers</span>
+                </button>
+              </div>
+              {joining && (
                 <form
                   className="card join"
                   onSubmit={(e) => {
@@ -278,46 +309,45 @@ export function Play({
                     </button>
                   </div>
                 </form>
-              ) : (
-                <button className="menu-btn" onClick={() => setJoining(true)}>
-                  🔑 Join a friend
-                </button>
               )}
-              <button
-                className="menu-btn title-friends"
-                onClick={() => onStart({ kind: 'public' })}
-              >
-                <span>🌍 Play with strangers</span>
-                <span className="title-continue-sub">A public island, up to 4 survivors</span>
-              </button>
-              <button className="menu-btn" onClick={onWardrobe}>
-                👕 Wardrobe
-              </button>
-              <div className="title-row">
-                <button className="menu-btn" onClick={() => setDialog('settings')}>
-                  ⚙️ Settings
-                </button>
-                <button className="menu-btn" onClick={() => setDialog('howto')}>
-                  ❓ How to play
-                </button>
-              </div>
-              <div className="title-row">
-                <button className="menu-btn" onClick={onSuggest}>
-                  💡 Suggest an update
-                </button>
-                <button className="menu-btn" onClick={() => setDialog('news')}>
-                  📰 What’s new
-                </button>
-              </div>
-              <button className="menu-btn jam-btn" onClick={voteJam}>
-                🎃 Vote for us in October Jam
-              </button>
+              <nav className="title-dock" aria-label="More">
+                <DockButton icon="shirt" label="Wardrobe" onClick={onWardrobe} />
+                <DockButton icon="gear" label="Settings" onClick={() => setDialog('settings')} />
+                <DockButton
+                  icon="help"
+                  label="Help"
+                  name="How to play"
+                  onClick={() => setDialog('howto')}
+                />
+                <DockButton
+                  icon="bulb"
+                  label="Suggest"
+                  name="Suggest an update"
+                  onClick={onSuggest}
+                />
+                <DockButton
+                  icon="news"
+                  label="News"
+                  name="What’s new"
+                  onClick={() => setDialog('news')}
+                />
+                <DockButton
+                  icon="pumpkin"
+                  label="Jam"
+                  name="Vote for us in October Jam"
+                  onClick={voteJam}
+                  className="jam"
+                />
+                {onDev && (
+                  <DockButton
+                    icon="wrench"
+                    label={devCount > 0 ? `Dev · ${devCount}` : 'Dev'}
+                    name={devCount > 0 ? `Dev · ${devCount} to check` : 'Dev'}
+                    onClick={onDev}
+                  />
+                )}
+              </nav>
               {jam !== 'idle' && <JamLink copied={jam === 'copied'} />}
-              {onDev && (
-                <button className="menu-btn" onClick={onDev}>
-                  🛠️ Dev{devCount > 0 ? ` · ${devCount} to check` : ''}
-                </button>
-              )}
             </>
           )}
         </div>
@@ -395,6 +425,28 @@ export function Play({
 }
 
 /** Today's goal and the streak, under the island buttons; opens 🏆 Records. */
+/** A small button in the title's dock: an ink icon over a word (name: the full label). */
+function DockButton({
+  icon,
+  label,
+  name,
+  onClick,
+  className = '',
+}: {
+  icon: IconName;
+  label: string;
+  name?: string;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button className={`dock-btn ${className}`} aria-label={name ?? label} onClick={onClick}>
+      <Icon name={icon} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
 function DailyLine({ onRecords }: { onRecords: () => void }) {
   const r = useSyncExternalStore(recordsStore.subscribe, recordsStore.get);
   const today = utcDay(Date.now());
@@ -403,11 +455,19 @@ function DailyLine({ onRecords }: { onRecords: () => void }) {
   const done = r.daily.day === today;
   return (
     <button className="menu-btn title-daily" onClick={onRecords}>
-      <span>
-        {done ? '✓ Daily goal done' : `🗓️ Today: ${goal.text}`}
-        {streak > 0 ? ` · 🔥 ${streak}-day streak` : ''}
+      <span className="title-daily-goal">
+        {done ? 'Daily goal done' : `Today: ${goal.text}`}
+        {streak > 0 && (
+          <>
+            {' · '}
+            <Icon name="flame" className="inline" />
+            {` ${streak}-day streak`}
+          </>
+        )}
       </span>
-      <span className="title-continue-sub">🏆 Records and leaderboards</span>
+      <span className="title-continue-sub">
+        <Icon name="trophy" className="inline" /> Records and leaderboards
+      </span>
     </button>
   );
 }

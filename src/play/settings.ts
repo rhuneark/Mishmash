@@ -199,10 +199,21 @@ export interface GraphicsLevel {
   particles: number;
   /** Sun shadow map size in pixels (0 = no shadows). */
   shadows: number;
+  /** Ground detail: 1 = one texture read a pixel, 2 = full. */
+  ground: number;
 }
 
 const LEVELS: Record<Exclude<Quality, 'auto'>, GraphicsLevel> = {
-  low: { pixelRatio: 1, terrain: 2, nodes: 2, grass: 0, fog: 0.8, particles: 0.5, shadows: 0 },
+  low: {
+    pixelRatio: 1,
+    terrain: 2,
+    nodes: 2,
+    grass: 0,
+    fog: 0.8,
+    particles: 0.5,
+    shadows: 0,
+    ground: 1,
+  },
   medium: {
     pixelRatio: 1.5,
     terrain: 3,
@@ -211,6 +222,7 @@ const LEVELS: Record<Exclude<Quality, 'auto'>, GraphicsLevel> = {
     fog: 1,
     particles: 0.8,
     shadows: 1024,
+    ground: 2,
   },
   high: {
     pixelRatio: 2,
@@ -220,6 +232,7 @@ const LEVELS: Record<Exclude<Quality, 'auto'>, GraphicsLevel> = {
     fog: 1.1,
     particles: 1,
     shadows: 2048,
+    ground: 2,
   },
 };
 

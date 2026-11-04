@@ -24,7 +24,7 @@ import {
 import { STAR_ICON, itemIconUrl } from './hud/itemIcons';
 import { buzz } from './prefs';
 import { lookCode, parseLook } from '../game/outfits';
-import { Actor, setBlobShadows } from './render/actors';
+import { RIM, Actor, setBlobShadows } from './render/actors';
 import { Ambient } from './render/ambient';
 import { climateLook } from './render/climate';
 import { Fx, FX_COLORS } from './render/fx';
@@ -32,8 +32,15 @@ import { MAT } from './render/geo';
 import { bagModel, crateModel, podModel } from './render/items';
 import { NodeView } from './render/nodes';
 import { nodeTint } from './render/props';
-import { SunShadow, setupRenderer, shadeAll, toneMapped } from './render/light';
-import { WIND } from './render/wind';
+import {
+  EXPOSURE,
+  SunShadow,
+  packExposure,
+  setupRenderer,
+  shadeAll,
+  toneMapped,
+} from './render/light';
+import { CLOUDS, GUST, WIND } from './render/wind';
 import { Rain, WEATHER_LOOK, lightningBolt } from './render/weather';
 import {
   cameraRig,
@@ -65,8 +72,8 @@ const FALL = 1.4;
 
 const SKY_NIGHT = new THREE.Color(0x0a0f1e);
 const SKY_BLOOM = new THREE.Color(0x1c0b22);
-const HEMI_NIGHT = new THREE.Color(0x3a4c80);
-const HEMI_BLOOM = new THREE.Color(0x5a3a6a);
+const HEMI_NIGHT = new THREE.Color(0x56699f);
+const HEMI_BLOOM = new THREE.Color(0x6e4a82);
 const GROUND_NIGHT = new THREE.Color(0x1a1a2a);
 /** Where the moon shines from (towards it). */
 const MOON_DIR = new THREE.Vector3(-0.45, 1, 0.35).normalize();
@@ -266,6 +273,8 @@ export class View {
   private hitStop = 0;
   private stepAcc = 0;
   private smokeAcc = 0;
+  /** The wreck smoulders for the first days after the crash. */
+  private wreckSmoke: THREE.Vector3 | null = null;
   /** How close the Bloom is, 0..1 (music, camera). */
   danger = 0;
   private readonly dangerSpots: { x: number; z: number }[] = [];
@@ -275,6 +284,9 @@ export class View {
   private readonly rain: Rain;
   /** The weather as it looks now, blending towards the sky the authority sends. */
   private readonly sky = { cloud: 0, rain: 0, fog: 0 };
+  /** Daylight 0..1 (from the last lighting update), how soaked the ground is 0..1. */
+  private dayLight = 1;
+  private wet = 0;
   /** Lightning: a flash that fades, and bolts on screen. */
   private flash = 0;
   private readonly bolts: { line: THREE.LineSegments; life: number }[] = [];
@@ -318,7 +330,14 @@ export class View {
     this.pois = buildPois(this.island.pois, this.island.spec, (x, z) =>
       heightAt(this.island, x, z),
     );
-    for (const p of this.pois) this.scene.add(p.group);
+    for (const p of this.pois) {
+      this.scene.add(p.group);
+      const smoke = p.group.getObjectByName('smoke');
+      if (smoke) {
+        p.group.updateMatrixWorld(true);
+        this.wreckSmoke = smoke.getWorldPosition(new THREE.Vector3());
+      }
+    }
     this.heli = helicopter();
     this.heli.group.visible = false;
     this.scene.add(this.heli.group);
@@ -452,6 +471,7 @@ export class View {
     this.fx.density = o.gfx.particles;
     this.rain.setMax(Math.round(1500 * o.gfx.particles));
     this.sunShadow.setSize(o.gfx.shadows);
+    this.terrain.setDetail(o.gfx.ground);
     setBlobShadows(o.gfx.shadows === 0);
     const pr = Math.min(window.devicePixelRatio || 1, o.gfx.pixelRatio);
     if (this.renderer.getPixelRatio() !== pr) {
@@ -1122,15 +1142,26 @@ export class View {
         if (m.light) m.light.visible = Math.sin(this.t * 5 + id) > -0.2;
         // A column of smoke that shows where it came down from far away.
         if (smoke && this.dist(d.x, d.z) < 110)
-          this.fx.burst(d.x, m.obj.position.y + 2, d.z, 1, FX_COLORS.smoke, {
+          this.fx.burst(d.x, m.obj.position.y + 2, d.z, 1, FX_COLORS.puff, {
             speed: 0.3,
-            up: 2.2,
-            grav: -0.4,
-            life: 4,
-            size: 3,
+            up: 2,
+            grav: -0.3,
+            life: 5,
+            size: 2.4,
+            puff: true,
           });
       }
     }
+    const ws = this.wreckSmoke;
+    if (smoke && ws && c.info().day <= 3 && this.dist(ws.x, ws.z) < 140)
+      this.fx.burst(ws.x, ws.y, ws.z, 1, FX_COLORS.puff, {
+        speed: 0.45,
+        up: 1.3,
+        grav: -0.1,
+        life: 6,
+        size: 2.4,
+        puff: true,
+      });
     this.updateFallers(dt);
     this.updateFalling(dt);
     this.updateDanger();
@@ -1727,6 +1758,8 @@ export class View {
     const c = this.client;
     const info = c.info();
     const day = daylight(info.phase);
+    this.dayLight = day;
+    RIM.value = 0.2 + (1 - day) * 0.4;
     const bloom = info.bloom;
     // Dusk/dawn warmth peaks while daylight is half up.
     const warm = Math.max(0, 1 - Math.abs(day - 0.5) * 2.2);
@@ -1736,7 +1769,11 @@ export class View {
     sky.lerp(tmpColor2.setHex(0x7d8794).multiplyScalar(0.25 + day * 0.75), this.sky.cloud * 0.65);
     sky.lerp(tmpColor2.setHex(0xdde6ff), this.flash * 0.6);
     this.fog.color.copy(sky);
-    toneMapped(sky, this.scene.background as THREE.Color);
+    // Moonlit blue by night (purple on a Bloom night): the tone mapping grades the scene, and
+    // the sky, which isn't tone mapped, gets the same grade here.
+    const grade = Math.max(0, 1 - day * 1.6);
+    this.renderer.toneMappingExposure = packExposure(EXPOSURE, grade, bloom);
+    toneMapped(sky, this.scene.background as THREE.Color, EXPOSURE, grade, bloom);
     const fog = this.fogMul * this.climateFog;
     // Rain and fog close the view in.
     const closer = 1 - this.sky.rain * 0.3 - this.sky.fog * 0.55;
@@ -1744,14 +1781,14 @@ export class View {
     this.fog.far = this.fogFrom + (30 + day * 70) * fog * closer;
     this.hemi.color.copy(bloom ? HEMI_BLOOM : HEMI_NIGHT).lerp(this.hemiDay, day);
     this.hemi.groundColor.copy(GROUND_NIGHT).lerp(this.groundDay, day);
-    this.hemi.intensity = (0.6 + day * 0.75) * (1 - this.sky.cloud * 0.15) + this.flash * 2.5;
+    this.hemi.intensity = (0.95 + day * 0.4) * (1 - this.sky.cloud * 0.15) + this.flash * 2.5;
     // The sun crosses from east to west, low and warm at dawn and dusk (long shadows); by
     // night a pale moon stands high in the south-west.
     const arc = (info.phase - NIGHT_END + 0.04) / (NIGHT_START - NIGHT_END + 0.08);
     const a = Math.min(1, Math.max(0, arc)) * Math.PI;
     const sunDir = tmpVec.set(Math.cos(a) * 0.95, 0.3 + Math.sin(a) * 1.05, 0.5).normalize();
     this.sunDir.copy(MOON_DIR).lerp(sunDir, day).normalize();
-    this.sun.intensity = (0.4 + day * 2.5) * (1 - this.sky.cloud * 0.75);
+    this.sun.intensity = (1.05 + day * 1.85) * (1 - this.sky.cloud * 0.75);
     this.sun.color
       .copy(MOON)
       .lerp(SUN_DAY, day)
@@ -1764,7 +1801,7 @@ export class View {
       this.focus.z - Math.cos(this.rig.yaw) * far,
       this.sunDir,
     );
-    this.terrain.setWaterTint(day, bloom);
+    this.terrain.setWaterTint(day, bloom, 1 - this.sky.cloud);
     this.sound.setMood(1 - day, bloom, this.danger, c.rescue.phase === 'calling');
     // Fire light: the nearest fires and torches get the four point lights.
     const sources: { x: number; z: number; y: number; r: number; d: number; color?: number }[] = [];
@@ -1819,7 +1856,7 @@ export class View {
     this.labels.begin();
     for (const o of c.others.values()) {
       if (!o.alive) continue;
-      const p = project(o.x, this.y(o.x, o.z) + 2.3, o.z);
+      const p = project(o.x, this.y(o.x, o.z) + 2.65, o.z);
       const info = c.players.find((q) => q.id === o.id);
       if (p && info) this.labels.add(p.x, p.y, info.name, 'tag-name');
     }
@@ -1860,7 +1897,7 @@ export class View {
       if (!l.mine && !o?.alive) continue;
       const x = o ? o.x : c.x;
       const z = o ? o.z : c.z;
-      const p = project(x, this.y(x, z) + 2.3, z);
+      const p = project(x, this.y(x, z) + 2.65, z);
       const text = l.text.length > 64 ? `${l.text.slice(0, 62)}…` : l.text;
       if (p)
         this.labels.add(
@@ -1892,7 +1929,23 @@ export class View {
     this.sky.fog += (want.fog - this.sky.fog) * k;
     const storm = this.client.weather === 'storm';
     const ground = this.y(this.focus.x, this.focus.z);
-    this.rain.update(dt, this.focus, ground, this.sky.rain, storm ? 7 : 2);
+    // Storms blow in gusts: the trees lean and thrash, the rain slants harder.
+    const gust = storm ? 0.6 + 0.4 * Math.sin(this.t * 0.9) * Math.sin(this.t * 0.37 + 1) : 0;
+    GUST.value += (1 + this.sky.rain * 0.5 + gust * 2.2 - GUST.value) * Math.min(1, dt * 2);
+    this.rain.update(dt, this.focus, ground, this.sky.rain, storm ? 5 + gust * 6 : 2, (x, z) =>
+      heightAt(this.island, x, z),
+    );
+    this.rain.setLight(this.dayLight);
+    // Rain soaks the ground in about half a minute; it dries over a couple.
+    const soaking = this.sky.rain > 0.2;
+    this.wet = Math.min(1, Math.max(0, this.wet + (soaking ? dt / 30 : -dt / 120)));
+    this.terrain.setWet(this.wet, this.fog.color);
+    // Cloud shadows drift with the wind; more cover on cloudy days, none by night.
+    const clouds = CLOUDS.value;
+    clouds.x += dt * (storm ? 9 : 3.5);
+    clouds.y += dt * (storm ? 4 : 1.5);
+    clouds.z = 0.22 + this.sky.cloud * 0.33;
+    clouds.w = this.dayLight * 0.32 * (1 - this.sky.cloud * 0.55) * (1 - this.sky.fog * 0.6);
     this.sound.setRain(this.sky.rain);
     this.flash = Math.max(0, this.flash - dt * 4);
     for (let i = this.bolts.length - 1; i >= 0; i--) {

@@ -10,6 +10,16 @@ export interface News {
 
 export const NEWS: News[] = [
   {
+    version: '1.30',
+    title: 'A new look for the island',
+    items: [
+      'Painted ground: meadow grass, rippled sand, leaf litter, pine needles, weathered rock and marsh mud, blending from one place to the next.',
+      'The sea has turquoise shallows, foam on the shore and the sun glinting on it; lily pads float on the marsh pools.',
+      'Rain soaks the ground, splashes and rings the water; storms bend the trees and cloud shadows drift over the island.',
+      'Moonlit blue nights (purple on a Bloom night), survivors that stand out, and a wreck that smoulders for the first days.',
+    ],
+  },
+  {
     version: '1.29',
     title: 'A faster start',
     items: [

@@ -793,13 +793,51 @@ function spotModel(spot: Spot): SpotView {
 function fuselage(len: number, r: number, color: number, stripe: number): THREE.BufferGeometry[] {
   const parts = [
     cyl(r, r, len, 10, color, { rz: Math.PI / 2, y: r }),
+    // A grey belly, panel seams, the livery stripes.
+    cyl(r * 1.006, r * 1.006, len - 0.2, 10, 0xb9bec5, { rz: Math.PI / 2, y: r * 0.82 }),
     box(len, 0.25, 0.04, stripe, { y: r + 0.3, z: r - 0.02 }),
     box(len, 0.25, 0.04, stripe, { y: r + 0.3, z: -r + 0.02 }),
+    box(len, 0.06, 0.04, 0x1f4f8a, { y: r + 0.12, z: r - 0.02 }),
+    box(len, 0.06, 0.04, 0x1f4f8a, { y: r + 0.12, z: -r + 0.02 }),
   ];
+  for (let k = 1; k < Math.floor(len / 2.4); k++) {
+    const x = -len / 2 + k * 2.4;
+    parts.push(cyl(r * 1.012, r * 1.012, 0.05, 10, 0xd3d7dc, { rz: Math.PI / 2, x, y: r }));
+  }
   for (let k = 0; k < Math.floor(len / 0.9); k++) {
     const x = -len / 2 + 0.6 + k * 0.9;
     parts.push(box(0.35, 0.3, 0.04, 0x2a3a4a, { x, y: r + 0.75, z: r - 0.05 }));
     parts.push(box(0.35, 0.3, 0.04, 0x2a3a4a, { x, y: r + 0.75, z: -r + 0.05 }));
+  }
+  // A door, and both ends torn open onto the dark cabin, soot round the breaks.
+  parts.push(box(0.8, 1.5, 0.05, 0xc9cdd2, { x: -len / 2 + 1.6, y: r + 0.3, z: r + 0.01 }));
+  parts.push(box(0.12, 0.05, 0.06, 0x6a7078, { x: -len / 2 + 1.85, y: r + 0.3, z: r + 0.03 }));
+  for (const end of [-1, 1]) {
+    parts.push(
+      cyl(r * 0.92, r * 0.92, 0.05, 10, 0x1c1916, {
+        rz: Math.PI / 2,
+        x: end * (len / 2 + 0.01),
+        y: r,
+      }),
+    );
+    parts.push(
+      cyl(r * 1.02, r * 1.02, 0.9, 10, 0x55504a, {
+        rz: Math.PI / 2,
+        x: end * (len / 2 - 0.4),
+        y: r,
+      }),
+    );
+    for (let k = 0; k < 7; k++) {
+      const a = (k / 7) * Math.PI * 2 + end;
+      parts.push(
+        cone(0.22 + (k % 3) * 0.08, 0.5 + (k % 2) * 0.35, 3, k % 2 ? 0xd0d3d6 : 0x8a8680, {
+          x: end * (len / 2 + 0.15),
+          y: r + Math.sin(a) * r * 0.95,
+          z: Math.cos(a) * r * 0.95,
+          rz: (end * -Math.PI) / 2,
+        }),
+      );
+    }
   }
   return parts;
 }
@@ -835,6 +873,11 @@ function poiStructure(poi: PoiDef): THREE.Group {
           f.rot,
           0.04,
         );
+        // Where the wreck still smokes (the view looks this up).
+        const smoke = new THREE.Object3D();
+        smoke.name = 'smoke';
+        smoke.position.set(f.dx + Math.cos(f.rot) * 7.2, 2.4, f.dz + Math.sin(f.rot) * 7.2);
+        g.add(smoke);
       }
       const w = b[1];
       if (w)
@@ -861,8 +904,7 @@ function poiStructure(poi: PoiDef): THREE.Group {
           d.dz,
           d.rot,
         );
-      // Scorched ground.
-      g.add(mesh([disc(9, 12, 0x3a3226, { y: 0.04 })]));
+      // The scorched ground round it is painted by the terrain shader.
       break;
     }
     case 'cockpit': {

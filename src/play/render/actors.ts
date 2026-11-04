@@ -38,6 +38,93 @@ const SHADOW_MAT = new THREE.MeshBasicMaterial({
   depthWrite: false,
 });
 
+/**
+ * Survivors stand out from the island: a soft light on their edges (stronger by night, set
+ * by the view) and a dark outline drawn from a slightly swollen copy of each part.
+ */
+export const RIM = { value: 0.3 };
+const SURVIVOR_MAT = MAT.lit.clone();
+SURVIVOR_MAT.onBeforeCompile = (shader) => {
+  shader.uniforms['uRim'] = RIM;
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nuniform float uRim;')
+    .replace(
+      '#include <opaque_fragment>',
+      `float rimK = pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.5);
+  outgoingLight += vec3(1.0, 0.94, 0.84) * rimK * uRim;
+#include <opaque_fragment>`,
+    );
+};
+const OUTLINE_MAT = new THREE.MeshBasicMaterial({ color: 0x14161c, side: THREE.BackSide });
+OUTLINE_MAT.onBeforeCompile = (shader) => {
+  shader.vertexShader = shader.vertexShader.replace(
+    '#include <begin_vertex>',
+    '#include <begin_vertex>\n  transformed += normal * 0.045;',
+  );
+};
+const hulls = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+
+/** The part's shape with smooth normals (corners welded), so the swollen copy stays closed. */
+function hullOf(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  const known = hulls.get(geo);
+  if (known) return known;
+  const pos = geo.getAttribute('position');
+  const n = pos.count;
+  const sum = new Map<string, [number, number, number]>();
+  const keys: string[] = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const f = new THREE.Vector3();
+  for (let i = 0; i + 2 < n; i += 3) {
+    a.fromBufferAttribute(pos, i);
+    b.fromBufferAttribute(pos, i + 1);
+    c.fromBufferAttribute(pos, i + 2);
+    f.subVectors(c, b).cross(a.clone().sub(b)).normalize();
+    for (let k = 0; k < 3; k++) {
+      const key = `${Math.round(pos.getX(i + k) * 1000)},${Math.round(pos.getY(i + k) * 1000)},${Math.round(pos.getZ(i + k) * 1000)}`;
+      keys[i + k] = key;
+      const acc = sum.get(key);
+      if (acc) {
+        acc[0] += f.x;
+        acc[1] += f.y;
+        acc[2] += f.z;
+      } else sum.set(key, [f.x, f.y, f.z]);
+    }
+  }
+  const nor = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const v = sum.get(keys[i] as string) ?? [0, 1, 0];
+    const len = Math.hypot(v[0], v[1], v[2]) || 1;
+    nor[i * 3] = v[0] / len;
+    nor[i * 3 + 1] = v[1] / len;
+    nor[i * 3 + 2] = v[2] / len;
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', pos);
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  hulls.set(geo, out);
+  return out;
+}
+
+/** Survivor look: rim-lit parts, each with a dark outline (tiny bits like eyes skipped). */
+function dressSurvivor(root: THREE.Object3D): void {
+  const meshes: THREE.Mesh[] = [];
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh && m.material === MAT.lit) meshes.push(m);
+  });
+  for (const m of meshes) {
+    m.material = SURVIVOR_MAT;
+    const r = m.geometry.boundingSphere?.radius ?? 0;
+    if (r < 0.12) continue;
+    const hull = new THREE.Mesh(hullOf(m.geometry), OUTLINE_MAT);
+    hull.userData['shade'] = 'none';
+    hull.renderOrder = -1;
+    m.add(hull);
+  }
+}
+
 /** The round blob under everyone (off when the sun casts real shadows). */
 export function setBlobShadows(on: boolean): void {
   SHADOW_MAT.visible = on;
@@ -73,10 +160,13 @@ export class Actor {
 
   /** What a survivor wears (outfits.ts; others: none). */
   readonly look: Look | null;
+  /** Drawn this much bigger than its rig (people read better on a phone screen). */
+  private readonly size: number;
 
   constructor(kind: ActorKind, seedKey: string, color = 0xe8664a, look: Look | null = null) {
     this.look = look;
     this.kind = kind;
+    this.size = kind === 'player' || kind === 'husk' ? 1.15 : 1;
     this.root.add(this.body);
     this.shadow = new THREE.Mesh(SHADOW_GEO, SHADOW_MAT);
     this.shadow.position.y = 0.03;
@@ -92,6 +182,7 @@ export class Actor {
           v,
           look?.hat,
         );
+        dressSurvivor(this.body);
         this.shadow.scale.setScalar(0.5);
         break;
       case 'husk': {
@@ -558,7 +649,7 @@ export class Actor {
     const s = Math.sin(this.walk);
     const p = this.parts;
     const pulse = this.hurt > 0 ? 1 + this.hurt * 0.5 : 1;
-    this.body.scale.setScalar(pulse);
+    this.body.scale.setScalar(pulse * this.size);
     if (this.swing > 0) this.swing = Math.max(0, this.swing - dt * 3);
     let bob = 0;
     switch (this.kind) {

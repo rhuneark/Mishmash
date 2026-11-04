@@ -28,8 +28,8 @@ export class WardrobeScene {
     const sun = new THREE.DirectionalLight(0xffd8a8, 2.4);
     sun.position.set(2, 4, 3);
     this.scene.add(hemi, sun);
-    this.camera.position.set(0, 1.3, 3.7);
-    this.camera.lookAt(0, 1.02, 0);
+    this.camera.position.set(0, 1.5, 4.5);
+    this.camera.lookAt(0, 1.18, 0);
   }
 
   wear(look: Look): void {

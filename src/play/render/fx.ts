@@ -22,6 +22,8 @@ interface Particle {
   spin: number;
   color: number;
   glow: boolean;
+  /** A soft puff of smoke: swells as it rises, then thins away. */
+  puff?: boolean;
 }
 
 interface Ring {
@@ -69,6 +71,7 @@ export interface FloatText {
 export class Fx {
   private readonly lit: THREE.InstancedMesh;
   private readonly glow: THREE.InstancedMesh;
+  private readonly puffs: THREE.InstancedMesh;
   private readonly parts: Particle[] = [];
   private readonly rings: Ring[] = [];
   private readonly bombs: Bomb[] = [];
@@ -101,7 +104,28 @@ export class Fx {
     geo.setAttribute('color', new THREE.BufferAttribute(white, 3));
     this.lit = new THREE.InstancedMesh(geo, MAT.lit, CAP);
     this.glow = new THREE.InstancedMesh(geo, MAT.glowAdd, CAP);
-    for (const m of [this.lit, this.glow]) {
+    const puffGeo = new THREE.IcosahedronGeometry(0.5, 0);
+    puffGeo.setAttribute(
+      'color',
+      new THREE.BufferAttribute(
+        new Float32Array(puffGeo.getAttribute('position').count * 3).fill(1),
+        3,
+      ),
+    );
+    this.puffs = new THREE.InstancedMesh(
+      puffGeo,
+      new THREE.MeshLambertMaterial({
+        vertexColors: true,
+        flatShading: true,
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false,
+      }),
+      CAP,
+    );
+    this.puffs.userData['shade'] = 'none';
+    this.puffs.renderOrder = 3;
+    for (const m of [this.lit, this.glow, this.puffs]) {
       m.count = 0;
       m.frustumCulled = false;
       m.setColorAt(0, col.setRGB(1, 1, 1));
@@ -122,6 +146,7 @@ export class Fx {
       life?: number;
       size?: number;
       glow?: boolean;
+      puff?: boolean;
     } = {},
   ): void {
     const count = n <= 2 ? n : Math.max(1, Math.round(n * this.density));
@@ -144,6 +169,7 @@ export class Fx {
         spin: (Math.random() - 0.5) * 12,
         color: colors[Math.floor(Math.random() * colors.length)] as number,
         glow: opts.glow ?? false,
+        puff: opts.puff ?? false,
       });
     }
   }
@@ -223,6 +249,7 @@ export class Fx {
   update(dt: number): void {
     let nl = 0;
     let ng = 0;
+    let np = 0;
     for (let i = this.parts.length - 1; i >= 0; i--) {
       const p = this.parts[i] as Particle;
       p.life -= dt;
@@ -238,11 +265,22 @@ export class Fx {
       p.vz *= 0.97;
       const k = p.life / p.max;
       dummy.position.set(p.x, p.y, p.z);
-      dummy.rotation.set(p.spin * p.life, p.spin * p.life * 0.7, 0);
-      dummy.scale.setScalar(p.size * (p.glow ? 0.4 + k : 0.5 + k * 0.5));
+      if (p.puff) {
+        dummy.rotation.set(p.spin * p.life * 0.15, p.spin * p.life * 0.1, 0);
+        dummy.scale.setScalar(p.size * (0.35 + (1 - k) * 1.1) * Math.min(1, k * 3));
+      } else {
+        dummy.rotation.set(p.spin * p.life, p.spin * p.life * 0.7, 0);
+        dummy.scale.setScalar(p.size * (p.glow ? 0.4 + k : 0.5 + k * 0.5));
+      }
       dummy.updateMatrix();
       col.setHex(p.color);
-      if (p.glow && ng < CAP) {
+      if (p.puff) {
+        if (np < CAP) {
+          this.puffs.setMatrixAt(np, dummy.matrix);
+          this.puffs.setColorAt(np, col);
+          np++;
+        }
+      } else if (p.glow && ng < CAP) {
         this.glow.setMatrixAt(ng, dummy.matrix);
         this.glow.setColorAt(ng, col);
         ng++;
@@ -254,7 +292,8 @@ export class Fx {
     }
     this.lit.count = nl;
     this.glow.count = ng;
-    for (const m of [this.lit, this.glow]) {
+    this.puffs.count = np;
+    for (const m of [this.lit, this.glow, this.puffs]) {
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }
@@ -360,6 +399,7 @@ export const FX_COLORS = {
   spore: [0x9a6ac8, 0xd6ff6a, 0x7a4aa8],
   fire: [0xff7a2a, 0xffc04a, 0xfff0a0],
   smoke: [0x3a3a3a, 0x555555],
+  puff: [0x8a8a8a, 0xa2a2a2, 0x737373],
   blood: [0xd04040, 0xa02828],
   heal: [0x6cff9f, 0xffffff],
   water: [0x6ad0ff, 0xffffff],

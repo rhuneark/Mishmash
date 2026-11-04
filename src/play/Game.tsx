@@ -121,9 +121,17 @@ export function Game(props: {
   // The local playthrough drives and inspects the game through this.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    (window as unknown as { __game?: { client: GameClient; input: Input } }).__game = {
+    (
+      window as unknown as {
+        __game?: { client: GameClient; input: Input; prefs: typeof prefs; view: View | null };
+      }
+    ).__game = {
       client,
       input,
+      prefs,
+      get view() {
+        return viewRef.current;
+      },
     };
   }, [client, input]);
 

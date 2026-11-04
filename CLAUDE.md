@@ -304,6 +304,37 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   patches. The title backdrop uses the same light (shadows drawn every 2 s). `three` is the
   host's embedded copy (exact `0.183.2`, no addons). `view.configure` applies the settings
   (camera distance, shake, damage numbers, quality: `settings.ts` `graphicsFor`).
+- **The look pass** (v1.30; the user: "graphical passes for the rain, or textures for the water
+  and biomes, better graphics all around"). **Ground** (`render/terrain.ts`, `render/groundTex.ts`):
+  colours are worked out at every grid point (the four cells round it averaged, so biomes
+  blend) with per-vertex layer weights (`aL1`/`aL2`: sand, grass, jungle floor, pine floor,
+  rock, marsh mud; slopes add rock), and the terrain shader paints detail from one tileable
+  256² texture drawn in code at start-up (`groundTexture()`: R grass mottling and tufts, G sand
+  ripples, B leaf litter, A rock with bent, patchy cracks), read at two scales: grass patches
+  that go yellow in the sun and blue-green in shade, leaf litter on the jungle floor, rusty
+  needles under the pines, moss in rock hollows, dark wet patches in the marsh, a wet band at
+  the waterline and the crash site's scorch (`uScorch` round the `crash` POI; the old flat
+  disc is gone). **Shader colours are linear** (sRGB 90 ≈ 0.1). Low quality reads the texture
+  once (`GraphicsLevel.ground` 1 → define `GROUND_LOW`, `terrain.setDetail`). **Water**: a
+  depth map of the seabed (`depthMap`, R8 per 2 m cell, 0–6 m) gives turquoise shallows into
+  the sea colour, see-through shallows, foam that laps at the shore, sun glints
+  (`setWaterTint(day, bloom, clear)`); pools are deeper in the middle (`aEdge`) with glints;
+  marsh pools (and some others) get lily pads, some with a pink flower. **Night**
+  (`render/light.ts`): a grade inside the tone mapping (`THREE.CustomToneMapping`, ACES plus
+  the grade; no extra pass): dark colours drift to moonlit blue (purple on Bloom nights), bright
+  ones (fires, lanterns, eyes) keep their colour. It rides in `toneMappingExposure`
+  (`packExposure`: whole part = grade 0..40 (+50 Bloom), fraction × 10 = exposure);
+  `toneMapped()` applies the same grade to the sky. The moon and night sky light are brighter
+  than before. **Weather** (`render/weather.ts`, `render/wind.ts`): rain streaks of varied
+  length slant with the wind, splashes where drops land (rings on the sea), the ground soaks in
+  ~30 s and dries over ~2 min (`view.wet` → `terrain.setWet`: darker, puddles in flat hollows
+  mirroring the sky), storms blow in gusts (`GUST`: windy materials lean and thrash), cloud
+  shadows drift over the ground and plants (`CLOUDS`, `CLOUD_SHADE`; by day only). **Survivors**
+  are drawn 1.15× (`Actor.size`, Husks too; name tags at +2.65), rim-lit (`RIM`, stronger by
+  night) with a dark outline hull (`dressSurvivor`, welded normals, parts under 0.12 m
+  skipped). **The wreck**: a grey belly, panel seams, a door, both ends torn open and sooty; it
+  smoulders for the first three days (a `smoke` marker in the model, `view.wreckSmoke`; soft
+  low-poly puffs, fx `puff`, also over supply pods).
 - **Making it feel alive** (all client-side, nothing synced): trees, bushes and vines sway
   (`render/wind.ts` `windy()`: vertex-shader sway, one shared time uniform); grass chunks around
   you that sway and part as you walk (`render/ambient.ts`, deterministic per 32 m chunk, not on
@@ -748,8 +779,8 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   (`run.funnel`, 'first_session'): 1 app loaded, 2 intro done, 3 island ready, 4… each
   tutorial step (`FUNNEL.tutorial` + index), then first night survived, day 3, escaped.
   New steps go at the end (numbers are what RUN charts).
-- **Dev hook**: in dev builds `window.__game = { client, input }` (the playthrough uses it;
-  solo `client.link.sim` is the authority itself).
+- **Dev hook**: in dev builds `window.__game = { client, input, prefs, view }` (the playthrough
+  uses it; solo `client.link.sim` is the authority itself).
 
 ## Adding to the game (community features)
 
@@ -857,9 +888,9 @@ src/play/          the game client: slots.ts (the islands kept: slots, loading, 
                    telemetry.ts (analytics events and the first-session funnel),
                    records.ts (records kept and posted), remind.ts (reminders scheduled),
                    outfits.ts (the look worn, sets owned, buying), WardrobeScene.ts (preview),
-                   TitleScene.ts (the title backdrop), render/ (terrain, nodes, actors,
-                   structures, items, props, fx, geo, wind, ambient, climate, light,
-                   weather), hud/ (Hud,
+                   TitleScene.ts (the title backdrop), render/ (terrain, groundTex (the
+                   ground's detail texture), nodes, actors, structures, items, props, fx,
+                   geo, wind, ambient, climate, light, weather), hud/ (Hud,
                    Character (survivor menu), Menu, Panels, QuickPanel, Craft, Slots, drag,
                    itemIcons, MapView, map, RulesPanel, ChatBox)
 src/app/           community.ts (suggestions, Dev area over UgcApi), localUgc.ts (dev stand-in),

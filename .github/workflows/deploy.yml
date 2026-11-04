@@ -1,7 +1,7 @@
 name: Deploy to RUN
 
 # Every push to the game branch is checked and deployed (unlisted; publishing
-# is a separate, hand-run workflow). Docs-only changes don't deploy.
+# is a separate, hand-run workflow). Docs-only and trailer-only changes don't deploy.
 on:
   push:
     branches:
@@ -11,6 +11,7 @@ on:
       - '**.md'
       - 'docs/**'
       - 'LICENSE.txt'
+      - 'scripts/trailer/**'
   workflow_dispatch:
 
 concurrency:

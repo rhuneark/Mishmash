@@ -1030,7 +1030,7 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
 ## Deploying
 
 - `.github/workflows/deploy.yml`: on every push to `claude/happy-mayer-ufwo5m` or `main`
-  (docs-only changes skipped): npm ci → RUN CLI → typecheck, tests, build, preflight →
+  (docs-only and `scripts/trailer/` changes skipped): npm ci → RUN CLI → typecheck, tests, build, preflight →
   `rundot login` with the `RUNDOT_API_KEY` secret → `rundot deploy --orientation Portrait` →
   `set-name` / `set-keywords` / `set-description` from the `GAME_NAME` / `GAME_KEYWORDS` /
   `GAME_DESCRIPTION` env lines when they're set. The user wants them updated as the game

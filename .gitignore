@@ -13,3 +13,6 @@ rundot/docs/
 # local test output
 playthrough-shots/
 test-results/
+
+# Trailer frames and cuts (scripts/trailer)
+trailer-out/

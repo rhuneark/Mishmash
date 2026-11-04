@@ -153,7 +153,11 @@ async function frame(index, perFrame) {
 async function shot(name, from, to, setup, perFrame) {
   if (ONLY && !ONLY.includes(name)) return;
   console.log('shot', name, from, to);
-  await g(() => window.__clock.manual(false));
+  await g(() => {
+    window.__clock.manual(false);
+    document.body.classList.remove('gains');
+    window.__halos = false;
+  });
   if (setup) await setup();
   await g(() => window.__clock.manual(true));
   const a = Math.round(from * FPS);
@@ -181,13 +185,36 @@ async function overlay() {
 /** Into a game: a fresh island from a map code (or the ready-made one). */
 async function startIsland(code) {
   await page.goto(URL);
-  await page.getByText('A game the players build.').waitFor({ timeout: 60000 });
-  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
-  await page.locator('.hud').waitFor({ timeout: 120000 });
+  const intro = page.getByText('A game the players build.');
+  const title = page.getByRole('button', { name: /Continue · Day|Start surviving/ });
+  await Promise.race([
+    intro.waitFor({ timeout: 90000 }),
+    title.first().waitFor({ timeout: 90000 }),
+  ]).catch(() => {});
+  if (await intro.isVisible().catch(() => false)) {
+    // First launch: the intro's Play goes straight onto a ready-made island.
+    await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+    await page.locator('.hud').waitFor({ timeout: 120000 });
+    if (code) {
+      await page.getByRole('button', { name: 'Menu' }).click();
+      await page.getByRole('button', { name: /Save and quit/ }).click();
+    }
+  } else {
+    // Empty the island slots, so a new island never has to replace one.
+    await g(async () => {
+      const run = await import('/src/sdk/run.ts');
+      for (const k of ['mishmash_island', 'mishmash_island_2', 'mishmash_island_3']) await run.setItem(k, '');
+    });
+    await wait(600);
+    await page.reload();
+    await page.getByRole('button', { name: /Start surviving/ }).waitFor({ timeout: 90000 });
+    if (!code) {
+      await page.getByRole('button', { name: /Start surviving/ }).click();
+      await page.locator('.hud').waitFor({ timeout: 120000 });
+    }
+  }
   if (code) {
-    await page.getByRole('button', { name: 'Menu' }).click();
-    await page.getByRole('button', { name: /Save and quit/ }).click();
-    await page.getByRole('button', { name: /New island/ }).first().click();
+    await page.getByRole('button', { name: /New island|Choose your island/ }).first().click();
     await page.locator('.new-island').waitFor();
     await page.getByLabel('Map code').fill(code);
     await page.getByRole('button', { name: 'Use', exact: true }).click();
@@ -211,6 +238,8 @@ async function startIsland(code) {
       view.render = () => {
         if (window.__cam) window.__cam(view.camera, view);
         for (const r of [view.ring, view.goalRing, view.tutRing]) if (r) r.visible = false;
+        // Spot halos only where a shot wants them (the bunker's loot).
+        if (!window.__halos) for (const p of view.pois) for (const sp of p.spots) if (sp.halo) sp.halo.visible = false;
         render();
       };
       view.__trailer = true;
@@ -248,6 +277,7 @@ const HELPERS = `(() => {
   H.calm = (on) => { clearInterval(window.__calmT); if (on) window.__calmT = setInterval(H.clearMobs, 200); };
   H.time = (day, phase) => { H.s().time = 600 * (day - 1) + 600 * phase; };
   H.weather = (w) => { const s = H.s(); s.weather = { kind: w, until: s.time + 99999 }; s.broadcast({ type: 'weather', w }); };
+  H.tidy = (x, z, r) => { const isl = H.c().island; for (let id = 0; id < isl.nodeCount; id++) { const t = isl.nodeType[id]; if ((t === 8 || t === 10) && Math.hypot(isl.nodeX[id] - x, isl.nodeZ[id] - z) < r) { isl.hidden[id] = 1; H.s().island.hidden[id] = 1; } } G.view.nodes.markDirty(); };
   H.give = (items) => { const s = H.s(), p = H.p(); for (const [id, n] of items) s.give(p, id, n); s.dirty(p); };
 })();`;
 
@@ -439,7 +469,8 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.time(2, 0.64);
       h.weather('storm');
       h.go(cx + 2, cz + 6);
-      window.__game.view.wet = 1;
+      h.tidy(cx + 6, cz + 8, 14);
+      window.__game.view.wet = 0.6;
       await new Promise((r) => setTimeout(r, 3000));
     }),
     () => {
@@ -519,12 +550,16 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const blade = p.inv.findIndex((it) => it && it.id === 'jawblade');
       if (blade >= 0 && blade !== 0) s.handle(c.you, { type: 'move', from: blade, to: 0 });
       s.handle(c.you, { type: 'equip', slot: 0 });
+      h.time(7, 0.86);
+      h.calm(false);
       const px = cx - 6, pz = cz + 3;
       h.go(px, pz, Math.atan2(-1, -1));
+      h.tidy(px - 4, pz, 12);
+      for (const [dx, dz] of [[0.6, -3.0], [-2.2, -4.2], [-0.8, 2.2]]) s.handle(c.you, { type: 'build', kind: 'torch_post', x: px + dx, z: pz + dz, rot: 0 });
       spawnMob(s, 'husk', px - 1.4, pz - 1.4, { enraged: true });
       spawnMob(s, 'husk', px - 3.4, pz - 2.6, { enraged: true });
       window.__shot = { px, pz };
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 600));
     }),
     () => {
       const h = window.__h, c = h.c(), sh = window.__shot;
@@ -532,7 +567,9 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const i = Math.round((window.__t - 16.0) * 30);
       if (i % 8 === 0) c.use();
       const k = i / 45;
-      window.__cam = (cam) => h.look(cam, sh.px + h.lerp(5.2, 4.6, k), h.y(sh.px, sh.pz) + 2.8, sh.pz + h.lerp(2.6, 3.2, k), sh.px - 1.2, h.y(sh.px, sh.pz) + 1.2, sh.pz - 1.2, 60);
+      // Side on: the fight runs along (-1, -1), the camera stands off to its (-1, 1) side.
+      const mx = sh.px - 1.2, mz = sh.pz - 1.2, off = h.lerp(6.2, 5.4, k);
+      window.__cam = (cam) => h.look(cam, mx - off * 0.707 + 0.8, h.y(mx, mz) + 2.4, mz + off * 0.707 + 0.8, mx, h.y(mx, mz) + 1.1, mz, 58);
     },
   );
   await shot(
@@ -596,6 +633,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.clearMobs();
       h.time(3, 0.755);
       const fx = cx, fz = cz + 4.5;
+      h.tidy(fx, fz, 14);
       const friends = [['trailer-a', 'Nova', 'captain.navy'], ['trailer-b', 'Pip', 'flowers.rose'], ['trailer-c', 'Bram', 'ranger.khaki']];
       for (const [id, name, look] of friends) if (!s.players.has(id) || !s.online.has(id)) s.join(id, name, look);
       const seats = [[0.0, 2.1], [1.6, 2.2], [3.3, 2.0], [4.8, 2.2]];
@@ -633,6 +671,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     'bunker', 23.5, 24.5,
     () => g(async () => {
       const h = window.__h, s = h.s(), v = window.__game.view;
+      window.__halos = true;
       h.time(3, 0.45);
       const site = v.pois.find((p) => p.group.getObjectByName('door'));
       site.group.updateMatrixWorld(true);

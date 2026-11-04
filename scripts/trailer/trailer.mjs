@@ -91,6 +91,7 @@ const OVERLAY_CSS = `
   text-shadow: 0 2px 6px rgba(0,0,0,.9); }
 body.clean .hud, body.clean .fps { visibility: hidden !important; }
 body.clean .game-labels .tag-hp, body.clean .game-labels .tut-edge { display: none !important; }
+body:not(.gains) .game-labels .tag-gain { display: none !important; }
 `;
 
 // The timeline: [start s, end s, caption].
@@ -280,16 +281,19 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     'wreck', 0, 2.5,
     () => g(() => {
       const h = window.__h;
-      h.time(1, 0.735);
+      h.time(1, 0.775);
       const ws = window.__game.view.wreckSmoke;
-      h.go(ws.x - 16, ws.z + 20);
-      window.__shot = { ws };
+      const crash = h.c().island.poiById.crash;
+      const tx = (ws.x + crash.x) / 2, tz = (ws.z + crash.z) / 2;
+      h.go(tx - 14, tz + 14);
+      window.__shot = { ws, tx, tz };
     }),
     () => {
-      const h = window.__h, ws = window.__shot.ws;
+      const h = window.__h, { ws, tx, tz } = window.__shot;
       const k = h.ease(Math.min(1, window.__t / 2.5));
       window.__game.view.me.root.visible = false;
-      window.__cam = (cam) => h.look(cam, ws.x - h.lerp(19, 12, k), ws.y + h.lerp(5, 3.2, k), ws.z + h.lerp(17, 11, k), ws.x, ws.y - 1.2, ws.z);
+      const ty = h.y(tx, tz);
+      window.__cam = (cam) => h.look(cam, tx - h.lerp(24, 18, k), ty + h.lerp(9, 6.5, k), tz + h.lerp(22, 16, k), tx, ty + 2.2, tz);
     },
   );
 
@@ -301,7 +305,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
       h.calm(false);
       h.clearMobs();
-      h.time(1, 0.79);
+      h.time(1, 0.805);
       const crash = h.c().island.poiById.crash;
       // Out in the open, away from the camp, facing the trees.
       const at = { x: crash.x - 26, z: crash.z + 26 };
@@ -329,6 +333,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.calm(true);
       h.clearMobs();
       h.time(2, 0.36);
+      document.body.classList.add('gains');
       h.give([['axe_stone', 1]]);
       const p = h.p();
       const axe = p.inv.findIndex((it) => it && it.id === 'axe_stone');
@@ -367,6 +372,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     () => g(async () => {
       const h = window.__h, c = h.c();
       document.body.classList.remove('clean');
+      document.body.classList.remove('gains');
       window.__cam = null;
       c.openPanel('craft');
       await new Promise((r) => setTimeout(r, 600));

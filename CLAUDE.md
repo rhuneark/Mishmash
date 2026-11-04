@@ -925,6 +925,11 @@ src/components/    ErrorBoundary
 src/App.tsx        hub save, first-launch intro, title / suggest / dev pages, starts/leaves games
 src/main.tsx       entry: safe-area/font-scale CSS vars, lifecycle hooks, render
 scripts/playthrough.mjs  Playwright: hub + solo game + co-op at 375×667 and 390×844
+                         (PLAYTHROUGH_ONLY=coop runs just the co-op part)
+scripts/trailer/         the trailer: music.py (the 30 s score) and trailer.mjs (scripted shots
+                         from the game captured on a virtual clock, captions in the journal
+                         look, cut with ffmpeg to a 1080×1920 MP4; needs `npm run dev`). It
+                         never shows or mentions the October Jam (the user's call)
 scripts/islandmap.ts     `npx tsx scripts/islandmap.ts <seed> <out.png>`
 public/thumbnail.jpg     store thumbnail, exported from art/ (exactly 512×512 JPEG, < ~150 KB)
 art/thumbnail-source.png store thumbnail art from the user ("BLOOM ISLAND" over the crashed
@@ -1090,7 +1095,12 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   Explore gets v1.16–v1.28 once RUN's review passes, and the shop config (outfit sets) goes
   live with it. **v1.29.0** (2026-11-02: the faster start, the game loading in parts) **was
   submitted with the Publish workflow the same day at the user's request** ("Faster load,
-  then publish public"), so Explore gets v1.16–v1.29 once RUN's review passes. **Waiting:**
+  then publish public"), so Explore gets v1.16–v1.29 once RUN's review passes. v1.30.0
+  (2026-11-04, the look pass: painted ground, shallows and foam, rain that soaks, moonlit
+  nights, outlined survivors, the smouldering wreck) was a private build; **v1.31.0** (the
+  survivor's journal: the field-journal look for every screen, ink icons, the regrouped title)
+  **was submitted with the Publish workflow the same day at the user's request** ("Publish
+  public"), so Explore gets v1.16–v1.31 once RUN's review passes. **Waiting:**
   the coach review's item 3: when the October Jam closes, swap the 🎃 Vote for us button
   for something lasting (Invite a friend with the island's code) and decide on the
   halloween/spooky tags (the user: "reserve 3 until after the jam").

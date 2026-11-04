@@ -461,7 +461,7 @@ function DailyLine({ onRecords }: { onRecords: () => void }) {
           <>
             {' · '}
             <Icon name="flame" className="inline" />
-            {` ${streak}-day streak`}
+            {`${streak}-day streak`}
           </>
         )}
       </span>

@@ -785,8 +785,12 @@ for (const [name, code, at, phase] of ISLANDS) {
       for (let gz = 8; gz < G - 8; gz += 2)
         for (let gx = 8; gx < G - 8; gx += 2) {
           if (isl.biomes[gz * G + gx] !== 1 || isl.biomes[(gz - 7) * G + gx + 7] !== 0) continue;
+          // Woods inland (jungle or forest 12-20 m south-west), so the climate shows.
+          const w1 = isl.biomes[(gz + 6) * G + gx - 6], w2 = isl.biomes[(gz + 10) * G + gx - 10];
+          const woods = gz + 10 < G && gx >= 10 && (w1 === 3 || w1 === 4) && (w2 === 3 || w2 === 4);
           const x = gx * 2 - 512, z = gz * 2 - 512;
-          const d = Math.hypot(x - isl.spawn.x, z - isl.spawn.z);
+          // Any beach facing the sea will do when no woods come down to one.
+          const d = Math.hypot(x - isl.spawn.x, z - isl.spawn.z) + (woods ? 0 : 10000);
           if (d < bd && d > 40) { bd = d; best = [x, z]; }
         }
       h.go(best[0], best[1]);
@@ -797,7 +801,12 @@ for (const [name, code, at, phase] of ISLANDS) {
       const h = window.__h, sh = window.__shot;
       window.__game.view.me.root.visible = true;
       const k = (arg.index % 30) / 30;
-      window.__cam = (cam) => h.look(cam, sh.x - 9 + k * 3, h.y(sh.x, sh.z) + 7.5, sh.z + 9 + k * 1, sh.x + 4, 0, sh.z - 4);
+      // From over the sea (north-east of the beach), looking inland: sea, sand and the
+      // climate's woods in one frame, drifting along the shore.
+      const along = (k - 0.5) * 3;
+      const cx = sh.x + 11 + along, cz = sh.z - 11 + along;
+      const tx = sh.x - 7 + along, tz = sh.z + 7 + along;
+      window.__cam = (cam) => h.look(cam, cx, Math.max(0, h.y(sh.x, sh.z)) + 8.5, cz, tx, h.y(tx, tz) + 1.5, tz, 62);
     },
   );
 }

@@ -278,6 +278,7 @@ const HELPERS = `(() => {
   H.time = (day, phase) => { H.s().time = 600 * (day - 1) + 600 * phase; };
   H.weather = (w) => { const s = H.s(); s.weather = { kind: w, until: s.time + 99999 }; s.broadcast({ type: 'weather', w }); };
   H.tidy = (x, z, r) => { const isl = H.c().island; for (let id = 0; id < isl.nodeCount; id++) { const t = isl.nodeType[id]; if ((t === 8 || t === 10) && Math.hypot(isl.nodeX[id] - x, isl.nodeZ[id] - z) < r) { isl.hidden[id] = 1; H.s().island.hidden[id] = 1; } } G.view.nodes.markDirty(); };
+  H.stoke = () => { const s = H.s(); for (const b of s.buildings.values()) if (b.kind === 'campfire') { b.v = 900; s.broadcast({ type: 'build', b: s.net(b) }); } };
   H.give = (items) => { const s = H.s(), p = H.p(); for (const [id, n] of items) s.give(p, id, n); s.dirty(p); };
 })();`;
 
@@ -553,6 +554,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       if (blade >= 0 && blade !== 0) s.handle(c.you, { type: 'move', from: blade, to: 0 });
       s.handle(c.you, { type: 'equip', slot: 0 });
       h.time(7, 0.86);
+      h.stoke();
       h.calm(false);
       // By the campfire, the Husks coming in from the open side (south-east).
       const px = cx + 2.6, pz = cz + 5.7;
@@ -653,6 +655,8 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.calm(true);
       h.clearMobs();
       h.time(3, 0.755);
+      h.weather('clear');
+      h.stoke();
       const fx = cx, fz = cz + 4.5;
       h.tidy(fx, fz, 14);
       const friends = [['trailer-a', 'Nova', 'captain.navy'], ['trailer-b', 'Pip', 'flowers.rose'], ['trailer-c', 'Bram', 'ranger.khaki']];

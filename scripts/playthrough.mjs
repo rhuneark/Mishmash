@@ -2430,7 +2430,9 @@ async function playCoop() {
   }
   console.log('co-op: done');
 }
-for (const [width, height] of VIEWPORTS) {
+// PLAYTHROUGH_ONLY=coop runs just the co-op part (strangers and friends), for re-checking it.
+const ONLY = process.env.PLAYTHROUGH_ONLY ?? '';
+for (const [width, height] of ONLY === 'coop' ? [] : VIEWPORTS) {
   const tag = `${width}x${height}`;
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: true });
   const page = await context.newPage();

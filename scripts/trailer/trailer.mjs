@@ -131,6 +131,7 @@ async function frame(index, perFrame) {
     ([text, op, t]) => {
       const el = document.getElementById('tcap');
       if (el) {
+        el.style.top = t >= 6.25 && t < 7.5 ? '47%' : '';
         el.textContent = text;
         el.style.opacity = String(Math.max(0, op));
         el.className = text.length > 26 ? 'small' : '';
@@ -209,6 +210,7 @@ async function startIsland(code) {
       const render = view.render.bind(view);
       view.render = () => {
         if (window.__cam) window.__cam(view.camera, view);
+        for (const r of [view.ring, view.goalRing, view.tutRing]) if (r) r.visible = false;
         render();
       };
       view.__trailer = true;
@@ -230,7 +232,17 @@ const HELPERS = `(() => {
   H.ease = (k) => k * k * (3 - 2 * k);
   H.lerp = (a, b, k) => a + (b - a) * k;
   H.y = (x, z) => G.view.y(x, z);
-  H.look = (cam, px, py, pz, tx, ty, tz) => { cam.position.set(px, py, pz); cam.lookAt(tx, ty, tz); };
+  H.look = (cam, px, py, pz, tx, ty, tz, fov = 58) => { cam.position.set(px, py, pz); cam.lookAt(tx, ty, tz); if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); } };
+  // The camp goes up at once when a shot needs it and the build shot didn't run.
+  H.camp = () => {
+    const c = window.__camp, s = H.s(), you = H.c().you;
+    if (!c || c.done) return;
+    H.go(c.cx + 4, c.cz + 6);
+    for (const [kind, x, z, rot] of c.plan) s.handle(you, { type: 'build', kind, x, z, rot });
+    s.handle(you, { type: 'build', kind: 'campfire', x: c.cx, z: c.cz + 4.5, rot: 0 });
+    s.handle(you, { type: 'build', kind: 'torch_post', x: c.cx + 3.5, z: c.cz + 3.5, rot: 0 });
+    c.done = true;
+  };
   H.wide = (on) => { const v = G.view; v.terrainRadius = on ? 6 : 3; v.fogMul = on ? 2.6 : 1; };
   H.clearMobs = () => { const s = H.s(); for (const id of [...s.mobs.keys()]) if (!s.mobs.get(id).tame) s.mobs.delete(id); };
   H.calm = (on) => { clearInterval(window.__calmT); if (on) window.__calmT = setInterval(H.clearMobs, 200); };
@@ -285,7 +297,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const ws = window.__game.view.wreckSmoke;
       const crash = h.c().island.poiById.crash;
       const tx = (ws.x + crash.x) / 2, tz = (ws.z + crash.z) / 2;
-      h.go(tx - 14, tz + 14);
+      h.go(tx, tz);
       window.__shot = { ws, tx, tz };
     }),
     () => {
@@ -328,12 +340,11 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
   // 3a. Gather: an axe into a palm.
   await shot(
     'chop', 5.0, 6.25,
-    () => g(() => {
+    () => g(async () => {
       const h = window.__h, s = h.s(), c = h.c(), isl = c.island;
       h.calm(true);
       h.clearMobs();
       h.time(2, 0.36);
-      document.body.classList.add('gains');
       h.give([['axe_stone', 1]]);
       const p = h.p();
       const axe = p.inv.findIndex((it) => it && it.id === 'axe_stone');
@@ -352,6 +363,8 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const px = tx + Math.sin(ry) * 1.3, pz = tz + Math.cos(ry) * 1.3;
       h.go(px, pz, Math.atan2(tx - px, tz - pz));
       window.__shot = { tx, tz, px, pz };
+      await new Promise((r) => setTimeout(r, 2600));
+      document.body.classList.add('gains');
     }),
     () => {
       const h = window.__h, c = h.c(), sh = window.__shot;
@@ -360,9 +373,9 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       c.ry = Math.atan2(sh.tx - sh.px, sh.tz - sh.pz);
       if (Math.round(window.__t * 30) % 9 === 0) c.use();
       const side = c.ry + Math.PI / 2;
-      const cx = sh.px + Math.sin(side) * 4.2 + Math.sin(c.ry + Math.PI) * 2.2;
-      const cz = sh.pz + Math.cos(side) * 4.2 + Math.cos(c.ry + Math.PI) * 2.2;
-      window.__cam = (cam) => h.look(cam, cx, h.y(cx, cz) + h.lerp(2.2, 2.6, k), cz, (sh.px + sh.tx) / 2, h.y(sh.px, sh.pz) + 1.6, (sh.pz + sh.tz) / 2);
+      const cx = sh.px + Math.sin(side) * 5.2 + Math.sin(c.ry + Math.PI) * 3.4;
+      const cz = sh.pz + Math.cos(side) * 5.2 + Math.cos(c.ry + Math.PI) * 3.4;
+      window.__cam = (cam) => h.look(cam, cx, h.y(cx, cz) + h.lerp(2.6, 3.0, k), cz, (sh.px + sh.tx) / 2, h.y(sh.px, sh.pz) + 1.9, (sh.pz + sh.tz) / 2, 60);
     },
   );
 
@@ -411,6 +424,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       window.__built = n;
       if (i === 26) s.handle(c.you, { type: 'build', kind: 'campfire', x: cx, z: cz + 4.5, rot: 0 });
       if (i === 28) s.handle(c.you, { type: 'build', kind: 'torch_post', x: cx + 3.5, z: cz + 3.5, rot: 0 });
+      if (i === 29) window.__camp.done = true;
       const a = 0.8 + i * 0.012;
       window.__cam = (cam) => h.look(cam, cx + Math.cos(a) * 12, h.y(cx, cz) + 8, cz + Math.sin(a) * 12, cx, h.y(cx, cz) + 1, cz);
     },
@@ -421,7 +435,8 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     'storm', 11.5, 13.0,
     () => g(async () => {
       const h = window.__h, { cx, cz } = window.__camp;
-      h.time(2, 0.62);
+      h.camp();
+      h.time(2, 0.64);
       h.weather('storm');
       h.go(cx + 2, cz + 6);
       window.__game.view.wet = 1;
@@ -431,10 +446,10 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
       const i = Math.round((window.__t - 11.5) * 30);
       window.__game.view.me.root.visible = true;
-      if (i === 1) s.fx('lightning', cx - 9, cz - 12);
-      if (i === 32) s.fx('lightning', cx + 14, cz - 6);
+      if (i === 5) s.fx('lightning', cx - 10, cz - 14);
+      if (i === 33) s.fx('lightning', cx + 12, cz - 10);
       const k = i / 45;
-      window.__cam = (cam) => h.look(cam, cx + h.lerp(7, 5, k), h.y(cx, cz) + 2.4, cz + h.lerp(11, 9, k), cx - 1, h.y(cx, cz) + 2.2, cz - 2);
+      window.__cam = (cam) => h.look(cam, cx + h.lerp(11, 9, k), h.y(cx, cz) + 3.2, cz + h.lerp(14, 12, k), cx - 1, h.y(cx, cz) + 3.4, cz - 3, 60);
     },
   );
 
@@ -445,16 +460,17 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const h = window.__h, { cx, cz } = window.__camp;
       h.weather('clear');
       window.__game.view.wet = 0.3;
+      h.camp();
       h.time(2, 0.86);
-      h.go(cx + 1.3, cz + 5.6, Math.atan2(-1.3, -1.1));
+      h.go(cx - 1.4, cz + 5.4, Math.atan2(1.4, -0.9));
       await new Promise((r) => setTimeout(r, 2500));
     }),
     () => {
       const h = window.__h, { cx, cz } = window.__camp;
       const k = (window.__t - 13.0) / 1.5;
       window.__game.view.me.root.visible = true;
-      const a = 1.9 + k * 0.35;
-      window.__cam = (cam) => h.look(cam, cx + Math.cos(a) * 9, h.y(cx, cz) + 3.4, cz + 4.5 + Math.sin(a) * 9, cx, h.y(cx, cz) + 1, cz + 3.5);
+      const a = 1.1 + k * 0.3;
+      window.__cam = (cam) => h.look(cam, cx + Math.cos(a) * 9.5, h.y(cx, cz) + 3.6, cz + 4.5 + Math.sin(a) * 9.5, cx - 0.5, h.y(cx, cz) + 1.2, cz + 4);
     },
   );
 
@@ -473,19 +489,22 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       await g(async () => {
         const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
         const { spawnMob } = await import('/src/game/sim/mobs.ts');
-        h.go(cx, cz);
-        for (let i = 0; i < 9; i++) spawnMob(s, 'husk', cx - 20 + (i % 3) * 2.4 + Math.random(), cz - 14 + Math.floor(i / 3) * 2.2, { enraged: true });
-        spawnMob(s, 'thornback', cx - 24, cz - 10, { enraged: true });
-        spawnMob(s, 'thornback', cx - 22, cz - 19, { enraged: true });
+        h.camp();
+        const px = cx, pz = cz + 7;
+        h.go(px, pz, Math.PI);
+        for (let i = 0; i < 10; i++) spawnMob(s, 'husk', px - 6 + (i % 5) * 3 + Math.random(), pz + 13 + Math.floor(i / 5) * 2.5, { enraged: true });
+        spawnMob(s, 'thornback', px - 3, pz + 17, { enraged: true });
+        spawnMob(s, 'thornback', px + 4, pz + 16, { enraged: true });
+        window.__shot = { px, pz };
         await new Promise((r) => setTimeout(r, 300));
       });
     },
     () => {
-      const h = window.__h, { cx, cz } = window.__camp;
+      const h = window.__h, { px, pz } = window.__shot;
       const k = h.ease((window.__t - 14.5) / 1.5);
       h.p().hp = 100;
       window.__game.view.me.root.visible = true;
-      window.__cam = (cam) => h.look(cam, cx + h.lerp(4, 2, k), h.y(cx, cz) + h.lerp(12, 9, k), cz + h.lerp(12, 9, k), cx - 12, h.y(cx, cz), cz - 10);
+      window.__cam = (cam) => h.look(cam, px + 1.5, h.y(px, pz) + h.lerp(4.2, 3.4, k), pz - h.lerp(5.5, 4.5, k), px, h.y(px, pz) + 1.2, pz + 9, 60);
     },
   );
   await shot(
@@ -493,6 +512,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     () => g(async () => {
       const h = window.__h, s = h.s(), c = h.c(), { cx, cz } = window.__camp;
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
+      h.camp();
       h.clearMobs();
       h.give([['jawblade', 1], ['firebomb', 4]]);
       const p = h.p();
@@ -512,7 +532,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const i = Math.round((window.__t - 16.0) * 30);
       if (i % 8 === 0) c.use();
       const k = i / 45;
-      window.__cam = (cam) => h.look(cam, sh.px + h.lerp(3.6, 3.0, k), h.y(sh.px, sh.pz) + 2.2, sh.pz + h.lerp(1.2, 1.8, k), sh.px - 1.2, h.y(sh.px, sh.pz) + 1.1, sh.pz - 1.2);
+      window.__cam = (cam) => h.look(cam, sh.px + h.lerp(5.2, 4.6, k), h.y(sh.px, sh.pz) + 2.8, sh.pz + h.lerp(2.6, 3.2, k), sh.px - 1.2, h.y(sh.px, sh.pz) + 1.2, sh.pz - 1.2, 60);
     },
   );
   await shot(
@@ -520,6 +540,8 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     () => g(async () => {
       const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
+      h.camp();
+      h.give([['firebomb', 4]]);
       h.clearMobs();
       const px = cx + 2, pz = cz + 7;
       h.go(px, pz, Math.atan2(-1, -0.6));
@@ -535,7 +557,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
         const slot = h.p().inv.findIndex((it) => it && it.id === 'firebomb');
         s.handle(c.you, { type: 'throw', slot, x: sh.tx, z: sh.tz });
       }
-      window.__cam = (cam) => h.look(cam, sh.px + 4.5, h.y(sh.px, sh.pz) + 5.5, sh.pz + 5.5, sh.tx + 1, h.y(sh.tx, sh.tz) + 0.8, sh.tz + 1);
+      window.__cam = (cam) => h.look(cam, sh.px + 5.5, h.y(sh.px, sh.pz) + 6.5, sh.pz + 6.5, sh.tx + 1, h.y(sh.tx, sh.tz) + 0.8, sh.tz + 1, 58);
     },
   );
   await shot(
@@ -544,11 +566,15 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
       h.clearMobs();
+      h.camp();
+      h.time(7, 0.815);
       const mx = cx - 16, mz = cz + 14;
-      h.go(mx + 13, mz + 9);
+      h.go(mx + 8, mz + 6);
+      const you = h.c().you;
+      for (const [dx, dz] of [[4, 3], [-3, 4], [3, -3]]) s.handle(you, { type: 'build', kind: 'torch_post', x: mx + dx, z: mz + dz, rot: 0 });
       const m = spawnMob(s, 'mother', mx, mz, { enraged: true });
       window.__shot = { mx, mz, id: m.id };
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 600));
     }),
     () => {
       const h = window.__h, sh = window.__shot;
@@ -556,7 +582,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       window.__game.view.me.root.visible = false;
       const k = h.ease((window.__t - 19.0) / 1.5);
       const y0 = h.y(sh.mx, sh.mz);
-      window.__cam = (cam) => h.look(cam, sh.mx + h.lerp(9, 6.5, k), y0 + h.lerp(1.0, 0.8, k), sh.mz + h.lerp(8, 6, k), sh.mx, y0 + h.lerp(2.5, 3.4, k), sh.mz);
+      window.__cam = (cam) => h.look(cam, sh.mx + h.lerp(10, 8, k), y0 + h.lerp(1.6, 1.2, k), sh.mz + h.lerp(9, 7, k), sh.mx, y0 + h.lerp(2.6, 3.4, k), sh.mz, 60);
     },
   );
 
@@ -565,6 +591,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     'together', 20.5, 23.5,
     () => g(async () => {
       const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
+      h.camp();
       h.calm(true);
       h.clearMobs();
       h.time(3, 0.755);
@@ -590,7 +617,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       window.__game.view.me.root.visible = true;
       const k = (window.__t - 20.5) / 3;
       const a = 2.3 + k * 0.6;
-      window.__cam = (cam) => h.look(cam, sh.fx + Math.cos(a) * 8, h.y(sh.fx, sh.fz) + 3.2, sh.fz + Math.sin(a) * 8, sh.fx, h.y(sh.fx, sh.fz) + 0.9, sh.fz);
+      window.__cam = (cam) => h.look(cam, sh.fx + Math.cos(a) * 9.5, h.y(sh.fx, sh.fz) + 4.6, sh.fz + Math.sin(a) * 9.5, sh.fx, h.y(sh.fx, sh.fz) + 1.0, sh.fz, 60);
     },
   );
   await g(() => {
@@ -620,7 +647,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const i = Math.round((window.__t - 23.5) * 30);
       if (i === 2) { s.flags.add('bunker_open'); s.broadcastProgress(); }
       window.__game.view.me.root.visible = true;
-      window.__cam = (cam) => h.look(cam, door.x + out.x * 1.7 + out.z * 0.6, door.y + 1.9, door.z + out.z * 1.7 - out.x * 0.6, door.x, door.y + 0.6, door.z);
+      window.__cam = (cam) => h.look(cam, door.x + out.x * 2.2 + out.z * 0.9, door.y + 2.6, door.z + out.z * 2.2 - out.x * 0.9, door.x, door.y + 0.9, door.z, 62);
     },
   );
   await shot(
@@ -637,8 +664,8 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const h = window.__h, { w } = window.__shot;
       window.__game.view.me.root.visible = false;
       const k = (window.__t - 24.5);
-      const a = 0.6 + k * 0.4;
-      window.__cam = (cam) => h.look(cam, w.x + Math.cos(a) * 17, 7, w.z + Math.sin(a) * 17, w.x, 1, w.z);
+      const a = 0.6 + k * 0.3;
+      window.__cam = (cam) => h.look(cam, w.x + Math.cos(a) * 34, 13, w.z + Math.sin(a) * 34, w.x, 2, w.z, 56);
     },
   );
   await shot(
@@ -664,7 +691,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const i = Math.round((window.__t - 25.5) * 30);
       c.ry = Math.atan2(-0.9, -0.9);
       if (i % 8 === 0) c.use();
-      window.__cam = (cam) => h.look(cam, x.x + 4.2, h.y(x.x, x.z) + 3.4, x.z + 1.6, x.x + 0.4, h.y(x.x, x.z) + 0.6, x.z + 0.4);
+      window.__cam = (cam) => h.look(cam, x.x + 5.4, h.y(x.x, x.z) + 3.8, x.z + 3.2, x.x + 0.5, h.y(x.x, x.z) + 0.8, x.z + 0.5, 58);
     },
   );
 
@@ -687,7 +714,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const a = -2.2 + k * 0.35;
       const el = document.getElementById('ttitle');
       if (el) el.style.opacity = String(Math.min(1, Math.max(0, (window.__t - 26.6) / 0.5)));
-      window.__cam = (cam) => h.look(cam, crash.x + Math.cos(a) * 70, 48 - k * 6, crash.z + Math.sin(a) * 70, crash.x, 0, crash.z);
+      window.__cam = (cam) => h.look(cam, crash.x + Math.cos(a) * 70, 48 - k * 6, crash.z + Math.sin(a) * 70, crash.x, 0, crash.z, 48);
     },
   );
   await g(() => {

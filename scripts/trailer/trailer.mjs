@@ -80,8 +80,8 @@ const OVERLAY_CSS = `
   transform: translateX(-50%) rotate(-4deg); background: rgba(236,222,160,.9); }
 #tcap.small { font-size: 32px; }
 #ttitle { position: fixed; inset: 0; z-index: 9998; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 18px; pointer-events: none; opacity: 0;
-  background: radial-gradient(circle at 50% 46%, rgba(20,14,8,.15), rgba(20,14,8,.65)); }
+  justify-content: flex-start; padding-top: 12vh; gap: 18px; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle at 50% 30%, rgba(20,14,8,.15), rgba(20,14,8,.6)); }
 #ttitle .logo { font: 700 124px/.82 Caveat, cursive; text-align: center; color: #f6eedb;
   text-shadow: 4px 6px 0 #2a2017, 0 10px 30px rgba(0,0,0,.5); }
 #ttitle .logo span { display: block; color: #e0508c; transform: rotate(-3deg); }

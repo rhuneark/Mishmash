@@ -552,7 +552,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const h = window.__h, { cx, cz } = window.__camp;
       h.zoom(90);
       h.camp();
-      h.time(2, 0.64);
+      h.time(2, 0.7);
       h.weather('storm');
       h.tidy(cx, cz, 16);
       h.go(cx + SW[0] * 6.5 + SE[0] * 1.5, cz + SW[1] * 6.5 + SE[1] * 1.5, NE_RY);

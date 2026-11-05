@@ -104,7 +104,7 @@ const CAPTIONS = [
   [7.5, 8.45, 'Build.'],
   [8.55, 11.45, 'Every island is different.'],
   [11.55, 14.45, 'Storms roll in. Nights get long.'],
-  [14.6, 20.45, 'Every seventh night, the Bloom wakes.'],
+  [14.6, 20.45, 'Every few days, the Bloom wakes.'],
   [20.55, 23.45, 'Survive it together.'],
   [23.55, 26.45, 'Dig up what the island hides.'],
 ];

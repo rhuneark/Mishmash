@@ -78,13 +78,8 @@ class TitleMusic {
   private listen(): void {
     if (this.listening || typeof window === 'undefined') return;
     this.listening = true;
-    const unlock = () => {
-      this.unlock();
-      if (this.ctx?.state === 'running') {
-        window.removeEventListener('pointerdown', unlock, true);
-        window.removeEventListener('keydown', unlock, true);
-      }
-    };
+    // Taps in a game do nothing here: the music's context stays asleep while it's off.
+    const unlock = () => this.unlock();
     window.addEventListener('pointerdown', unlock, true);
     window.addEventListener('keydown', unlock, true);
     document.addEventListener('visibilitychange', () => {
@@ -96,6 +91,7 @@ class TitleMusic {
 
   /** Must run from a user gesture. */
   private unlock(): void {
+    if (!this.wanted) return;
     if (!this.ctx) {
       try {
         const Ctor =
@@ -107,8 +103,7 @@ class TitleMusic {
         return;
       }
     }
-    if (this.ctx?.state === 'suspended' && !document.hidden) void this.ctx.resume().catch(() => {});
-    if (this.wanted) this.play();
+    this.play();
   }
 
   private build(ctx: AudioContext): void {
@@ -175,12 +170,14 @@ class TitleMusic {
 
   private play(): void {
     const ctx = this.ctx;
-    if (!ctx || this.playing) {
+    if (!ctx) return;
+    // A resume outside a tap can be refused: every tap on the title tries again.
+    if (ctx.state === 'suspended' && !document.hidden) void ctx.resume().catch(() => {});
+    if (this.playing) {
       this.level(0.5);
       return;
     }
     this.playing = true;
-    if (ctx.state === 'suspended' && !document.hidden) void ctx.resume().catch(() => {});
     this.bar = 0;
     this.nextBar = ctx.currentTime + 0.2;
     this.level(1.2);

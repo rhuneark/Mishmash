@@ -2126,6 +2126,11 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await shot('9-map');
   await page.mouse.click(10, height - 10);
 
+  // The title music's context sleeps while a game runs (taps in the game don't wake it).
+  check(
+    (await page.evaluate(() => window.__titleMusic?.state().ctx)) !== 'running',
+    `${tag} title music: its audio still runs in a game`,
+  );
   // Save, leave and continue where you were.
   const here = await game(page, () => [window.__game.client.x, window.__game.client.z]);
   await page.getByRole('button', { name: 'Menu' }).click();

@@ -564,10 +564,12 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.camp();
       h.stoke();
       h.time(2, 0.86);
+      // Beside the fire (in front of it, the survivor would hide it), warming up.
       const fx = cx, fz = cz + 4.5;
-      h.go(fx + SW[0] * 1.8, fz + SW[1] * 1.8, NE_RY);
+      h.go(fx + SE[0] * 1.7 + SW[0] * 0.4, fz + SE[1] * 1.7 + SW[1] * 0.4);
+      h.face(-SE[0], -SE[1]);
     }),
-    () => window.__h.face(NE[0], NE[1]),
+    () => window.__h.face(-SE[0], -SE[1]),
   );
 
   // 6. The Bloom: a horde on a Bloom night, coming for the camp.

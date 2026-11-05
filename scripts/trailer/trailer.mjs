@@ -781,21 +781,23 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     () => g(() => {
       const h = window.__h, isl = h.c().island;
       const w = isl.poiById.wreck;
-      h.zoom(110);
+      h.zoom(125);
       h.time(3, 0.25);
-      // On dry land 12 m from her, as near south-west as the shore allows; walk to her.
+      // South-west of her (wading in the shallows if that's where it is), so she lies up the
+      // screen; a few slow steps towards her.
       let best = null, bs = -9;
-      for (let k = 0; k < 16; k++) {
-        const a = (k / 16) * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
-        const x = w.x + dx * 12, z = w.z + dz * 12;
-        const score = dx * SW[0] + dz * SW[1];
-        if (h.y(x, z) > 0.4 && score > bs) { bs = score; best = { x, z, dx, dz }; }
-      }
-      best ??= { x: w.x + SW[0] * 12, z: w.z + SW[1] * 12, dx: SW[0], dz: SW[1] };
+      for (let k = 0; k < 32; k++)
+        for (const d of [12, 14, 16]) {
+          const a = (k / 32) * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
+          const x = w.x + dx * d, z = w.z + dz * d;
+          const score = dx * SW[0] + dz * SW[1] - Math.abs(d - 14) * 0.02;
+          if (h.y(x, z) > -0.5 && score > bs) { bs = score; best = { x, z, dx, dz }; }
+        }
+      best ??= { x: w.x + SW[0] * 14, z: w.z + SW[1] * 14, dx: SW[0], dz: SW[1] };
       h.go(best.x, best.z, Math.atan2(-best.dx, -best.dz));
       window.__shot = { dx: -best.dx, dz: -best.dz };
     }),
-    () => window.__h.walk(window.__shot.dx, window.__shot.dz, 0.7),
+    () => window.__h.walk(window.__shot.dx, window.__shot.dz, 0.35),
   );
   await shot(
     'dig', 25.5, 26.5,

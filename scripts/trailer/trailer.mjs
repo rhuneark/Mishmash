@@ -458,9 +458,13 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
         if (d < bd && d > 25) { bd = d; best = id; }
       }
       const tx = isl.nodeX[best], tz = isl.nodeZ[best];
-      // 3 m off: in reach, and beyond the 2.5 m in which the game shows a tree just past you
-      // see-through.
-      h.go(tx + SW[0] * 3.0, tz + SW[1] * 3.0, NE_RY);
+      // In reach, beyond the 2.5 m in which the game shows a tree just past you see-through,
+      // and off to one side, so it falls up and to the left across the picture (straight away
+      // from the camera it would only look shorter).
+      const ox = NE[0] * 2.6 - SE[0] * 2.0, oz = NE[1] * 2.6 - SE[1] * 2.0;
+      h.go(tx - ox, tz - oz);
+      h.face(ox, oz);
+      window.__shot = { ox, oz };
       // Nothing else in reach (a stone at your feet would take the swing).
       for (let id = 0; id < isl.nodeCount; id++)
         if (id !== best && Math.hypot(isl.nodeX[id] - c.x, isl.nodeZ[id] - c.z) < 4.5) { isl.hidden[id] = 1; s.island.hidden[id] = 1; }
@@ -472,7 +476,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     () => {
       const h = window.__h, c = h.c();
       const i = Math.round((window.__t - 5.0) * 30);
-      h.face(NE[0], NE[1]);
+      h.face(window.__shot.ox, window.__shot.oz);
       if (i === 1 || i === 15) h.swing();
     },
   );

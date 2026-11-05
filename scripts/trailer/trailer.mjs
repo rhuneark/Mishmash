@@ -323,7 +323,9 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     const p = h.p();
     h.calm(true);
     s.rules.blockDamage = 600;
-    h.give([['wood', 400], ['stone', 200], ['fiber', 80], ['rope', 40], ['cloth', 30], ['scrap', 30], ['sap', 20]]);
+    // Everything the shots use, given now so no "+1" popup turns up in a shot.
+    h.give([['axe_stone', 1], ['jawblade', 1], ['firebomb', 8], ['shovel', 1],
+      ['wood', 400], ['stone', 200], ['fiber', 80], ['rope', 40], ['cloth', 30], ['scrap', 30], ['sap', 20]]);
     const crash = h.c().island.poiById.crash;
     const plan = (cx, cz) => [
       ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([x, z]) => ['floor_wood', cx + x, cz + z, 0]),
@@ -405,7 +407,6 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.zoom(80);
       h.calm(true);
       h.time(2, 0.36);
-      h.give([['axe_stone', 1]]);
       const p = h.p();
       const axe = p.inv.findIndex((it) => it && it.id === 'axe_stone');
       if (axe >= 0 && axe !== 0) s.handle(c.you, { type: 'move', from: axe, to: 0 });
@@ -419,7 +420,9 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
         if (d < bd && d > 25) { bd = d; best = id; }
       }
       const tx = isl.nodeX[best], tz = isl.nodeZ[best];
-      h.go(tx + SW[0] * 1.3, tz + SW[1] * 1.3, NE_RY);
+      // 3 m off: in reach, and beyond the 2.5 m in which the game shows a tree just past you
+      // see-through.
+      h.go(tx + SW[0] * 3.0, tz + SW[1] * 3.0, NE_RY);
       s.rules.blockDamage = 100;
       s.nodes.set(best, { hp: 30, until: 0 });
       document.body.classList.add('gains');
@@ -466,12 +469,13 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.time(2, 0.5);
       h.go(cx + SW[0] * 6, cz + SW[1] * 6, NE_RY);
       c.toggleBuild(true);
-      c.buildLook = { x: cx - c.x, z: cz - c.z };
+      // Build mode looks where you move it: a little short of the cabin, so it sits mid-screen.
+      c.buildLook = { x: cx + SW[0] * 3.5 - c.x, z: cz + SW[1] * 3.5 - c.z };
     }),
     () => {
       const h = window.__h, s = h.s(), c = h.c(), { cx, cz, plan } = window.__camp;
       const i = Math.round((window.__t - 7.5) * 30);
-      c.buildLook = { x: cx - c.x, z: cz - c.z };
+      c.buildLook = { x: cx + SW[0] * 3.5 - c.x, z: cz + SW[1] * 3.5 - c.z };
       const n = Math.min(plan.length, Math.floor(i / 1.6) + 1);
       for (let k = window.__built ?? 0; k < n; k++) {
         const [kind, x, z, rot] = plan[k];
@@ -574,7 +578,6 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.camp();
       h.clearMobs();
       h.stoke();
-      h.give([['jawblade', 1], ['firebomb', 4]]);
       const p = h.p();
       const blade = p.inv.findIndex((it) => it && it.id === 'jawblade');
       if (blade >= 0 && blade !== 0) s.handle(c.you, { type: 'move', from: blade, to: 0 });
@@ -605,7 +608,6 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
       h.zoom(90);
       h.camp();
-      h.give([['firebomb', 4]]);
       h.clearMobs();
       const px = cx + SE[0] * 7, pz = cz + SE[1] * 7;
       h.go(px, pz, NE_RY);
@@ -748,7 +750,6 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.time(3, 0.5);
       s.notes.add('treasure_1');
       s.broadcastProgress();
-      h.give([['shovel', 1]]);
       const p = h.p();
       const sh = p.inv.findIndex((it) => it && it.id === 'shovel');
       if (sh >= 0 && sh !== 0) s.handle(c.you, { type: 'move', from: sh, to: 0 });

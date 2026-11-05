@@ -268,6 +268,10 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   const islandName = await newIsland(page, tag, 'TR-C0-4242', 'Survivor', noSideScroll);
   await page.locator('.hud').waitFor({ timeout: 60000 });
   check((await page.locator('.chat-btn').count()) === 0, `${tag} solo: a chat button`);
+  check(
+    (await page.evaluate(() => window.__titleMusic?.state().playing)) === false,
+    `${tag} title music: still playing in a game`,
+  );
   // World events come on their own; the playthrough sends one when it wants it.
   await game(page, () => {
     window.__game.client.link.sim.nextEvent = Infinity;
@@ -2495,7 +2499,7 @@ for (const [width, height] of ONLY === 'coop' ? [] : VIEWPORTS) {
     );
   // Intro on first launch.
   await page.goto(URL);
-  await page.getByText('A game the players build.').waitFor();
+  await page.getByText('Flight MX207 went down.').waitFor();
   await noSideScroll('intro');
   await shot('1-intro');
   const suggestNext = page.getByRole('button', { name: 'Suggest an idea' });
@@ -2506,6 +2510,13 @@ for (const [width, height] of ONLY === 'coop' ? [] : VIEWPORTS) {
 
   // The suggestions box: what got built, a topic, a line of text, your own list.
   await page.getByText('You asked, we built it').waitFor();
+  // The title theme starts with the first tap, on every page outside a game.
+  await until(
+    page,
+    () => window.__titleMusic?.state().playing === true,
+    `${tag} title music: not playing after a tap`,
+    10000,
+  );
   check(
     (await page.getByText('Bows and ranged weapons').count()) === 1,
     `${tag} suggest: the built list misses the bows`,
@@ -2560,7 +2571,7 @@ for (const [width, height] of ONLY === 'coop' ? [] : VIEWPORTS) {
   await page.reload();
   await page.getByRole('button', { name: 'Solo', exact: true }).waitFor();
   check(
-    (await page.getByText('A game the players build.').count()) === 0,
+    (await page.getByText('Flight MX207 went down.').count()) === 0,
     `${tag} intro shown again`,
   );
   check((await page.locator('.title-badge').count()) === 0, `${tag} news: new for a new player`);

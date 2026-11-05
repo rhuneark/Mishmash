@@ -24,9 +24,11 @@ update to the user with this link)
   (`Play`) is home. The suggestions box and the owner's Dev area open from it as pages with a
   ‹ Back button (`ui/SubPage.tsx`; `App.tsx` `screen`: play / suggest / dev). While a game runs `Game` is full
   screen.
-- **Intro** (`screens/Intro.tsx`): full screen on first launch only (`save.introSeen`). "A game
-  the players build" → it starts as a survival game → play / suggest / we build it (`STEPS`,
-  also in the title's ❓ How to play) → "Built by you" (what players asked for and got).
+- **Intro** (`screens/Intro.tsx`): full screen on first launch only (`save.introSeen`). "Flight
+  MX207 went down." (it said "A game the players build" until v1.35; the user: "Let's remove
+  the game the players build", so the title's kicker line over the logo and How to play's
+  section went too) → it starts as a survival game → play / suggest / we build it (`STEPS`,
+  until v1.35 also in the title's ❓ How to play) → "Built by you" (what players asked for and got).
   Buttons (pinned under the text): Play, Suggest an idea.
 - **The look: a field journal** (v1.31; the user picked mockup A of three: "A, field
   journal"). Everything outside the 3D view is the survivor's notebook: ink on paper. Tokens
@@ -44,6 +46,16 @@ update to the user with this link)
   pictures stay `itemIcons.ts`. Don't tilt big elements drawn over the 3D view (a rotated card
   over the WebGL canvas glitched in the headless check); small ones are fine. The playthrough
   finds lit HUD buttons by `aria-label`, not emoji.
+- **Title music** (`play/titleMusic.ts`, v1.35; the user: "need title music"): a theme made
+  on the fly with WebAudio, D minor at 76 BPM, a 16-bar loop: bass, pads and a plucked
+  arpeggio over Dm B♭ F C | Dm B♭ Gm A, wind, and from bar 9 a tune (`TUNE`) over a low
+  heartbeat. `titleMusic.want(on)` from App (on outside a game and its loading screen; fades
+  in over ~1 s and out when a game starts, the game has its own music); it starts on the
+  first tap or key (browsers lock sound until a gesture), pauses with the page hidden, and
+  follows Settings › Audio (`gain(master) × gain(music)`). Its own AudioContext, no game
+  code (title tree). `renderTheme(seconds)` renders it offline (dev: listen to it as a file);
+  `window.__titleMusic` in dev builds (the playthrough checks it plays after a tap and stops
+  in a game).
 - **Play** (`screens/Play.tsx`): a game title screen. Behind the menu your saved island turns
   slowly around the crash site (`play/TitleScene.ts`: the game's own terrain, nodes, grass and
   landmarks, 30 fps, gives the WebGL context back on unmount; no save: an autumn showcase
@@ -920,7 +932,8 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
 src/sdk/run.ts     THE ONLY client module that imports the RUN SDK. Waits for start-up,
                    catches everything. UgcApi + run.ugc, realtime rooms (createRoom/joinRoom).
 src/server/IslandRoom.ts  co-op GameRoom (imports the SDK's mp-server; runs IslandSim)
-src/play/          the game client: slots.ts (the islands kept: slots, loading, summaries;
+src/play/          the game client: titleMusic.ts (the title theme, title tree), slots.ts
+                   (the islands kept: slots, loading, summaries;
                    light, for the title), session.ts (starting solo/host/join/public games;
                    loaded on demand), islandCache.ts (islandFor), link.ts (LocalLink),
                    roomLink.ts, client.ts (GameClient), input.ts, keys.ts (PC bindings),

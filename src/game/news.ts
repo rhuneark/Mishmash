@@ -10,6 +10,13 @@ export interface News {
 
 export const NEWS: News[] = [
   {
+    version: '1.35',
+    title: 'Title music',
+    items: [
+      'The title has its own theme: a slow tune over the island, with a heartbeat under it. Set its volume under Settings › Audio › Music.',
+    ],
+  },
+  {
     version: '1.34',
     title: 'A simpler title',
     items: [

@@ -19,7 +19,7 @@ export function Intro({ onPlay, onSuggest }: Props) {
         <div className="intro">
           <Logo />
           <div>
-            <h2 className="intro-title">A game the players build.</h2>
+            <h2 className="intro-title">Flight MX207 went down.</h2>
             <p className="intro-lead">
               It starts as a survival game: your plane goes down on an island overrun by the Bloom.
               Craft, build, survive the nights and find a way off, alone or with friends. What gets

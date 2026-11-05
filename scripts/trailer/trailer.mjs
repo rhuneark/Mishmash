@@ -196,8 +196,8 @@ async function overlay() {
 /** Into a game: a fresh island from a map code (or the ready-made one). */
 async function startIsland(code) {
   await page.goto(URL);
-  const intro = page.getByText('A game the players build.');
-  const title = page.getByRole('button', { name: /Continue · Day|Start surviving/ });
+  const intro = page.getByText('Flight MX207 went down.');
+  const title = page.getByRole('button', { name: 'Solo', exact: true });
   await Promise.race([
     intro.waitFor({ timeout: 90000 }),
     title.first().waitFor({ timeout: 90000 }),
@@ -218,14 +218,16 @@ async function startIsland(code) {
     });
     await wait(600);
     await page.reload();
-    await page.getByRole('button', { name: /Start surviving/ }).waitFor({ timeout: 90000 });
+    await page.getByRole('button', { name: 'Solo', exact: true }).waitFor({ timeout: 90000 });
     if (!code) {
-      await page.getByRole('button', { name: /Start surviving/ }).click();
+      await page.getByRole('button', { name: 'Solo', exact: true }).click();
+      await page.getByRole('button', { name: 'Survivor', exact: true }).click();
       await page.locator('.hud').waitFor({ timeout: 120000 });
     }
   }
   if (code) {
-    await page.getByRole('button', { name: /New island|Choose your island/ }).first().click();
+    await page.getByRole('button', { name: 'Solo', exact: true }).click();
+    await page.getByRole('button', { name: 'Custom', exact: true }).click();
     await page.locator('.new-island').waitFor();
     await page.getByLabel('Map code').fill(code);
     await page.getByRole('button', { name: 'Use', exact: true }).click();

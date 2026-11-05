@@ -39,7 +39,6 @@ import { NEWS, type News } from '../game/news';
 import { CLIMATE_NAMES } from '../game/islands';
 import type { TitleScene } from '../play/TitleScene';
 import { Logo } from '../ui/Logo';
-import { STEPS } from './Intro';
 
 // The game's own parts load when they're first needed, so the title shows sooner.
 const NewIslandScreen = lazy(() =>
@@ -276,7 +275,6 @@ export function Play({
       <div className="title-scroll">
         {view === 'title' && (
           <header className="title-logo">
-            <div className="title-kicker">A game the players build</div>
             <Logo />
           </header>
         )}
@@ -540,14 +538,6 @@ export function Play({
           <p className="muted small-text">
             Every island can have its own rules: pick Custom when you start a new world.
           </p>
-          <div className="label">A game the players build</div>
-          <ul className="tips">
-            {STEPS.map((s) => (
-              <li key={s.name}>
-                {s.icon} <b>{s.name}</b>: {s.text}
-              </li>
-            ))}
-          </ul>
         </Dialog>
       )}
     </div>

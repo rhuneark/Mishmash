@@ -8,6 +8,7 @@ import { Intro } from './screens/Intro';
 import { Suggest } from './screens/Suggest';
 import { SubPage } from './ui/SubPage';
 import { DailyLine, Loading, Play, type PlayChoice } from './screens/Play';
+import { titleMusic } from './play/titleMusic';
 import type { GameClient } from './play/client';
 import { chooseSlot } from './play/slots';
 import { LATEST, unseenNews } from './game/news';
@@ -66,6 +67,15 @@ export default function App() {
       cancelled = true;
       clearTimeout(preload);
     };
+  }, []);
+
+  // The title theme on the title and the hub's pages; the game has its own music.
+  useEffect(() => {
+    titleMusic.want(!game && !starting);
+  }, [game, starting]);
+  useEffect(() => {
+    if (import.meta.env.DEV)
+      (window as unknown as { __titleMusic: unknown }).__titleMusic = titleMusic;
   }, []);
 
   const clearWantNew = useCallback(() => setWantNew(false), []);

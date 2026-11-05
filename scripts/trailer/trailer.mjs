@@ -167,6 +167,16 @@ async function shot(name, from, to, setup, perFrame) {
     window.__halos = false;
     window.__game.input.joy = { x: 0, z: 0 };
   });
+  // Every shot starts clear and dry with no Bloom about, whichever shot ran before it; the
+  // setup changes what it needs.
+  await g(() => {
+    const h = window.__h;
+    if (!h) return;
+    h.weather('clear');
+    window.__game.view.wet = 0;
+    h.calm(true);
+    h.clearMobs();
+  });
   if (setup) await setup();
   // The island around a new spot loads, then the camera settles on the survivor.
   await wait(1500);
@@ -660,7 +670,9 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
       h.zoom(85);
       h.camp();
-      h.clearMobs();
+      h.stoke();
+      h.time(7, 0.86);
+      h.calm(false);
       const px = cx + SE[0] * 7, pz = cz + SE[1] * 7;
       h.go(px, pz, NE_RY);
       // Thrown at where the pack will be when it lands (they close about 2 m while it flies).
@@ -691,7 +703,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
       h.zoom(100);
-      h.clearMobs();
+      h.calm(false);
       h.camp();
       h.time(7, 0.815);
       // Open meadow away from the camp, cleared round her, so she stands alone in the picture.

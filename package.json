@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "_build": "tsc && vite build",
-    "build": "npm run _build",
+    "build": "npm run _build && node scripts/check-chunks.mjs",
     "build:bundled": "cross-env RUNDOT_GAME_DISABLE_EMBEDDED_LIBS=true npm run _build",
     "preview": "vite preview",
     "test": "vitest run",

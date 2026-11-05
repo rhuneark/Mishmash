@@ -86,10 +86,23 @@ update to the user with this link)
   come). So **don't import the game into the title's tree**: the title side uses `slots.ts`
   (saves, slots, `describeSave`, `quickIsland`, `playerId`, `fogKey`) and
   `islandCache.ts` (`islandFor`); `session.ts` (starting games) is only loaded on demand.
-  `vite.config.ts` folds parts under 20 KB into bigger ones (`experimentalMinChunkSize`), so
-  the first screen is ~4 requests. Measured (a 4× slower CPU, 12 Mbit/s, a standalone build):
-  the first screen in ~1.0 s instead of ~2.0–2.9 s. three.js, React and ReactDOM come from
-  RUN's host (embedded libraries, loaded and cached before the game runs).
+  Measured (a 4× slower CPU, 12 Mbit/s, a standalone build): the first screen in ~1.0 s
+  instead of ~2.0–2.9 s. three.js, React and ReactDOM come from RUN's host (embedded
+  libraries, loaded and cached before the game runs). **The blank start (v1.29–v1.32, fixed
+  in v1.33):** v1.29 also folded parts under 20 KB into bigger ones
+  (`experimentalMinChunkSize`); that put the SDK's lazily loaded helper into a start-up chunk
+  that imports the SDK's chunk back, and with the embedded libraries (every chunk that uses
+  React or three starts with a top-level await, and so does the SDK's start-up) the SDK
+  waited on itself: on RUN the game stayed a blank page, no error, while the dev server and
+  a standalone (`build:bundled`) build were fine, so nothing local caught it. The folding is
+  gone; `scripts/check-chunks.mjs` runs after every `npm run build` (so CI fails before a
+  deploy) and fails when a chunk with a top-level await lazily imports a chunk that imports
+  it back. Don't bring back chunk folding or `manualChunks` that mix the SDK with our code
+  without that check passing. To try the build RUN serves locally: `vite build`, strip the
+  `sha384` hashes from `_rundot_bootstrap.*.js`, `vite preview` it, and answer the library
+  CDN (`venus-static-…web.app/libs`) from `node_modules` (React/ReactDOM UMD; three as an
+  IIFE built with esbuild, `--global-name=THREE`) with Playwright's `page.route`: the SDK
+  reports `[RUN] v5.28.1 initialized.` and `#root` fills in when it starts.
 - **October Jam button** (`app/links.ts`): RUN runs the game in a sandbox without
   `allow-popups` and the SDK has no call to open an outside page (preflight fails on
   `window.open` as critical), so the button copies `JAM_URL`
@@ -931,6 +944,8 @@ scripts/trailer/         the trailer: music.py (the 30 s score) and trailer.mjs 
                          look, cut with ffmpeg to a 1080×1920 MP4; needs `npm run dev`). It
                          never shows or mentions the October Jam (the user's call)
 scripts/islandmap.ts     `npx tsx scripts/islandmap.ts <seed> <out.png>`
+scripts/check-chunks.mjs after `npm run build`: fails on a start-up deadlock in dist/ (a chunk
+                         with a top-level await lazily importing a chunk that imports it back)
 public/thumbnail.jpg     store thumbnail, exported from art/ (exactly 512×512 JPEG, < ~150 KB)
 art/thumbnail-source.png store thumbnail art from the user ("BLOOM ISLAND" over the crashed
                          plane, a Bloom horde and a survivor at sunset; 1254², not shipped;
@@ -977,7 +992,7 @@ Built on `series-inc/run-template-2d-react` (same base as the user's other RUN g
 ```bash
 npx tsc --noEmit
 npm test                    # vitest, pure rules
-npm run build
+npm run build               # + scripts/check-chunks.mjs: no start-up deadlock on RUN
 rundot preflight --strict   # must be 0 warnings
 npm run dev                 # then, in another shell:
 npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, no tab bar or
@@ -1103,7 +1118,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   public"), so Explore gets v1.16–v1.31 once RUN's review passes. **v1.32.0** (the same
   game, deployed for a workflow change: trailer-only pushes don't deploy) **was submitted
   with the Publish workflow on 2026-11-05 at the user's request** ("Publish the latest
-  version public"). **Waiting:**
+  version public"). **v1.29–v1.32 start as a blank page on RUN** (the user, 2026-11-05: "The
+  game doesnt even load now, just a tan screen"; see Loading in parts): v1.33 is the fix,
+  and the version in review should be replaced by it. **Waiting:**
   the coach review's item 3: when the October Jam closes, swap the 🎃 Vote for us button
   for something lasting (Invite a friend with the island's code) and decide on the
   halloween/spooky tags (the user: "reserve 3 until after the jam").

@@ -29,10 +29,9 @@ export default defineConfig({
   },
   build: {
     target: 'es2022', // Support top-level await for embedded libraries
-    rollupOptions: {
-      // The game loads in parts (the title first); fold tiny shared parts into bigger ones
-      // so a phone makes fewer requests.
-      output: { experimentalMinChunkSize: 20_000 },
-    },
+    // No experimentalMinChunkSize (v1.29-v1.32 had it): it folded the SDK's lazily loaded
+    // helper into a start-up chunk that imports the SDK's chunk, and with the embedded
+    // libraries the SDK's top-level await then waited on itself: a blank screen on RUN.
+    // scripts/check-chunks.mjs (after every build) fails on that shape.
   },
 });

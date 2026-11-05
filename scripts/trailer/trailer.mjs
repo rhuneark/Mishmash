@@ -677,10 +677,24 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.clearMobs();
       h.camp();
       h.time(7, 0.815);
-      const px = cx + SW[0] * 14, pz = cz + SW[1] * 14;
+      // Open meadow away from the camp, cleared round her, so she stands alone in the picture.
+      const isl = h.c().island, G = 512;
+      const bio = (x, z) => isl.biomes[Math.floor((z + 512) / 2) * G + Math.floor((x + 512) / 2)];
+      const open = (x, z) => (bio(x, z) === 1 || bio(x, z) === 2) && h.y(x, z) > 0.6;
+      let at = null;
+      for (let r = 26; r <= 60 && !at; r += 4)
+        for (let k = 0; k < 24 && !at; k++) {
+          const a = (k / 24) * Math.PI * 2;
+          const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+          if (open(x, z) && open(x + NE[0] * 9, z + NE[1] * 9) && open(x + NE[0] * 14, z + NE[1] * 14) && open(x + SW[0] * 6, z + SW[1] * 6)) at = { x, z };
+        }
+      at ??= { x: cx + SE[0] * 30, z: cz + SE[1] * 30 };
+      const px = at.x, pz = at.z;
       const mx = px + NE[0] * 9, mz = pz + NE[1] * 9;
       h.go(px, pz, NE_RY);
-      h.tidy(mx, mz, 14);
+      for (let id = 0; id < isl.nodeCount; id++)
+        if (Math.hypot(isl.nodeX[id] - mx, isl.nodeZ[id] - mz) < 9) { isl.hidden[id] = 1; s.island.hidden[id] = 1; }
+      h.clearView(px, pz, 24, 8);
       const you = h.c().you;
       for (const [a, b] of [[-3.5, 1.5], [3.5, 1.5], [0, -4]])
         s.handle(you, { type: 'build', kind: 'torch_post', x: mx + SE[0] * a + NE[0] * b, z: mz + SE[1] * a + NE[1] * b, rot: 0 });

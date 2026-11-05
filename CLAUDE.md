@@ -962,8 +962,13 @@ scripts/playthrough.mjs  Playwright: hub + solo game + co-op at 375×667 and 390
                          (PLAYTHROUGH_ONLY=coop runs just the co-op part)
 scripts/trailer/         the trailer: music.py (the 30 s score) and trailer.mjs (scripted shots
                          from the game captured on a virtual clock, captions in the journal
-                         look, cut with ffmpeg to a 1080×1920 MP4; needs `npm run dev`). It
-                         never shows or mentions the October Jam (the user's call)
+                         look, cut with ffmpeg to a 1080×1920 MP4; needs `npm run dev`).
+                         Every shot is the game's own isometric camera on the survivor (the
+                         user's call: no free camera); `node scripts/trailer/trailer.mjs <out>
+                         [shot,shot]` re-renders single shots into the same frames, and each
+                         shot sets its own time, weather and monsters. It jumps the island's
+                         clock, so `H.time` resets what the authority times by it (`meAt`,
+                         `lastUse`). It never shows or mentions the October Jam (the user's call)
 scripts/islandmap.ts     `npx tsx scripts/islandmap.ts <seed> <out.png>`
 scripts/check-chunks.mjs after `npm run build`: fails on a start-up deadlock in dist/ (a chunk
                          with a top-level await lazily importing a chunk that imports it back)

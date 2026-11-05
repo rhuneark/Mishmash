@@ -148,7 +148,7 @@ async function frame(index, perFrame) {
   if (process.env.TRAILER_DEBUG)
     console.log(index, await g(() => {
       const c = window.__game.client, p = window.__h.p(), s = window.__h.s();
-      return JSON.stringify({ t: c.target && [c.target.kind, c.target.id], nu: +c.nextUse.toFixed(2), clock: +c.clock.toFixed(2), held: c.heldItem()?.id, ghost: !!c.ghost, build: !!c.build, panel: c.panel, last: p.lastUse, time: +s.time.toFixed(1), pos: [+c.x.toFixed(1), +c.z.toFixed(1)] });
+      return JSON.stringify({ inv: p.inv.slice(0, 8).map((it) => it?.id ?? null), ph: p.held, alive: p.alive, t: c.target && [c.target.kind, c.target.id], nu: +c.nextUse.toFixed(2), clock: +c.clock.toFixed(2), held: c.heldItem()?.id, ghost: !!c.ghost, build: !!c.build, panel: c.panel, last: p.lastUse, time: +s.time.toFixed(1), pos: [+c.x.toFixed(1), +c.z.toFixed(1)] });
     }));
   await page.screenshot({
     path: join(FRAMES, `f${String(index).padStart(4, '0')}.jpg`),
@@ -176,6 +176,9 @@ async function shot(name, from, to, setup, perFrame) {
     window.__game.view.wet = 0;
     h.calm(true);
     h.clearMobs();
+    // A research page a Husk dropped opens its note, and an open page holds the action button.
+    h.c().openPanel(null);
+    h.p().hp = 100;
   });
   if (setup) await setup();
   // The island around a new spot loads, then the camera settles on the survivor.
@@ -266,7 +269,8 @@ async function startIsland(code) {
   await g(() => {
     const { client: c, prefs, view } = window.__game;
     const s = c.link.sim;
-    prefs.set({ quality: 'high', tutorial: false, damageNumbers: false });
+    // No auto tool or weapon: each shot puts its own in hand (a swap would take it back out).
+    prefs.set({ quality: 'high', tutorial: false, damageNumbers: false, autoTool: false, autoWeapon: false });
     s.nextEvent = Infinity;
     s.weather = { kind: 'clear', until: s.time + 99999 };
     s.broadcast({ type: 'weather', w: 'clear' });
@@ -328,7 +332,15 @@ const HELPERS = `(() => {
   };
   H.clearMobs = () => { const s = H.s(); for (const id of [...s.mobs.keys()]) if (!s.mobs.get(id).tame) s.mobs.delete(id); };
   H.calm = (on) => { clearInterval(window.__calmT); if (on) window.__calmT = setInterval(H.clearMobs, 200); };
-  H.time = (day, phase) => { H.s().time = 600 * (day - 1) + 600 * phase; };
+  // A jump in time: what the island remembers by the clock (when it last sent you your bag,
+  // your last swing) starts over, or a jump back would hold them up until the clock caught up.
+  H.time = (day, phase) => {
+    const s = H.s();
+    s.time = 600 * (day - 1) + 600 * phase;
+    s.meAt.clear();
+    H.p().lastUse = -1e9;
+    s.dirty(H.p());
+  };
   // The weather at once (the sky would take a few seconds to blend into it).
   const LOOK = { clear: [0, 0, 0], storm: [1, 1, 0.45] };
   H.weather = (w) => {
@@ -352,6 +364,15 @@ const HELPERS = `(() => {
   // A swing now: the staged shots cut the cooldowns (the axe's 0.7 s would leave room for
   // one blow in a second-long shot).
   H.swing = () => { H.p().lastUse = -1e9; G.client.nextUse = 0; G.client.use(); };
+  // Something in hand (into the first hotbar slot), given if the bag has none left.
+  H.hold = (id) => {
+    const s = H.s(), p = H.p(), you = G.client.you;
+    let i = p.inv.findIndex((it) => it && it.id === id);
+    if (i < 0) { s.give(p, id, 1); i = p.inv.findIndex((it) => it && it.id === id); }
+    if (i > 0) s.handle(you, { type: 'move', from: i, to: 0 });
+    s.handle(you, { type: 'equip', slot: 0 });
+    s.dirty(p);
+  };
   H.stoke = () => { const s = H.s(); for (const b of s.buildings.values()) if (b.kind === 'campfire') { b.v = 900; s.broadcast({ type: 'build', b: s.net(b) }); } };
   H.give = (items) => { const s = H.s(), p = H.p(); for (const [id, n] of items) s.give(p, id, n); s.dirty(p); };
 })();`;
@@ -455,10 +476,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.zoom(80);
       h.calm(true);
       h.time(2, 0.36);
-      const p = h.p();
-      const axe = p.inv.findIndex((it) => it && it.id === 'axe_stone');
-      if (axe >= 0 && axe !== 0) s.handle(c.you, { type: 'move', from: axe, to: 0 });
-      s.handle(c.you, { type: 'equip', slot: 0 });
+      h.hold('axe_stone');
       const { cx, cz } = window.__camp;
       let best = -1, bd = 1e9;
       for (let id = 0; id < isl.nodeCount; id++) {
@@ -638,10 +656,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.camp();
       h.clearMobs();
       h.stoke();
-      const p = h.p();
-      const blade = p.inv.findIndex((it) => it && it.id === 'jawblade');
-      if (blade >= 0 && blade !== 0) s.handle(c.you, { type: 'move', from: blade, to: 0 });
-      s.handle(c.you, { type: 'equip', slot: 0 });
+      h.hold('jawblade');
       h.time(7, 0.86);
       h.calm(false);
       // The fire on the left of the picture, the survivor by it, the Husks coming in from the
@@ -836,10 +851,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.time(3, 0.5);
       s.notes.add('treasure_1');
       s.broadcastProgress();
-      const p = h.p();
-      const sh = p.inv.findIndex((it) => it && it.id === 'shovel');
-      if (sh >= 0 && sh !== 0) s.handle(c.you, { type: 'move', from: sh, to: 0 });
-      s.handle(c.you, { type: 'equip', slot: 0 });
+      h.hold('shovel');
       // Beside the X (in front of it, the survivor would hide it), digging towards it.
       const x = isl.treasures[0];
       h.go(x.x + SE[0] * 1.5, x.z + SE[1] * 1.5);

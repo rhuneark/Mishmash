@@ -170,6 +170,10 @@ async function shot(name, from, to, setup, perFrame) {
     // from when it heard of it), so the lit ones are sent again once the clock has caught up.
     const s = window.__h?.s();
     if (s) for (const b of s.buildings.values()) if (b.kind === 'campfire' && b.v > 0) s.broadcast({ type: 'build', b: s.net(b) });
+    // Time jumps between shots: a swing "made later" than now would hold every new one back.
+    const p = window.__h?.p();
+    if (p) p.lastUse = -1e9;
+    window.__game.client.nextUse = 0;
     window.__h?.snap();
     // No "+N" popups left over from the setup.
     window.__game.view.popups.length = 0;
@@ -811,13 +815,15 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const sh = p.inv.findIndex((it) => it && it.id === 'shovel');
       if (sh >= 0 && sh !== 0) s.handle(c.you, { type: 'move', from: sh, to: 0 });
       s.handle(c.you, { type: 'equip', slot: 0 });
+      // Beside the X (in front of it, the survivor would hide it), digging towards it.
       const x = isl.treasures[0];
-      h.go(x.x + SW[0] * 1.2, x.z + SW[1] * 1.2, NE_RY);
+      h.go(x.x + SE[0] * 1.5, x.z + SE[1] * 1.5);
+      h.face(-SE[0], -SE[1]);
     }),
     () => {
       const h = window.__h, c = h.c();
       const i = Math.round((window.__t - 25.5) * 30);
-      h.face(NE[0], NE[1]);
+      h.face(-SE[0], -SE[1]);
       if (i % 8 === 0) c.use();
     },
   );

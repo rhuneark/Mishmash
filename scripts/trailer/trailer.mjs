@@ -145,6 +145,11 @@ async function frame(index, perFrame) {
   );
   if (perFrame) await g(perFrame, { t, index });
   await g(() => window.__clock.step(1000 / 30));
+  if (process.env.TRAILER_DEBUG)
+    console.log(index, await g(() => {
+      const c = window.__game.client, p = window.__h.p(), s = window.__h.s();
+      return JSON.stringify({ t: c.target && [c.target.kind, c.target.id], nu: +c.nextUse.toFixed(2), clock: +c.clock.toFixed(2), held: c.heldItem()?.id, ghost: !!c.ghost, build: !!c.build, panel: c.panel, last: p.lastUse, time: +s.time.toFixed(1), pos: [+c.x.toFixed(1), +c.z.toFixed(1)] });
+    }));
   await page.screenshot({
     path: join(FRAMES, `f${String(index).padStart(4, '0')}.jpg`),
     type: 'jpeg',
@@ -334,6 +339,9 @@ const HELPERS = `(() => {
     }
     G.view.nodes.markDirty();
   };
+  // A swing now: the staged shots cut the cooldowns (the axe's 0.7 s would leave room for
+  // one blow in a second-long shot).
+  H.swing = () => { H.p().lastUse = -1e9; G.client.nextUse = 0; G.client.use(); };
   H.stoke = () => { const s = H.s(); for (const b of s.buildings.values()) if (b.kind === 'campfire') { b.v = 900; s.broadcast({ type: 'build', b: s.net(b) }); } };
   H.give = (items) => { const s = H.s(), p = H.p(); for (const [id, n] of items) s.give(p, id, n); s.dirty(p); };
 })();`;
@@ -465,7 +473,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const h = window.__h, c = h.c();
       const i = Math.round((window.__t - 5.0) * 30);
       h.face(NE[0], NE[1]);
-      if (i === 1 || i === 18) c.use();
+      if (i === 1 || i === 15) h.swing();
     },
   );
   await g(() => { window.__h.s().rules.blockDamage = 600; });
@@ -636,7 +644,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const h = window.__h, c = h.c();
       h.p().hp = 100;
       const i = Math.round((window.__t - 16.0) * 30);
-      if (i % 8 === 0) c.use();
+      if (i % 13 === 1) h.swing();
     },
   );
 
@@ -819,12 +827,14 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const x = isl.treasures[0];
       h.go(x.x + SE[0] * 1.5, x.z + SE[1] * 1.5);
       h.face(-SE[0], -SE[1]);
+      // Half dug already: two more and the chest comes up.
+      s.digs.set(1, 40);
     }),
     () => {
-      const h = window.__h, c = h.c();
+      const h = window.__h;
       const i = Math.round((window.__t - 25.5) * 30);
       h.face(-SE[0], -SE[1]);
-      if (i % 8 === 0) c.use();
+      if (i === 1 || i === 15) h.swing();
     },
   );
 

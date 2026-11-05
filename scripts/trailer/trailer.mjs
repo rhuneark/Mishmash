@@ -618,13 +618,15 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       s.handle(c.you, { type: 'equip', slot: 0 });
       h.time(7, 0.86);
       h.calm(false);
+      // The fire on the left of the picture, the survivor by it, the Husks coming in from the
+      // right (south-east): side by side on the screen, so every blow reads. One blow each.
       const fx = cx, fz = cz + 4.5;
-      const px = fx + SE[0] * 2.4, pz = fz + SE[1] * 2.4;
-      h.go(px, pz, NE_RY);
+      const px = fx + SE[0] * 2.2, pz = fz + SE[1] * 2.2;
+      h.go(px, pz);
+      h.face(SE[0], SE[1]);
       h.tidy(px, pz, 14);
-      spawnMob(s, 'husk', px + NE[0] * 1.8, pz + NE[1] * 1.8, { enraged: true });
-      spawnMob(s, 'husk', px + NE[0] * 3.6 + SE[0] * 1.6, pz + NE[1] * 3.6 + SE[1] * 1.6, { enraged: true });
-      spawnMob(s, 'husk', px + NE[0] * 4.4 - SE[0] * 1.2, pz + NE[1] * 4.4 - SE[1] * 1.2, { enraged: true });
+      for (const [a, b] of [[1.9, 0], [3.6, 1.3], [4.2, -1.2]])
+        spawnMob(s, 'husk', px + SE[0] * a + NE[0] * b, pz + SE[1] * a + NE[1] * b, { enraged: true, hp: 30 });
     }),
     () => {
       const h = window.__h, c = h.c();

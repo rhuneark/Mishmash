@@ -740,11 +740,11 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.tidy(fx, fz, 14);
       const friends = [['trailer-a', 'Nova', 'captain.navy'], ['trailer-b', 'Pip', 'flowers.rose'], ['trailer-c', 'Bram', 'ranger.khaki']];
       for (const [id, name, look] of friends) if (!s.players.has(id) || !s.online.has(id)) s.join(id, name, look);
-      // In an arc behind the fire (on the near side one would hide it), facing it: you on the
-      // right, the others round to the left.
+      // In an arc behind the fire (on the near side one would hide it), facing it: you in the
+      // middle (the camera follows you), the others round both sides.
       const ids = [h.c().you, ...friends.map((f) => f[0])];
       const at = (ne, se) => [NE[0] * ne + SE[0] * se, NE[1] * ne + SE[1] * se];
-      const spots = [at(0.2, 2.0), at(1.6, 1.2), at(1.6, -1.2), at(0.2, -2.0)];
+      const spots = [at(1.9, 0), at(1.2, 1.8), at(1.2, -1.8), at(-0.2, 2.3)];
       ids.forEach((id, i) => {
         const q = s.players.get(id);
         const [dx, dz] = spots[i];
@@ -756,8 +756,8 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const me = s.players.get(h.c().you);
       h.go(me.x, me.z, me.ry);
     }),
-    // You keep facing the fire (to your left on the screen).
-    () => window.__h.face(-(NE[0] * 0.2 + SE[0] * 2.0), -(NE[1] * 0.2 + SE[1] * 2.0)),
+    // You keep facing the fire (and the camera).
+    () => window.__h.face(SW[0], SW[1]),
   );
   await g(() => {
     const s = window.__h.s();

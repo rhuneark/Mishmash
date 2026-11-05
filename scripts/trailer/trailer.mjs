@@ -166,7 +166,13 @@ async function shot(name, from, to, setup, perFrame) {
   // The island around a new spot loads, then the camera settles on the survivor.
   await wait(1500);
   await g(() => {
+    // A campfire lit before a jump in time reads as burnt out to the phone (its fuel counts
+    // from when it heard of it), so the lit ones are sent again once the clock has caught up.
+    const s = window.__h?.s();
+    if (s) for (const b of s.buildings.values()) if (b.kind === 'campfire' && b.v > 0) s.broadcast({ type: 'build', b: s.net(b) });
     window.__h?.snap();
+    // No "+N" popups left over from the setup.
+    window.__game.view.popups.length = 0;
     window.__clock.manual(true);
     for (let i = 0; i < 8; i++) window.__clock.step(1000 / 30);
   });
@@ -306,6 +312,17 @@ const HELPERS = `(() => {
   H.time = (day, phase) => { H.s().time = 600 * (day - 1) + 600 * phase; };
   H.weather = (w) => { const s = H.s(); s.weather = { kind: w, until: s.time + 99999 }; s.broadcast({ type: 'weather', w }); };
   H.tidy = (x, z, r) => { const isl = H.c().island; for (let id = 0; id < isl.nodeCount; id++) { const t = isl.nodeType[id]; if ((t === 8 || t === 10) && Math.hypot(isl.nodeX[id] - x, isl.nodeZ[id] - z) < r) { isl.hidden[id] = 1; H.s().island.hidden[id] = 1; } } G.view.nodes.markDirty(); };
+  // Trees between the camera (south-west) and a spot, out of the picture.
+  H.clearView = (x, z, back, half) => {
+    const isl = H.c().island, SWx = -Math.SQRT1_2, SWz = Math.SQRT1_2;
+    for (let id = 0; id < isl.nodeCount; id++) {
+      if (isl.nodeType[id] > 2) continue;
+      const dx = isl.nodeX[id] - x, dz = isl.nodeZ[id] - z;
+      const along = dx * SWx + dz * SWz, side = dx * -SWz + dz * SWx;
+      if (along > -1.5 && along < back && Math.abs(side) < half) { isl.hidden[id] = 1; H.s().island.hidden[id] = 1; }
+    }
+    G.view.nodes.markDirty();
+  };
   H.stoke = () => { const s = H.s(); for (const b of s.buildings.values()) if (b.kind === 'campfire') { b.v = 900; s.broadcast({ type: 'build', b: s.net(b) }); } };
   H.give = (items) => { const s = H.s(), p = H.p(); for (const [id, n] of items) s.give(p, id, n); s.dirty(p); };
 })();`;
@@ -425,6 +442,10 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       // 3 m off: in reach, and beyond the 2.5 m in which the game shows a tree just past you
       // see-through.
       h.go(tx + SW[0] * 3.0, tz + SW[1] * 3.0, NE_RY);
+      // Nothing else in reach (a stone at your feet would take the swing).
+      for (let id = 0; id < isl.nodeCount; id++)
+        if (id !== best && Math.hypot(isl.nodeX[id] - c.x, isl.nodeZ[id] - c.z) < 4.5) { isl.hidden[id] = 1; s.island.hidden[id] = 1; }
+      window.__game.view.nodes.markDirty();
       s.rules.blockDamage = 100;
       s.nodes.set(best, { hp: 30, until: 0 });
       document.body.classList.add('gains');
@@ -433,7 +454,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const h = window.__h, c = h.c();
       const i = Math.round((window.__t - 5.0) * 30);
       h.face(NE[0], NE[1]);
-      if (i === 2 || i === 24) c.use();
+      if (i === 1 || i === 18) c.use();
     },
   );
   await g(() => { window.__h.s().rules.blockDamage = 600; });
@@ -714,6 +735,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       // The door's middle (it hangs from its left edge), and the survivor in front of it.
       const mid = { x: door.x + (out.z * 0.8), z: door.z - (out.x * 0.8) };
       h.go(mid.x + out.x * 2.3 + out.z * 1.3, mid.z + out.z * 2.3 - out.x * 1.3, Math.atan2(-out.x, -out.z));
+      h.clearView(h.c().x, h.c().z, 24, 8);
       window.__shot = { out };
     }),
     () => {

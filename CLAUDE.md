@@ -1100,7 +1100,10 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   nights, outlined survivors, the smouldering wreck) was a private build; **v1.31.0** (the
   survivor's journal: the field-journal look for every screen, ink icons, the regrouped title)
   **was submitted with the Publish workflow the same day at the user's request** ("Publish
-  public"), so Explore gets v1.16–v1.31 once RUN's review passes. **Waiting:**
+  public"), so Explore gets v1.16–v1.31 once RUN's review passes. **v1.32.0** (the same
+  game, deployed for a workflow change: trailer-only pushes don't deploy) **was submitted
+  with the Publish workflow on 2026-11-05 at the user's request** ("Publish the latest
+  version public"). **Waiting:**
   the coach review's item 3: when the October Jam closes, swap the 🎃 Vote for us button
   for something lasting (Invite a friend with the island's code) and decide on the
   halloween/spooky tags (the user: "reserve 3 until after the jam").

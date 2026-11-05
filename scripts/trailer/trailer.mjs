@@ -1,4 +1,5 @@
-// The Bloom Island trailer: scripted shots from the real game, captured frame by frame on a
+// The Bloom Island trailer: scripted moments from the real game, seen through the game's own
+// camera (isometric, as players see it, without the HUD), captured frame by frame on a
 // virtual clock (so every frame is exactly 1/30 s apart however slow the renderer is), with
 // captions drawn in the journal's look, then cut to the score (music.py) with ffmpeg.
 //
@@ -121,6 +122,8 @@ await context.addInitScript(CLOCK);
 const page = await context.newPage();
 page.on('pageerror', (e) => console.log('pageerror', e.message));
 const g = (fn, arg) => page.evaluate(fn, arg);
+const NE = [Math.SQRT1_2, -Math.SQRT1_2];
+const SW = [-Math.SQRT1_2, Math.SQRT1_2];
 
 /** Puts one frame on the timeline: caption, a step of the clock, the screenshot. */
 async function frame(index, perFrame) {
@@ -157,12 +160,20 @@ async function shot(name, from, to, setup, perFrame) {
     window.__clock.manual(false);
     document.body.classList.remove('gains');
     window.__halos = false;
+    window.__game.input.joy = { x: 0, z: 0 };
   });
   if (setup) await setup();
-  await g(() => window.__clock.manual(true));
+  // The island around a new spot loads, then the camera settles on the survivor.
+  await wait(1500);
+  await g(() => {
+    window.__h?.snap();
+    window.__clock.manual(true);
+    for (let i = 0; i < 8; i++) window.__clock.step(1000 / 30);
+  });
   const a = Math.round(from * FPS);
   const b = Math.round(to * FPS);
   for (let i = a; i < b; i++) await frame(i, perFrame);
+  await g(() => { window.__game.input.joy = { x: 0, z: 0 }; });
 }
 
 const wait = (ms) => page.waitForTimeout(ms);
@@ -232,11 +243,10 @@ async function startIsland(code) {
     s.nextEvent = Infinity;
     s.weather = { kind: 'clear', until: s.time + 99999 };
     s.broadcast({ type: 'weather', w: 'clear' });
-    // The camera is the trailer's when __cam is set.
+    // The game's own camera throughout; the rings and hint halos stay out of the picture.
     if (!view.__trailer) {
       const render = view.render.bind(view);
       view.render = () => {
-        if (window.__cam) window.__cam(view.camera, view);
         for (const r of [view.ring, view.goalRing, view.tutRing]) if (r) r.visible = false;
         // Spot halos only where a shot wants them (the bunker's loot).
         if (!window.__halos) for (const p of view.pois) for (const sp of p.spots) if (sp.halo) sp.halo.visible = false;
@@ -244,7 +254,6 @@ async function startIsland(code) {
       };
       view.__trailer = true;
     }
-    window.__cam = null;
     document.body.classList.add('clean');
   });
   await wait(2500);
@@ -261,7 +270,25 @@ const HELPERS = `(() => {
   H.ease = (k) => k * k * (3 - 2 * k);
   H.lerp = (a, b, k) => a + (b - a) * k;
   H.y = (x, z) => G.view.y(x, z);
-  H.look = (cam, px, py, pz, tx, ty, tz, fov = 58) => { cam.position.set(px, py, pz); cam.lookAt(tx, ty, tz); if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); } };
+  // Directions on the island as the game camera sees them: up the screen is north-east.
+  window.NE = [Math.SQRT1_2, -Math.SQRT1_2];
+  window.SW = [-Math.SQRT1_2, Math.SQRT1_2];
+  window.SE = [Math.SQRT1_2, Math.SQRT1_2];
+  window.NE_RY = Math.atan2(Math.SQRT1_2, -Math.SQRT1_2);
+  // The camera setting a player picks (80-130), the stick (a direction on the island), facing.
+  H.zoom = (v) => { G.prefs.set({ camera: v }); G.view.zoom = v / 100; };
+  H.walk = (wx, wz, k = 1) => { G.input.joy = { x: Math.SQRT1_2 * (wx + wz) * k, z: Math.SQRT1_2 * (wz - wx) * k }; };
+  H.face = (wx, wz) => { const ry = Math.atan2(wx, wz); G.client.ry = ry; H.p().ry = ry; };
+  // The camera straight onto the survivor after a jump (it would glide there otherwise).
+  H.snap = () => {
+    const v = G.view, c = G.client, r = v.rig;
+    const tx = Math.sin(r.yaw), tz = Math.cos(r.yaw);
+    const lx = c.build ? c.x + c.buildLook.x : c.x, lz = c.build ? c.z + c.buildLook.z : c.z;
+    v.lead.x = 0;
+    v.lead.z = 0;
+    v.focus.set(lx - tx * r.ahead, v.y(lx, lz) + 0.8, lz - tz * r.ahead);
+    v.camDist = (v.camera.aspect < 1 ? 1.3 : 1.05) * v.zoom * (c.build ? 1.22 : 1);
+  };
   // The camp goes up at once when a shot needs it and the build shot didn't run.
   H.camp = () => {
     const c = window.__camp, s = H.s(), you = H.c().you;
@@ -272,7 +299,6 @@ const HELPERS = `(() => {
     s.handle(you, { type: 'build', kind: 'torch_post', x: c.cx + 3.5, z: c.cz + 3.5, rot: 0 });
     c.done = true;
   };
-  H.wide = (on) => { const v = G.view; v.terrainRadius = on ? 6 : 3; v.fogMul = on ? 2.6 : 1; };
   H.clearMobs = () => { const s = H.s(); for (const id of [...s.mobs.keys()]) if (!s.mobs.get(id).tame) s.mobs.delete(id); };
   H.calm = (on) => { clearInterval(window.__calmT); if (on) window.__calmT = setInterval(H.clearMobs, 200); };
   H.time = (day, phase) => { H.s().time = 600 * (day - 1) + 600 * phase; };
@@ -287,7 +313,8 @@ const helpers = () => page.evaluate(HELPERS);
 // ---------------------------------------------------------------- the tropical island
 const TROPIC = ['wreck', 'taken', 'chop', 'craft', 'build', 'storm', 'night', 'horde', 'fight', 'bomb', 'mother', 'together', 'bunker', 'wreckship', 'dig', 'title'];
 if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
-  await startIsland(null);
+  // TR-C0-4207: tropical, and its bunker door faces the game camera (south-west).
+  await startIsland('TR-C0-4207');
   await helpers();
   // A spot for the camp: flat ground in the crash site's clearing, clear of the wreck.
   await g(() => {
@@ -319,62 +346,64 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     window.__camp = { cx: best[0], cz: best[1], plan: plan(best[0], best[1]) };
   });
 
-  // 1. The wreck at dusk, smoking.
+  // Every shot is the game's own camera (isometric, south-west of the survivor, up on the
+  // screen is north-east), the survivor at its heart: what a player sees, without the HUD.
+
+  // 1. The wreck at dusk, smoking: the survivor walks up to it.
   await shot(
     'wreck', 0, 2.5,
     () => g(() => {
       const h = window.__h;
+      h.zoom(100);
       h.time(1, 0.775);
-      const ws = window.__game.view.wreckSmoke;
       const crash = h.c().island.poiById.crash;
-      const tx = (ws.x + crash.x) / 2, tz = (ws.z + crash.z) / 2;
-      h.go(tx, tz);
-      window.__shot = { ws, tx, tz };
+      h.go(crash.x + SW[0] * 15, crash.z + SW[1] * 15, NE_RY);
     }),
-    () => {
-      const h = window.__h, { ws, tx, tz } = window.__shot;
-      const k = h.ease(Math.min(1, window.__t / 2.5));
-      window.__game.view.me.root.visible = false;
-      const ty = h.y(tx, tz);
-      window.__cam = (cam) => h.look(cam, tx - h.lerp(24, 18, k), ty + h.lerp(9, 6.5, k), tz + h.lerp(22, 16, k), tx, ty + 2.2, tz);
-    },
+    () => window.__h.walk(NE[0], NE[1], 0.75),
   );
 
-  // 2. The taken: Husks coming out of the trees at dusk.
+  // 2. The taken: Husks come out of the trees at dusk.
   await shot(
     'taken', 2.5, 5.0,
     () => g(async () => {
-      const h = window.__h, s = h.s();
+      const h = window.__h, s = h.s(), isl = h.c().island;
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
+      h.zoom(90);
       h.calm(false);
       h.clearMobs();
       h.time(1, 0.805);
-      const crash = h.c().island.poiById.crash;
-      // Out in the open, away from the camp, facing the trees.
-      const at = { x: crash.x - 26, z: crash.z + 26 };
-      h.go(at.x, at.z);
-      for (let i = 0; i < 5; i++)
-        spawnMob(s, 'husk', at.x - 12 + (i - 2) * 2.2, at.z - 13 + (i % 2) * 1.5, { enraged: true });
-      window.__shot = { at };
-      await new Promise((r) => setTimeout(r, 400));
+      // Open ground near the crash site with woods up the screen (north-east).
+      const crash = isl.poiById.crash;
+      const G = 512, bio = (x, z) => isl.biomes[Math.floor((z + 512) / 2) * G + Math.floor((x + 512) / 2)];
+      let at = null;
+      for (let r = 26; r <= 70 && !at; r += 4)
+        for (let k = 0; k < 24 && !at; k++) {
+          const a = (k / 24) * Math.PI * 2;
+          const x = crash.x + Math.cos(a) * r, z = crash.z + Math.sin(a) * r;
+          const here = bio(x, z), w1 = bio(x + NE[0] * 12, z + NE[1] * 12), w2 = bio(x + NE[0] * 18, z + NE[1] * 18);
+          if ((here === 1 || here === 2) && (w1 === 3 || w1 === 4) && (w2 === 3 || w2 === 4)) at = { x, z };
+        }
+      at ??= { x: crash.x + SW[0] * 26, z: crash.z + SW[1] * 26 };
+      h.go(at.x, at.z, NE_RY);
+      for (let i = 0; i < 5; i++) {
+        const d = 11 + (i % 2) * 2.5, side = (i - 2) * 2.2;
+        spawnMob(s, 'husk', at.x + NE[0] * d + SE[0] * side, at.z + NE[1] * d + SE[1] * side, { enraged: true });
+      }
     }),
     () => {
-      const h = window.__h, at = window.__shot.at;
-      const k = h.ease(Math.min(1, (window.__t - 2.5) / 2.5));
-      window.__game.view.me.root.visible = false;
+      const h = window.__h;
       h.p().hp = 100;
-      const fx = at.x - 4, fz = at.z - 4;
-      window.__cam = (cam) => h.look(cam, fx + h.lerp(1.5, 0.5, k), h.y(fx, fz) + 1.4, fz + h.lerp(1.5, 0.6, k), at.x - 12, h.y(at.x - 12, at.z - 12) + 1.4, at.z - 12);
+      h.face(NE[0], NE[1]);
     },
   );
 
-  // 3a. Gather: an axe into a palm.
+  // 3a. Gather: an axe into a tree, two blows and it comes down.
   await shot(
     'chop', 5.0, 6.25,
     () => g(async () => {
       const h = window.__h, s = h.s(), c = h.c(), isl = c.island;
+      h.zoom(80);
       h.calm(true);
-      h.clearMobs();
       h.time(2, 0.36);
       h.give([['axe_stone', 1]]);
       const p = h.p();
@@ -385,30 +414,24 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       let best = -1, bd = 1e9;
       for (let id = 0; id < isl.nodeCount; id++) {
         const t = isl.nodeType[id];
-        if (t !== 1 && t !== 2) continue;
+        if (t !== 0 && t !== 1) continue;
         const d = Math.hypot(isl.nodeX[id] - cx, isl.nodeZ[id] - cz);
         if (d < bd && d > 25) { bd = d; best = id; }
       }
       const tx = isl.nodeX[best], tz = isl.nodeZ[best];
-      const ry = Math.atan2(cx - tx, cz - tz);
-      const px = tx + Math.sin(ry) * 1.3, pz = tz + Math.cos(ry) * 1.3;
-      h.go(px, pz, Math.atan2(tx - px, tz - pz));
-      window.__shot = { tx, tz, px, pz };
-      await new Promise((r) => setTimeout(r, 2600));
+      h.go(tx + SW[0] * 1.3, tz + SW[1] * 1.3, NE_RY);
+      s.rules.blockDamage = 100;
+      s.nodes.set(best, { hp: 30, until: 0 });
       document.body.classList.add('gains');
     }),
     () => {
-      const h = window.__h, c = h.c(), sh = window.__shot;
-      const k = (window.__t - 5.0) / 1.25;
-      window.__game.view.me.root.visible = true;
-      c.ry = Math.atan2(sh.tx - sh.px, sh.tz - sh.pz);
-      if (Math.round(window.__t * 30) % 9 === 0) c.use();
-      const side = c.ry + Math.PI / 2;
-      const cx = sh.px + Math.sin(side) * 5.2 + Math.sin(c.ry + Math.PI) * 3.4;
-      const cz = sh.pz + Math.cos(side) * 5.2 + Math.cos(c.ry + Math.PI) * 3.4;
-      window.__cam = (cam) => h.look(cam, cx, h.y(cx, cz) + h.lerp(2.6, 3.0, k), cz, (sh.px + sh.tx) / 2, h.y(sh.px, sh.pz) + 1.9, (sh.pz + sh.tz) / 2, 60);
+      const h = window.__h, c = h.c();
+      const i = Math.round((window.__t - 5.0) * 30);
+      h.face(NE[0], NE[1]);
+      if (i === 2 || i === 24) c.use();
     },
   );
+  await g(() => { window.__h.s().rules.blockDamage = 600; });
 
   // 3b. Craft: the survivor's crafting page.
   await shot(
@@ -417,7 +440,6 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const h = window.__h, c = h.c();
       document.body.classList.remove('clean');
       document.body.classList.remove('gains');
-      window.__cam = null;
       c.openPanel('craft');
       await new Promise((r) => setTimeout(r, 600));
       document.querySelector('.recipe-tile[aria-label="Stone axe"]')?.click();
@@ -435,222 +457,209 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     document.body.classList.add('clean');
   });
 
-  // 3c. Build: the cabin goes up, piece by piece.
+  // 3c. Build: build mode, the cabin going up piece by piece on the grid.
   await shot(
     'build', 7.5, 8.5,
     () => g(() => {
-      const h = window.__h, { cx, cz } = window.__camp;
+      const h = window.__h, c = h.c(), { cx, cz } = window.__camp;
+      h.zoom(80);
       h.time(2, 0.5);
-      h.go(cx + 4, cz + 6);
+      h.go(cx + SW[0] * 6, cz + SW[1] * 6, NE_RY);
+      c.toggleBuild(true);
+      c.buildLook = { x: cx - c.x, z: cz - c.z };
     }),
     () => {
       const h = window.__h, s = h.s(), c = h.c(), { cx, cz, plan } = window.__camp;
       const i = Math.round((window.__t - 7.5) * 30);
-      window.__game.view.me.root.visible = false;
-      const n = Math.min(plan.length, Math.floor(i / 1.7) + 1);
+      c.buildLook = { x: cx - c.x, z: cz - c.z };
+      const n = Math.min(plan.length, Math.floor(i / 1.6) + 1);
       for (let k = window.__built ?? 0; k < n; k++) {
         const [kind, x, z, rot] = plan[k];
         s.handle(c.you, { type: 'build', kind, x, z, rot });
       }
       window.__built = n;
-      if (i === 26) s.handle(c.you, { type: 'build', kind: 'campfire', x: cx, z: cz + 4.5, rot: 0 });
+      // The ghost shows the next piece where it's about to go.
+      const next = plan[n];
+      if (next && c.build) {
+        c.buildPick(next[0]);
+        c.build.rot = next[3];
+        c.setBuildCursor({ x: next[1], z: next[2] });
+      }
+      if (i === 27) s.handle(c.you, { type: 'build', kind: 'campfire', x: cx, z: cz + 4.5, rot: 0 });
       if (i === 28) s.handle(c.you, { type: 'build', kind: 'torch_post', x: cx + 3.5, z: cz + 3.5, rot: 0 });
-      if (i === 29) window.__camp.done = true;
-      const a = 0.8 + i * 0.012;
-      window.__cam = (cam) => h.look(cam, cx + Math.cos(a) * 12, h.y(cx, cz) + 8, cz + Math.sin(a) * 12, cx, h.y(cx, cz) + 1, cz);
+      if (i === 29) {
+        window.__camp.done = true;
+        c.toggleBuild(false);
+      }
     },
   );
+  await g(() => window.__h.c().toggleBuild(false));
 
   // 4. Storm over the camp: lightning on the beat.
   await shot(
     'storm', 11.5, 13.0,
-    () => g(async () => {
+    () => g(() => {
       const h = window.__h, { cx, cz } = window.__camp;
+      h.zoom(90);
       h.camp();
       h.time(2, 0.64);
       h.weather('storm');
-      h.go(cx + 2, cz + 6);
-      h.tidy(cx + 6, cz + 8, 14);
+      h.tidy(cx, cz, 16);
+      h.go(cx + SW[0] * 6.5 + SE[0] * 1.5, cz + SW[1] * 6.5 + SE[1] * 1.5, NE_RY);
       window.__game.view.wet = 0.6;
-      await new Promise((r) => setTimeout(r, 3000));
     }),
     () => {
       const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
       const i = Math.round((window.__t - 11.5) * 30);
-      window.__game.view.me.root.visible = true;
-      if (i === 5) s.fx('lightning', cx - 10, cz - 14);
-      if (i === 33) s.fx('lightning', cx + 12, cz - 10);
-      const k = i / 45;
-      window.__cam = (cam) => h.look(cam, cx + h.lerp(11, 9, k), h.y(cx, cz) + 3.2, cz + h.lerp(14, 12, k), cx - 1, h.y(cx, cz) + 3.4, cz - 3, 60);
+      h.walk(NE[0], NE[1], 0.5);
+      if (i === 5) s.fx('lightning', cx + NE[0] * 14 + SE[0] * 6, cz + NE[1] * 14 + SE[1] * 6);
+      if (i === 33) s.fx('lightning', cx + NE[0] * 10 - SE[0] * 8, cz + NE[1] * 10 - SE[1] * 8);
     },
   );
 
   // 5. A moonlit night by the fire.
   await shot(
     'night', 13.0, 14.5,
-    () => g(async () => {
+    () => g(() => {
       const h = window.__h, { cx, cz } = window.__camp;
+      h.zoom(80);
       h.weather('clear');
       window.__game.view.wet = 0.3;
       h.camp();
+      h.stoke();
       h.time(2, 0.86);
-      h.go(cx - 1.4, cz + 5.4, Math.atan2(1.4, -0.9));
-      await new Promise((r) => setTimeout(r, 2500));
+      const fx = cx, fz = cz + 4.5;
+      h.go(fx + SW[0] * 1.8, fz + SW[1] * 1.8, NE_RY);
+    }),
+    () => window.__h.face(NE[0], NE[1]),
+  );
+
+  // 6. The Bloom: a horde on a Bloom night, coming for the camp.
+  await shot(
+    'horde', 14.5, 16.0,
+    () => g(async () => {
+      const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
+      const { spawnMob } = await import('/src/game/sim/mobs.ts');
+      h.zoom(100);
+      h.calm(false);
+      h.clearMobs();
+      h.weather('clear');
+      window.__game.view.wet = 0;
+      h.camp();
+      h.stoke();
+      h.time(7, 0.86);
+      const px = cx + SE[0] * 6, pz = cz + SE[1] * 6;
+      h.go(px, pz, NE_RY);
+      for (let i = 0; i < 10; i++) {
+        const d = 11 + Math.floor(i / 5) * 3 + (i % 2), side = ((i % 5) - 2) * 2.6;
+        spawnMob(s, 'husk', px + NE[0] * d + SE[0] * side, pz + NE[1] * d + SE[1] * side, { enraged: true });
+      }
+      spawnMob(s, 'thornback', px + NE[0] * 17 - SE[0] * 2, pz + NE[1] * 17 - SE[1] * 2, { enraged: true });
+      spawnMob(s, 'thornback', px + NE[0] * 18 + SE[0] * 3, pz + NE[1] * 18 + SE[1] * 3, { enraged: true });
     }),
     () => {
-      const h = window.__h, { cx, cz } = window.__camp;
-      const k = (window.__t - 13.0) / 1.5;
-      window.__game.view.me.root.visible = true;
-      const a = 1.1 + k * 0.3;
-      window.__cam = (cam) => h.look(cam, cx + Math.cos(a) * 9.5, h.y(cx, cz) + 3.6, cz + 4.5 + Math.sin(a) * 9.5, cx - 0.5, h.y(cx, cz) + 1.2, cz + 4);
+      const h = window.__h;
+      h.p().hp = 100;
+      h.face(NE[0], NE[1]);
     },
   );
 
-  // 6. The Bloom: a horde on a Bloom night.
-  const bloom = () => g(async () => {
-    const h = window.__h, s = h.s();
-    h.calm(false);
-    h.clearMobs();
-    h.time(7, 0.86);
-    await new Promise((r) => setTimeout(r, 300));
-  });
-  await shot(
-    'horde', 14.5, 16.0,
-    async () => {
-      await bloom();
-      await g(async () => {
-        const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
-        const { spawnMob } = await import('/src/game/sim/mobs.ts');
-        h.camp();
-        const px = cx, pz = cz + 7;
-        h.go(px, pz, Math.PI);
-        for (let i = 0; i < 10; i++) spawnMob(s, 'husk', px - 6 + (i % 5) * 3 + Math.random(), pz + 13 + Math.floor(i / 5) * 2.5, { enraged: true });
-        spawnMob(s, 'thornback', px - 3, pz + 17, { enraged: true });
-        spawnMob(s, 'thornback', px + 4, pz + 16, { enraged: true });
-        window.__shot = { px, pz };
-        await new Promise((r) => setTimeout(r, 300));
-      });
-    },
-    () => {
-      const h = window.__h, { px, pz } = window.__shot;
-      const k = h.ease((window.__t - 14.5) / 1.5);
-      h.p().hp = 100;
-      window.__game.view.me.root.visible = true;
-      window.__cam = (cam) => h.look(cam, px + 1.5, h.y(px, pz) + h.lerp(4.2, 3.4, k), pz - h.lerp(5.5, 4.5, k), px, h.y(px, pz) + 1.2, pz + 9, 60);
-    },
-  );
+  // 7. A fight by the campfire.
   await shot(
     'fight', 16.0, 17.5,
     () => g(async () => {
       const h = window.__h, s = h.s(), c = h.c(), { cx, cz } = window.__camp;
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
+      h.zoom(80);
       h.camp();
       h.clearMobs();
-      h.weather('clear');
-      window.__game.view.wet = 0;
+      h.stoke();
       h.give([['jawblade', 1], ['firebomb', 4]]);
       const p = h.p();
       const blade = p.inv.findIndex((it) => it && it.id === 'jawblade');
       if (blade >= 0 && blade !== 0) s.handle(c.you, { type: 'move', from: blade, to: 0 });
       s.handle(c.you, { type: 'equip', slot: 0 });
       h.time(7, 0.86);
-      h.stoke();
       h.calm(false);
-      // By the campfire, the Husks coming in from the open side (south-east).
-      const px = cx + 2.6, pz = cz + 5.7;
-      h.go(px, pz, Math.atan2(1, 1));
+      const fx = cx, fz = cz + 4.5;
+      const px = fx + SE[0] * 2.4, pz = fz + SE[1] * 2.4;
+      h.go(px, pz, NE_RY);
       h.tidy(px, pz, 14);
-      spawnMob(s, 'husk', px + 1.5, pz + 1.5, { enraged: true });
-      spawnMob(s, 'husk', px + 3.6, pz + 2.4, { enraged: true });
-      spawnMob(s, 'husk', px + 2.2, pz + 4.2, { enraged: true });
-      window.__shot = { px, pz, hx: px + 1.5, hz: pz + 1.5, cx, cz };
-      window.__fc = null;
-      await new Promise((r) => setTimeout(r, 400));
+      spawnMob(s, 'husk', px + NE[0] * 1.8, pz + NE[1] * 1.8, { enraged: true });
+      spawnMob(s, 'husk', px + NE[0] * 3.6 + SE[0] * 1.6, pz + NE[1] * 3.6 + SE[1] * 1.6, { enraged: true });
+      spawnMob(s, 'husk', px + NE[0] * 4.4 - SE[0] * 1.2, pz + NE[1] * 4.4 - SE[1] * 1.2, { enraged: true });
     }),
     () => {
-      const h = window.__h, s = h.s(), c = h.c(), sh = window.__shot;
+      const h = window.__h, c = h.c();
       h.p().hp = 100;
       const i = Math.round((window.__t - 16.0) * 30);
       if (i % 8 === 0) c.use();
-      // Side on to the survivor and the nearest Husk, the cabin behind them; eased so it
-      // doesn't jump when they move.
-      let near = null, nd = 8;
-      for (const m of s.mobs.values()) {
-        if (m.tame) continue;
-        const d = Math.hypot(m.x - c.x, m.z - c.z);
-        if (d < nd) { nd = d; near = m; }
-      }
-      const hx = near ? near.x : sh.hx, hz = near ? near.z : sh.hz;
-      const ul = Math.hypot(hx - c.x, hz - c.z) || 1;
-      let nx = -(hz - c.z) / ul, nz = (hx - c.x) / ul;
-      const mx = (c.x + hx) / 2, mz = (c.z + hz) / 2;
-      if (nx * (mx - sh.cx) + nz * (mz - sh.cz) < 0) { nx = -nx; nz = -nz; }
-      const f = window.__fc ?? (window.__fc = { x: mx, z: mz, nx, nz });
-      const e = 0.12;
-      f.x += (mx - f.x) * e; f.z += (mz - f.z) * e;
-      f.nx += (nx - f.nx) * e; f.nz += (nz - f.nz) * e;
-      const nl = Math.hypot(f.nx, f.nz) || 1;
-      const off = h.lerp(5.4, 4.8, i / 45);
-      const ex = f.x + (f.nx / nl) * off, ez = f.z + (f.nz / nl) * off;
-      window.__cam = (cam) => h.look(cam, ex, h.y(f.x, f.z) + 2.3, ez, f.x, h.y(f.x, f.z) + 1.1, f.z, 56);
     },
   );
+
+  // 8. A fire bomb into the pack.
   await shot(
     'bomb', 17.5, 19.0,
     () => g(async () => {
       const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
+      h.zoom(90);
       h.camp();
       h.give([['firebomb', 4]]);
       h.clearMobs();
-      const px = cx + 2, pz = cz + 7;
-      h.go(px, pz, Math.atan2(-1, -0.6));
-      for (let i = 0; i < 7; i++) spawnMob(s, 'husk', px - 8 + (i % 3) * 1.6, pz - 6 + Math.floor(i / 3) * 1.6, { enraged: true });
-      window.__shot = { px, pz, tx: px - 6.4, tz: pz - 4.4 };
-      await new Promise((r) => setTimeout(r, 200));
+      const px = cx + SE[0] * 7, pz = cz + SE[1] * 7;
+      h.go(px, pz, NE_RY);
+      const tx = px + NE[0] * 8, tz = pz + NE[1] * 8;
+      for (let i = 0; i < 7; i++) {
+        const d = 7 + Math.floor(i / 3) * 1.6, side = ((i % 3) - 1) * 1.7;
+        spawnMob(s, 'husk', px + NE[0] * d + SE[0] * side, pz + NE[1] * d + SE[1] * side, { enraged: true });
+      }
+      window.__shot = { tx, tz };
     }),
     () => {
       const h = window.__h, s = h.s(), c = h.c(), sh = window.__shot;
       h.p().hp = 100;
+      h.face(NE[0], NE[1]);
       const i = Math.round((window.__t - 17.5) * 30);
       if (i === 3) {
         const slot = h.p().inv.findIndex((it) => it && it.id === 'firebomb');
         s.handle(c.you, { type: 'throw', slot, x: sh.tx, z: sh.tz });
       }
-      window.__cam = (cam) => h.look(cam, sh.px + 5.5, h.y(sh.px, sh.pz) + 6.5, sh.pz + 6.5, sh.tx + 1, h.y(sh.tx, sh.tz) + 0.8, sh.tz + 1, 58);
     },
   );
+
+  // 9. The Mother Bloom, ringed by torches.
   await shot(
     'mother', 19.0, 20.5,
     () => g(async () => {
       const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
+      h.zoom(100);
       h.clearMobs();
       h.camp();
       h.time(7, 0.815);
-      const mx = cx - 16, mz = cz + 14;
-      h.go(mx + 8, mz + 6);
+      const px = cx + SW[0] * 14, pz = cz + SW[1] * 14;
+      const mx = px + NE[0] * 9, mz = pz + NE[1] * 9;
+      h.go(px, pz, NE_RY);
+      h.tidy(mx, mz, 14);
       const you = h.c().you;
-      for (const [dx, dz] of [[4, 3], [-3, 4], [3, -3]]) s.handle(you, { type: 'build', kind: 'torch_post', x: mx + dx, z: mz + dz, rot: 0 });
-      const m = spawnMob(s, 'mother', mx, mz, { enraged: true });
-      window.__shot = { mx, mz, id: m.id };
-      await new Promise((r) => setTimeout(r, 600));
+      for (const [a, b] of [[-3.5, 1.5], [3.5, 1.5], [0, -4]])
+        s.handle(you, { type: 'build', kind: 'torch_post', x: mx + SE[0] * a + NE[0] * b, z: mz + SE[1] * a + NE[1] * b, rot: 0 });
+      spawnMob(s, 'mother', mx, mz, { enraged: true });
     }),
     () => {
-      const h = window.__h, sh = window.__shot;
+      const h = window.__h;
       h.p().hp = 100;
-      window.__game.view.me.root.visible = false;
-      const k = h.ease((window.__t - 19.0) / 1.5);
-      const y0 = h.y(sh.mx, sh.mz);
-      window.__cam = (cam) => h.look(cam, sh.mx + h.lerp(10, 8, k), y0 + h.lerp(1.6, 1.2, k), sh.mz + h.lerp(9, 7, k), sh.mx, y0 + h.lerp(2.6, 3.4, k), sh.mz, 60);
+      h.face(NE[0], NE[1]);
     },
   );
 
-  // 7. Together: four survivors round the fire.
+  // 10. Together: four survivors round the fire.
   await shot(
     'together', 20.5, 23.5,
-    () => g(async () => {
+    () => g(() => {
       const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
+      h.zoom(80);
       h.camp();
       h.calm(true);
       h.clearMobs();
@@ -661,31 +670,21 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.tidy(fx, fz, 14);
       const friends = [['trailer-a', 'Nova', 'captain.navy'], ['trailer-b', 'Pip', 'flowers.rose'], ['trailer-c', 'Bram', 'ranger.khaki']];
       for (const [id, name, look] of friends) if (!s.players.has(id) || !s.online.has(id)) s.join(id, name, look);
-      // The camera stands on the side away from the wreck (its wing and debris lie there);
-      // the four sit on the far side of the fire, facing it and the camera.
-      const crash = h.c().island.poiById.crash;
-      const A = Math.atan2(fz - crash.z, fx - crash.x);
-      const seats = [[A + Math.PI - 1.25, 2.0], [A + Math.PI - 0.42, 1.9], [A + Math.PI + 0.42, 1.9], [A + Math.PI + 1.25, 2.0]];
+      // You on the near side (south-west), the others round the far side, facing the fire.
       const ids = [h.c().you, ...friends.map((f) => f[0])];
+      const spots = [[SW[0] * 1.9, SW[1] * 1.9], [SE[0] * 2.0, SE[1] * 2.0], [NE[0] * 1.9, NE[1] * 1.9], [-SE[0] * 2.0, -SE[1] * 2.0]];
       ids.forEach((id, i) => {
         const q = s.players.get(id);
-        const [a, r] = seats[i];
-        q.x = fx + Math.cos(a) * r;
-        q.z = fz + Math.sin(a) * r;
-        q.ry = Math.atan2(fx - q.x, fz - q.z);
+        const [dx, dz] = spots[i];
+        q.x = fx + dx;
+        q.z = fz + dz;
+        q.ry = Math.atan2(-dx, -dz);
         q.lastPos = s.time;
       });
-      h.go(s.players.get(h.c().you).x, s.players.get(h.c().you).z, s.players.get(h.c().you).ry);
-      window.__shot = { fx, fz, ids, A };
-      await new Promise((r) => setTimeout(r, 1500));
+      const me = s.players.get(h.c().you);
+      h.go(me.x, me.z, me.ry);
     }),
-    () => {
-      const h = window.__h, sh = window.__shot;
-      window.__game.view.me.root.visible = true;
-      const k = (window.__t - 20.5) / 3;
-      const a = sh.A - 0.3 + k * 0.6;
-      window.__cam = (cam) => h.look(cam, sh.fx + Math.cos(a) * 8.5, h.y(sh.fx, sh.fz) + 4.2, sh.fz + Math.sin(a) * 8.5, sh.fx, h.y(sh.fx, sh.fz) + 1.0, sh.fz, 58);
-    },
+    () => window.__h.face(NE[0], NE[1]),
   );
   await g(() => {
     const s = window.__h.s();
@@ -695,51 +694,57 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     }
   });
 
-  // 8. Secrets: the bunker door, the wreck at low tide, an X on the map.
+  // 11. Secrets: the bunker door, the wreck at low tide, an X dug up.
   await shot(
     'bunker', 23.5, 24.5,
-    () => g(async () => {
-      const h = window.__h, s = h.s(), v = window.__game.view;
+    () => g(() => {
+      const h = window.__h, v = window.__game.view;
+      h.zoom(80);
       window.__halos = true;
       h.time(3, 0.45);
       const site = v.pois.find((p) => p.group.getObjectByName('door'));
       site.group.updateMatrixWorld(true);
-      const door = site.group.getObjectByName('door').getWorldPosition(new (v.camera.position.constructor)());
-      const out = new (v.camera.position.constructor)(0, 0, 4).applyQuaternion(site.group.getObjectByName('door').getWorldQuaternion(new (v.camera.quaternion.constructor)()));
-      h.go(door.x + out.x * 1.6, door.z + out.z * 1.6);
-      await new Promise((r) => setTimeout(r, 2500));
-      window.__shot = { door, out };
+      const doorObj = site.group.getObjectByName('door');
+      const door = doorObj.getWorldPosition(new (v.camera.position.constructor)());
+      const out = new (v.camera.position.constructor)(0, 0, 1).applyQuaternion(doorObj.getWorldQuaternion(new (v.camera.quaternion.constructor)()));
+      // The door's middle (it hangs from its left edge), and the survivor in front of it.
+      const mid = { x: door.x + (out.z * 0.8), z: door.z - (out.x * 0.8) };
+      h.go(mid.x + out.x * 2.3 + out.z * 1.3, mid.z + out.z * 2.3 - out.x * 1.3, Math.atan2(-out.x, -out.z));
+      window.__shot = { out };
     }),
     () => {
-      const h = window.__h, s = h.s(), { door, out } = window.__shot;
+      const h = window.__h, s = h.s(), c = h.c(), { out } = window.__shot;
       const i = Math.round((window.__t - 23.5) * 30);
+      c.ry = Math.atan2(-out.x, -out.z);
       if (i === 2) { s.flags.add('bunker_open'); s.broadcastProgress(); }
-      window.__game.view.me.root.visible = true;
-      window.__cam = (cam) => h.look(cam, door.x + out.x * 2.2 + out.z * 0.9, door.y + 2.6, door.z + out.z * 2.2 - out.x * 0.9, door.x, door.y + 0.9, door.z, 62);
     },
   );
   await shot(
     'wreckship', 24.5, 25.5,
-    () => g(async () => {
+    () => g(() => {
       const h = window.__h, isl = h.c().island;
       const w = isl.poiById.wreck;
+      h.zoom(110);
       h.time(3, 0.25);
-      h.go(w.x, w.z);
-      await new Promise((r) => setTimeout(r, 2500));
-      window.__shot = { w };
+      // On dry land 12 m from her, as near south-west as the shore allows; walk to her.
+      let best = null, bs = -9;
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
+        const x = w.x + dx * 12, z = w.z + dz * 12;
+        const score = dx * SW[0] + dz * SW[1];
+        if (h.y(x, z) > 0.4 && score > bs) { bs = score; best = { x, z, dx, dz }; }
+      }
+      best ??= { x: w.x + SW[0] * 12, z: w.z + SW[1] * 12, dx: SW[0], dz: SW[1] };
+      h.go(best.x, best.z, Math.atan2(-best.dx, -best.dz));
+      window.__shot = { dx: -best.dx, dz: -best.dz };
     }),
-    () => {
-      const h = window.__h, { w } = window.__shot;
-      window.__game.view.me.root.visible = false;
-      const k = (window.__t - 24.5);
-      const a = 0.6 + k * 0.3;
-      window.__cam = (cam) => h.look(cam, w.x + Math.cos(a) * 34, 13, w.z + Math.sin(a) * 34, w.x, 2, w.z, 56);
-    },
+    () => window.__h.walk(window.__shot.dx, window.__shot.dz, 0.7),
   );
   await shot(
     'dig', 25.5, 26.5,
-    () => g(async () => {
+    () => g(() => {
       const h = window.__h, s = h.s(), c = h.c(), isl = c.island;
+      h.zoom(80);
       h.time(3, 0.5);
       s.notes.add('treasure_1');
       s.broadcastProgress();
@@ -749,44 +754,35 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       if (sh >= 0 && sh !== 0) s.handle(c.you, { type: 'move', from: sh, to: 0 });
       s.handle(c.you, { type: 'equip', slot: 0 });
       const x = isl.treasures[0];
-      h.go(x.x + 0.9, x.z + 0.9, Math.atan2(-0.9, -0.9));
-      await new Promise((r) => setTimeout(r, 2500));
-      window.__shot = { x };
+      h.go(x.x + SW[0] * 1.2, x.z + SW[1] * 1.2, NE_RY);
     }),
     () => {
-      const h = window.__h, c = h.c(), { x } = window.__shot;
-      window.__game.view.me.root.visible = true;
+      const h = window.__h, c = h.c();
       const i = Math.round((window.__t - 25.5) * 30);
-      c.ry = Math.atan2(-0.9, -0.9);
+      h.face(NE[0], NE[1]);
       if (i % 8 === 0) c.use();
-      window.__cam = (cam) => h.look(cam, x.x + 5.4, h.y(x.x, x.z) + 3.8, x.z + 3.2, x.x + 0.5, h.y(x.x, x.z) + 0.8, x.z + 0.5, 58);
     },
   );
 
-  // 9. The title over the island at golden hour.
+  // 12. The title over the crash site at golden hour, the camera at its widest.
   await shot(
     'title', 26.5, 30,
-    () => g(async () => {
+    () => g(() => {
       const h = window.__h, isl = h.c().island;
       const crash = isl.poiById.crash;
+      h.zoom(130);
       h.time(4, 0.72);
-      h.wide(true);
-      h.go(crash.x, crash.z);
-      await new Promise((r) => setTimeout(r, 3500));
-      window.__shot = { crash };
+      h.go(crash.x + SW[0] * 10 + SE[0] * 4, crash.z + SW[1] * 10 + SE[1] * 4, NE_RY);
     }),
     () => {
-      const h = window.__h, { crash } = window.__shot;
-      window.__game.view.me.root.visible = false;
-      const k = (window.__t - 26.5) / 3.5;
-      const a = -2.2 + k * 0.35;
+      const h = window.__h;
+      h.walk(NE[0], NE[1], 0.45);
       const el = document.getElementById('ttitle');
       if (el) el.style.opacity = String(Math.min(1, Math.max(0, (window.__t - 26.6) / 0.5)));
-      window.__cam = (cam) => h.look(cam, crash.x + Math.cos(a) * 70, 48 - k * 6, crash.z + Math.sin(a) * 70, crash.x, 0, crash.z, 48);
     },
   );
   await g(() => {
-    window.__h.wide(false);
+    window.__h.walk(0, 0);
     const el = document.getElementById('ttitle');
     if (el) el.style.opacity = '0';
   });
@@ -804,39 +800,31 @@ for (const [name, code, at, phase] of ISLANDS) {
   await helpers();
   await shot(
     name, at, at + 1,
-    () => g(async (phase) => {
+    () => g(([phase, NE, SW]) => {
       const h = window.__h, isl = h.c().island;
+      h.zoom(110);
       h.calm(true);
       h.time(2, phase);
-      // A beach with the sea up the screen (north-east), nearest the crash site.
+      // Open ground (beach or meadow) with the climate's woods up the screen, nearest the
+      // crash site; the survivor walks towards them.
       const G = 512;
+      const bio = (x, z) => isl.biomes[Math.floor((z + 512) / 2) * G + Math.floor((x + 512) / 2)];
       let best = null, bd = Infinity;
-      for (let gz = 8; gz < G - 8; gz += 2)
-        for (let gx = 8; gx < G - 8; gx += 2) {
-          if (isl.biomes[gz * G + gx] !== 1 || isl.biomes[(gz - 7) * G + gx + 7] !== 0) continue;
-          // Woods inland (jungle or forest 12-20 m south-west), so the climate shows.
-          const w1 = isl.biomes[(gz + 6) * G + gx - 6], w2 = isl.biomes[(gz + 10) * G + gx - 10];
-          const woods = gz + 10 < G && gx >= 10 && (w1 === 3 || w1 === 4) && (w2 === 3 || w2 === 4);
+      for (let gz = 20; gz < G - 20; gz += 2)
+        for (let gx = 20; gx < G - 20; gx += 2) {
           const x = gx * 2 - 512, z = gz * 2 - 512;
-          // Any beach facing the sea will do when no woods come down to one.
-          const d = Math.hypot(x - isl.spawn.x, z - isl.spawn.z) + (woods ? 0 : 10000);
+          const here = bio(x, z);
+          if (here !== 1 && here !== 2) continue;
+          const w1 = bio(x + NE[0] * 10, z + NE[1] * 10), w2 = bio(x + NE[0] * 18, z + NE[1] * 18);
+          if (!(w1 === 3 || w1 === 4) || !(w2 === 3 || w2 === 4)) continue;
+          if (bio(x + SW[0] * 6, z + SW[1] * 6) === 0) continue;
+          const d = Math.hypot(x - isl.spawn.x, z - isl.spawn.z);
           if (d < bd && d > 40) { bd = d; best = [x, z]; }
         }
-      h.go(best[0], best[1]);
-      await new Promise((r) => setTimeout(r, 3500));
-      window.__shot = { x: best[0], z: best[1], at: window.__t };
-    }, phase),
-    (arg) => {
-      const h = window.__h, sh = window.__shot;
-      window.__game.view.me.root.visible = true;
-      const k = (arg.index % 30) / 30;
-      // From over the sea (north-east of the beach), looking inland: sea, sand and the
-      // climate's woods in one frame, drifting along the shore.
-      const along = (k - 0.5) * 3;
-      const cx = sh.x + 11 + along, cz = sh.z - 11 + along;
-      const tx = sh.x - 7 + along, tz = sh.z + 7 + along;
-      window.__cam = (cam) => h.look(cam, cx, Math.max(0, h.y(sh.x, sh.z)) + 8.5, cz, tx, h.y(tx, tz) + 1.5, tz, 62);
-    },
+      best ??= [isl.spawn.x, isl.spawn.z];
+      h.go(best[0], best[1], Math.atan2(NE[0], NE[1]));
+    }, [phase, NE, SW]),
+    () => window.__h.walk(NE[0], NE[1], 0.6),
   );
 }
 

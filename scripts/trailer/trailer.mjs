@@ -310,7 +310,14 @@ const HELPERS = `(() => {
   H.clearMobs = () => { const s = H.s(); for (const id of [...s.mobs.keys()]) if (!s.mobs.get(id).tame) s.mobs.delete(id); };
   H.calm = (on) => { clearInterval(window.__calmT); if (on) window.__calmT = setInterval(H.clearMobs, 200); };
   H.time = (day, phase) => { H.s().time = 600 * (day - 1) + 600 * phase; };
-  H.weather = (w) => { const s = H.s(); s.weather = { kind: w, until: s.time + 99999 }; s.broadcast({ type: 'weather', w }); };
+  // The weather at once (the sky would take a few seconds to blend into it).
+  const LOOK = { clear: [0, 0, 0], storm: [1, 1, 0.45] };
+  H.weather = (w) => {
+    const s = H.s(), sky = G.view.sky, [cloud, rain, fog] = LOOK[w];
+    s.weather = { kind: w, until: s.time + 99999 };
+    s.broadcast({ type: 'weather', w });
+    Object.assign(sky, { cloud, rain, fog });
+  };
   H.tidy = (x, z, r) => { const isl = H.c().island; for (let id = 0; id < isl.nodeCount; id++) { const t = isl.nodeType[id]; if ((t === 8 || t === 10) && Math.hypot(isl.nodeX[id] - x, isl.nodeZ[id] - z) < r) { isl.hidden[id] = 1; H.s().island.hidden[id] = 1; } } G.view.nodes.markDirty(); };
   // Trees between the camera (south-west) and a spot, out of the picture.
   H.clearView = (x, z, back, half) => {
@@ -539,8 +546,10 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
       const i = Math.round((window.__t - 11.5) * 30);
       h.walk(NE[0], NE[1], 0.5);
-      if (i === 5) s.fx('lightning', cx + NE[0] * 14 + SE[0] * 6, cz + NE[1] * 14 + SE[1] * 6);
-      if (i === 33) s.fx('lightning', cx + NE[0] * 10 - SE[0] * 8, cz + NE[1] * 10 - SE[1] * 8);
+      // Strikes in the picture, on the beat.
+      const c = h.c();
+      if (i === 5) s.fx('lightning', c.x + NE[0] * 9 + SE[0] * 3.5, c.z + NE[1] * 9 + SE[1] * 3.5);
+      if (i === 33) s.fx('lightning', c.x + NE[0] * 7 - SE[0] * 4, c.z + NE[1] * 7 - SE[1] * 4);
     },
   );
 

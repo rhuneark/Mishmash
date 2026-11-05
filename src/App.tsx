@@ -7,7 +7,7 @@ import { Logo } from './ui/Logo';
 import { Intro } from './screens/Intro';
 import { Suggest } from './screens/Suggest';
 import { SubPage } from './ui/SubPage';
-import { Loading, Play, type PlayChoice } from './screens/Play';
+import { DailyLine, Loading, Play, type PlayChoice } from './screens/Play';
 import type { GameClient } from './play/client';
 import { chooseSlot } from './play/slots';
 import { LATEST, unseenNews } from './game/news';
@@ -178,8 +178,7 @@ export default function App() {
           <Play
             onStart={(c) => void start(c)}
             onSuggest={() => setScreen('suggest')}
-            onRecords={() => setScreen('records')}
-            onWardrobe={() => setScreen('wardrobe')}
+            onCharacter={() => setScreen('wardrobe')}
             onDev={owner ? () => setScreen('dev') : undefined}
             devCount={openReports + newIdeas}
             error={playError}
@@ -198,14 +197,17 @@ export default function App() {
           </SubPage>
         )}
         {screen === 'records' && (
-          <SubPage title="🏆 Records" onBack={() => setScreen('play')}>
+          <SubPage title="🏆 Records" onBack={() => setScreen('wardrobe')}>
             <Suspense fallback={<Loading />}>
               <Records />
             </Suspense>
           </SubPage>
         )}
         {screen === 'wardrobe' && (
-          <SubPage title="👕 Wardrobe" onBack={() => setScreen('play')}>
+          <SubPage title="👕 Character" onBack={() => setScreen('play')}>
+            <div className="character-daily">
+              <DailyLine onRecords={() => setScreen('records')} />
+            </div>
             <Suspense fallback={<Loading />}>
               <Wardrobe />
             </Suspense>

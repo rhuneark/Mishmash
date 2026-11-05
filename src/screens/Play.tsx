@@ -14,10 +14,14 @@ import {
   CLASSIC,
   JOIN_LEN,
   cleanJoinCode,
+  newJoinCode,
+  randomParts,
   showJoinCode,
   specKey,
   type IslandSpec,
 } from '../game/islands';
+import { randomSeed } from '../game/rng';
+import { PRESETS } from '../game/rules';
 import type { IslandSave } from '../game/sim/types';
 import { JAM_URL, copyText } from '../app/links';
 import * as run from '../sdk/run';
@@ -64,11 +68,28 @@ const SHOWCASE: IslandSpec = { seed: 7207, ...CLASSIC, climate: 'autumn' };
 const isPc = () =>
   typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: fine)').matches;
 
+/** The ready-made worlds: a preset's rules on a new island, straight in. */
+const KINDS: { id: string; icon: IconName }[] = [
+  { id: 'relaxed', icon: 'sun' },
+  { id: 'normal', icon: 'fist' },
+  { id: 'nightmare', icon: 'flame' },
+];
+
+/** A new island with a preset's rules (Beginner gets a gentle tropical one). */
+function presetWorld(id: string, code?: string): NewIsland {
+  const preset = PRESETS.find((p) => p.id === id) ?? PRESETS[1];
+  const r = Math.random;
+  const parts =
+    id === 'relaxed' ? randomParts(r, { climate: 'tropic', terrain: 'classic' }) : randomParts(r);
+  return { seed: randomSeed(r), parts, rules: { ...preset!.rules }, ...(code ? { code } : {}) };
+}
+
+type View = 'title' | 'solo' | 'multi' | 'create' | 'join' | 'new';
+
 export function Play({
   onStart,
   onSuggest,
-  onRecords,
-  onWardrobe,
+  onCharacter,
   onDev,
   devCount = 0,
   error,
@@ -82,8 +103,8 @@ export function Play({
 }: {
   onStart: (c: PlayChoice) => void;
   onSuggest: () => void;
-  onRecords: () => void;
-  onWardrobe: () => void;
+  /** The survivor's page: outfits, records and the daily goal. */
+  onCharacter: () => void;
   /** The owner's Dev area (absent for everyone else). */
   onDev?: () => void;
   /** Open reports and new suggestions waiting in the Dev area. */
@@ -97,17 +118,22 @@ export function Play({
   /** Just through the intro: no island yet means straight onto a ready-made one. */
   quickStart?: boolean;
   onQuickStarted?: () => void;
-  /** What's new since the player's last visit (shown once). */
+  /** What's new since the player's last visit (a badge on News until it's opened). */
   news?: News | null;
   onNewsSeen?: () => void;
 }) {
   const [islands, setIslands] = useState<(IslandSave | null)[] | undefined>(undefined);
   const [slot, setSlot] = useState(currentSlot);
-  const [view, setView] = useState<'title' | 'new'>(newIsland ? 'new' : 'title');
-  const [joining, setJoining] = useState(false);
+  const [view, setView] = useState<View>(newIsland ? 'new' : 'title');
+  // The New island screen (Custom) for yourself or for a world with friends.
+  const [custom, setCustom] = useState<'solo' | 'host'>('solo');
   const [code, setCode] = useState('');
+  // The room code a world created for friends gets (shown before it starts).
+  const [roomCode, setRoomCode] = useState(() => newJoinCode(Math.random));
   const [dialog, setDialog] = useState<'settings' | 'howto' | 'islands' | 'news' | null>(null);
   const [jam, setJam] = useState<'idle' | 'copied' | 'shown'>('idle');
+  // A ready-made world waiting for "replace" when all the island slots are taken.
+  const [pending, setPending] = useState<{ fresh: NewIsland; friends: boolean } | null>(null);
   // The slot a new island goes into: a free one first, else the one played now.
   const [target, setTarget] = useState<number | null>(null);
 
@@ -130,7 +156,19 @@ export function Play({
   const fresh = (f: NewIsland, friends: boolean) => {
     pick(newTarget);
     setTarget(null);
+    setPending(null);
     onStart({ kind: friends ? 'host' : 'solo', fresh: f });
+  };
+  /** A ready-made world: straight in, unless it would replace an island. */
+  const ready = (id: string, friends: boolean) => {
+    const f = presetWorld(id, friends ? roomCode : undefined);
+    if (!freeSlot && islands?.[newTarget - 1]) setPending({ fresh: f, friends });
+    else fresh(f, friends);
+  };
+  const go = (v: View) => {
+    setPending(null);
+    if (v === 'create') setRoomCode(newJoinCode(Math.random));
+    setView(v);
   };
 
   // Just through the intro with no island yet: straight onto a ready-made one.
@@ -142,12 +180,14 @@ export function Play({
 
   useEffect(() => {
     if (newIsland) {
+      setCustom('solo');
       setView('new');
       onNewIslandShown();
     }
   }, [newIsland, onNewIslandShown]);
 
   const info = save ? describeSave(save, playerId()) : null;
+  const used = islands?.filter(Boolean).length ?? 0;
 
   if (view === 'new') {
     const there = islands?.[newTarget - 1];
@@ -156,11 +196,14 @@ export function Play({
       <Suspense fallback={<Loading />}>
         <NewIslandScreen
           replacing={old && { day: old.day, name: old.name }}
+          friends={custom === 'host' ? roomCode : null}
           onBack={() => {
             setTarget(null);
-            setView('title');
+            setView(custom === 'host' ? 'create' : 'solo');
           }}
-          onStart={fresh}
+          onStart={(f) =>
+            fresh(custom === 'host' ? { ...f, code: roomCode } : f, custom === 'host')
+          }
         />
       </Suspense>
     );
@@ -170,40 +213,147 @@ export function Play({
     run.track('jam_vote_tap', {});
     void copyText(JAM_URL).then((ok) => setJam(ok ? 'copied' : 'shown'));
   };
+  const openNews = () => {
+    setDialog('news');
+    if (news) onNewsSeen?.();
+  };
+  const replacingInfo = pending && islands?.[newTarget - 1];
+  const replaced = replacingInfo ? describeSave(replacingInfo, playerId()) : null;
+
+  /** The ready-made worlds and Custom (Solo and Create world share them). */
+  const worlds = (friends: boolean) => (
+    <>
+      {pending && replaced ? (
+        <div className="card confirm" role="alertdialog" aria-label="Replace an island">
+          <p className="small-text">
+            Your {islands?.length ?? 3} island slots are full. This replaces {replaced.name} (day{' '}
+            {replaced.day}).
+          </p>
+          <div className="row">
+            <button
+              className="btn small primary"
+              onClick={() => fresh(pending.fresh, pending.friends)}
+            >
+              Replace it
+            </button>
+            <button className="btn small" onClick={() => setPending(null)}>
+              Keep mine
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {KINDS.map((k) => {
+            const p = PRESETS.find((x) => x.id === k.id)!;
+            return (
+              <BigButton
+                key={k.id}
+                icon={k.icon}
+                label={p.name}
+                sub={p.desc}
+                onClick={() => ready(k.id, friends)}
+              />
+            );
+          })}
+          <BigButton
+            icon="wrench"
+            label="Custom"
+            sub="Pick the island's climate, coast and layout, and every rule."
+            onClick={() => {
+              setCustom(friends ? 'host' : 'solo');
+              setView('new');
+            }}
+          />
+        </>
+      )}
+    </>
+  );
 
   return (
     <div className="title-screen">
       {save !== undefined && <Backdrop spec={info?.spec ?? SHOWCASE} />}
       <div className="title-shade" aria-hidden="true" />
       <div className="title-scroll">
-        <header className="title-logo">
-          <div className="title-kicker">A game the players build</div>
-          <Logo />
-          <div className="title-tag">Flight MX207 went down. Something here is growing.</div>
-        </header>
+        {view === 'title' && (
+          <header className="title-logo">
+            <div className="title-kicker">A game the players build</div>
+            <Logo />
+          </header>
+        )}
 
-        <div className="title-menu">
-          {error && <div className="notice title-notice">{error}</div>}
-          {news && save !== undefined && (
-            <div className="card news-card" role="status" aria-label="What's new">
-              <div className="news-head">
-                📰 What’s new in v{news.version}: <b>{news.title}</b>
-              </div>
-              <ul className="news-items">
-                {news.items.map((t) => (
-                  <li key={t}>{t}</li>
-                ))}
-              </ul>
-              <button className="btn small primary" onClick={onNewsSeen}>
-                Got it
+        <div className={`title-menu${view === 'title' ? '' : ' title-page'}`}>
+          {view !== 'title' && (
+            <div className="title-page-head">
+              <button
+                className="btn small"
+                aria-label="Back"
+                onClick={() => go(view === 'create' || view === 'join' ? 'multi' : 'title')}
+              >
+                ‹ Back
               </button>
+              <div className="title-page-title">
+                {view === 'solo'
+                  ? 'Solo'
+                  : view === 'multi'
+                    ? 'Multiplayer'
+                    : view === 'create'
+                      ? 'Create world'
+                      : 'Join world'}
+              </div>
             </div>
           )}
+          {error && <div className="notice title-notice">{error}</div>}
+
           {save === undefined ? (
             <p className="muted center">Loading your island…</p>
-          ) : (
+          ) : view === 'title' ? (
+            <nav className="title-main" aria-label="Main menu">
+              <BigButton
+                icon="play"
+                label="Solo"
+                sub={info ? `Continue ${info.name} · Day ${info.day}` : 'Start surviving'}
+                primary
+                onClick={() => go('solo')}
+              />
+              <BigButton
+                icon="people"
+                label="Multiplayer"
+                sub="Create a world for friends, or join one"
+                onClick={() => go('multi')}
+              />
+              <BigButton
+                icon="shirt"
+                label="Character"
+                sub="Your look, records and the daily goal"
+                onClick={onCharacter}
+              />
+              <BigButton
+                icon="news"
+                label="News"
+                sub="What's new, and suggest what's next"
+                badge={news ? 'New' : undefined}
+                onClick={openNews}
+              />
+              <BigButton
+                icon="gear"
+                label="Settings"
+                sub="Sound, screen, controls and how to play"
+                onClick={() => setDialog('settings')}
+              />
+              {onDev && (
+                <button
+                  className="title-dev"
+                  aria-label={devCount > 0 ? `Dev · ${devCount} to check` : 'Dev'}
+                  onClick={onDev}
+                >
+                  <Icon name="wrench" className="inline" /> Dev
+                  {devCount > 0 ? ` · ${devCount}` : ''}
+                </button>
+              )}
+            </nav>
+          ) : view === 'solo' ? (
             <>
-              {info ? (
+              {info && (
                 <button
                   className="menu-btn primary title-continue"
                   aria-label={`Continue · Day ${info.day} on ${info.name}`}
@@ -222,139 +372,100 @@ export function Play({
                     <b>{String(info.day).padStart(2, '0')}</b>
                   </span>
                 </button>
-              ) : (
-                <button
-                  className="menu-btn primary title-continue"
-                  onClick={() => onStart({ kind: 'solo', fresh: quickIsland() })}
-                >
-                  <Icon name="play" className="title-play" />
-                  <span className="title-continue-text">Start surviving</span>
+              )}
+              {used > 0 && (
+                <button className="title-link" onClick={() => setDialog('islands')}>
+                  <Icon name="stack" className="inline" /> Your islands ({used}/
+                  {islands?.length ?? 3})
                 </button>
               )}
-              <div className="title-row">
-                <button className="menu-btn" onClick={() => setView('new')}>
-                  <Icon name="island" />
-                  {info ? 'New island' : 'Choose your island'}
-                </button>
-                {islands?.some(Boolean) && (
-                  <button className="menu-btn" onClick={() => setDialog('islands')}>
-                    <Icon name="stack" />
-                    Your islands ({islands.filter(Boolean).length}/{islands.length})
-                  </button>
-                )}
-              </div>
-              <DailyLine onRecords={onRecords} />
-              <div className="title-group">Play together</div>
-              <div className="title-row three">
-                <button
-                  className="menu-btn title-friends"
-                  aria-label={`Play with friends${info?.code ? ` · open ${info.name} · code ${showJoinCode(info.code)}` : ''}`}
-                  onClick={() => (info ? onStart({ kind: 'host', fresh: null }) : setView('new'))}
-                >
-                  <Icon name="people" />
-                  <span>Friends</span>
-                  {info?.code && <code className="title-code">{showJoinCode(info.code)}</code>}
-                </button>
-                <button
-                  className={`menu-btn title-friends${joining ? ' on' : ''}`}
-                  aria-label="Join a friend"
-                  aria-expanded={joining}
-                  onClick={() => setJoining(!joining)}
-                >
-                  <Icon name="key" />
-                  <span>Join</span>
-                </button>
-                <button
-                  className="menu-btn title-friends"
-                  aria-label="Play with strangers · a public island, up to 4 survivors"
-                  onClick={() => onStart({ kind: 'public' })}
-                >
-                  <Icon name="globe" />
-                  <span>Strangers</span>
-                </button>
-              </div>
-              {joining && (
-                <form
-                  className="card join"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (cleanJoinCode(code)) onStart({ kind: 'join', code });
-                  }}
-                >
-                  <label className="label" htmlFor="room-code">
-                    Your friend's island code (it's on their ⚙️ menu › Play with friends)
-                  </label>
-                  <input
-                    id="room-code"
-                    className="code-input"
-                    value={code}
-                    maxLength={JOIN_LEN + 1}
-                    autoCapitalize="characters"
-                    autoComplete="off"
-                    onChange={(e) =>
-                      setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))
-                    }
-                    placeholder="ABC-234"
-                  />
-                  <div className="row">
-                    <button
-                      className="btn small primary"
-                      type="submit"
-                      disabled={!cleanJoinCode(code)}
-                    >
-                      Join
-                    </button>
-                    <button className="btn small" type="button" onClick={() => setJoining(false)}>
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              )}
-              <nav className="title-dock" aria-label="More">
-                <DockButton icon="shirt" label="Wardrobe" onClick={onWardrobe} />
-                <DockButton icon="gear" label="Settings" onClick={() => setDialog('settings')} />
-                <DockButton
-                  icon="help"
-                  label="Help"
-                  name="How to play"
-                  onClick={() => setDialog('howto')}
-                />
-                <DockButton
-                  icon="bulb"
-                  label="Suggest"
-                  name="Suggest an update"
-                  onClick={onSuggest}
-                />
-                <DockButton
-                  icon="news"
-                  label="News"
-                  name="What’s new"
-                  onClick={() => setDialog('news')}
-                />
-                <DockButton
-                  icon="pumpkin"
-                  label="Jam"
-                  name="Vote for us in October Jam"
-                  onClick={voteJam}
-                  className="jam"
-                />
-                {onDev && (
-                  <DockButton
-                    icon="wrench"
-                    label={devCount > 0 ? `Dev · ${devCount}` : 'Dev'}
-                    name={devCount > 0 ? `Dev · ${devCount} to check` : 'Dev'}
-                    onClick={onDev}
-                  />
-                )}
-              </nav>
-              {jam !== 'idle' && <JamLink copied={jam === 'copied'} />}
+              <div className="title-group">New world</div>
+              {worlds(false)}
             </>
+          ) : view === 'multi' ? (
+            <>
+              <BigButton
+                icon="people"
+                label="Create world"
+                sub="A new world with a room code for your friends"
+                primary
+                onClick={() => go('create')}
+              />
+              <BigButton
+                icon="key"
+                label="Join world"
+                sub="Type in a friend's room code"
+                onClick={() => go('join')}
+              />
+              <button
+                className="title-link"
+                aria-label="Play with strangers · a public island, up to 4 survivors"
+                onClick={() => onStart({ kind: 'public' })}
+              >
+                <Icon name="globe" className="inline" /> Or drop onto a public island with strangers
+              </button>
+            </>
+          ) : view === 'create' ? (
+            <>
+              <div className="card room-code" aria-label={`Room code ${showJoinCode(roomCode)}`}>
+                <div className="label">Room code</div>
+                <code className="room-code-value" data-testid="room-code">
+                  {showJoinCode(roomCode)}
+                </code>
+                <p className="muted small-text">
+                  Friends pick Multiplayer › Join world and type this in.
+                </p>
+              </div>
+              {worlds(true)}
+              {info?.code && !pending && (
+                <button
+                  className="title-link"
+                  aria-label={`Open ${info.name} to friends · code ${showJoinCode(info.code)}`}
+                  onClick={() => onStart({ kind: 'host', fresh: null })}
+                >
+                  <Icon name="island" className="inline" /> Or open {info.name} (Day {info.day}) to
+                  friends · {showJoinCode(info.code)}
+                </button>
+              )}
+            </>
+          ) : (
+            <form
+              className="card join"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (cleanJoinCode(code)) onStart({ kind: 'join', code });
+              }}
+            >
+              <label className="label" htmlFor="room-code">
+                Your friend's room code
+              </label>
+              <input
+                id="room-code"
+                className="code-input"
+                value={code}
+                maxLength={JOIN_LEN + 1}
+                autoCapitalize="characters"
+                autoComplete="off"
+                autoFocus
+                onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
+                placeholder="ABC-234"
+              />
+              <p className="muted small-text">
+                It's on their Create world page, and in their game under ⚙️ › Play with friends.
+              </p>
+              <button className="menu-btn primary" type="submit" disabled={!cleanJoinCode(code)}>
+                Join
+              </button>
+            </form>
           )}
         </div>
       </div>
 
       {dialog === 'settings' && (
         <Dialog title="⚙️ Settings" name="settings" onClose={() => setDialog(null)}>
+          <button className="menu-btn" onClick={() => setDialog('howto')}>
+            <Icon name="help" className="inline" /> How to play
+          </button>
           <Suspense fallback={<Loading />}>
             <SettingsPanel />
           </Suspense>
@@ -376,6 +487,7 @@ export function Play({
             onNew={(n) => {
               setTarget(n);
               setDialog(null);
+              setCustom('solo');
               setView('new');
             }}
             onDelete={(n) =>
@@ -387,7 +499,17 @@ export function Play({
         </Dialog>
       )}
       {dialog === 'news' && (
-        <Dialog title="📰 What’s new" name="what's new" onClose={() => setDialog(null)}>
+        <Dialog title="📰 News" name="news" onClose={() => setDialog(null)}>
+          <button
+            className="menu-btn primary"
+            aria-label="Suggest an update"
+            onClick={() => {
+              setDialog(null);
+              onSuggest();
+            }}
+          >
+            <Icon name="bulb" className="inline" /> Suggest what gets built next
+          </button>
           {NEWS.map((n) => (
             <section key={n.version} className="news-section">
               <div className="label">
@@ -400,6 +522,14 @@ export function Play({
               </ul>
             </section>
           ))}
+          <button
+            className="menu-btn jam-btn"
+            aria-label="Vote for us in October Jam"
+            onClick={voteJam}
+          >
+            <Icon name="pumpkin" className="inline" /> Vote for Bloom Island in the October Jam
+          </button>
+          {jam !== 'idle' && <JamLink copied={jam === 'copied'} />}
         </Dialog>
       )}
       {dialog === 'howto' && (
@@ -408,7 +538,7 @@ export function Play({
             <HowTo pc={isPc()} bloomEvery={7} />
           </Suspense>
           <p className="muted small-text">
-            Every island can have its own rules: pick them on the New island screen.
+            Every island can have its own rules: pick Custom when you start a new world.
           </p>
           <div className="label">A game the players build</div>
           <ul className="tips">
@@ -424,30 +554,40 @@ export function Play({
   );
 }
 
-/** Today's goal and the streak, under the island buttons; opens 🏆 Records. */
-/** A small button in the title's dock: an ink icon over a word (name: the full label). */
-function DockButton({
+/** A big menu button: an ink icon, a word in the journal's hand and a line under it. */
+function BigButton({
   icon,
   label,
-  name,
+  sub,
   onClick,
-  className = '',
+  primary = false,
+  badge,
 }: {
   icon: IconName;
   label: string;
-  name?: string;
+  sub: string;
   onClick: () => void;
-  className?: string;
+  primary?: boolean;
+  badge?: string;
 }) {
   return (
-    <button className={`dock-btn ${className}`} aria-label={name ?? label} onClick={onClick}>
-      <Icon name={icon} />
-      <span>{label}</span>
+    <button
+      className={`menu-btn title-big${primary ? ' primary' : ''}`}
+      aria-label={label}
+      onClick={onClick}
+    >
+      <Icon name={icon} className="title-big-icon" />
+      <span className="title-big-text">
+        <span className="title-big-label">{label}</span>
+        <span className="title-big-sub">{sub}</span>
+      </span>
+      {badge && <span className="title-badge">{badge}</span>}
     </button>
   );
 }
 
-function DailyLine({ onRecords }: { onRecords: () => void }) {
+/** Today's goal and the streak (on the Character page); opens 🏆 Records. */
+export function DailyLine({ onRecords }: { onRecords: () => void }) {
   const r = useSyncExternalStore(recordsStore.subscribe, recordsStore.get);
   const today = utcDay(Date.now());
   const goal = dailyGoal(today);

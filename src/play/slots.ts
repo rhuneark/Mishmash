@@ -52,6 +52,8 @@ export interface NewIsland {
   seed: number;
   parts: IslandParts;
   rules: WorldRules;
+  /** Its multiplayer code, when one was shown before it was made (Create world). */
+  code?: string;
 }
 
 /** The last save kept per slot this session (a room's save can come in after leaving). */
@@ -70,7 +72,7 @@ export function makeIsland(fresh: NewIsland | null): IslandSave & { code: string
   const save = fresh
     ? newSave(fresh.seed, fresh.parts, fresh.rules)
     : newSave(randomSeed(Math.random), { ...CLASSIC, gen: GEN });
-  return { ...save, code: newJoinCode(Math.random) };
+  return { ...save, code: fresh?.code ?? newJoinCode(Math.random) };
 }
 
 /**

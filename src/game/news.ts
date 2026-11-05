@@ -10,6 +10,15 @@ export interface News {
 
 export const NEWS: News[] = [
   {
+    version: '1.34',
+    title: 'A simpler title',
+    items: [
+      'Five choices, like a game’s: Solo, Multiplayer, Character, News and Settings.',
+      'Start a new world in one tap: Beginner, Survivor or Extremist, or Custom to pick everything.',
+      'Multiplayer › Create world shows its room code before you start; Join world asks for one.',
+    ],
+  },
+  {
     version: '1.31',
     title: 'The survivor’s journal',
     items: [

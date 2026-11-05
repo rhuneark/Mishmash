@@ -134,8 +134,8 @@ export interface Preset {
 export const PRESETS: Preset[] = [
   {
     id: 'relaxed',
-    name: 'Relaxed',
-    desc: 'Build and explore. Slow Bloom, softer hits, you keep your things.',
+    name: 'Beginner',
+    desc: 'Build and explore: a slow Bloom, softer hits, and you keep your things.',
     rules: {
       ...DEFAULT_RULES,
       difficulty: 50,
@@ -162,8 +162,8 @@ export const PRESETS: Preset[] = [
   },
   {
     id: 'nightmare',
-    name: 'Nightmare',
-    desc: 'They sprint at night, hit hard, chew through walls, and bloom every third night.',
+    name: 'Extremist',
+    desc: 'They sprint at night, hit hard, chew through walls and bloom every third night.',
     rules: {
       ...DEFAULT_RULES,
       difficulty: 200,

@@ -47,17 +47,23 @@ update to the user with this link)
 - **Play** (`screens/Play.tsx`): a game title screen. Behind the menu your saved island turns
   slowly around the crash site (`play/TitleScene.ts`: the game's own terrain, nodes, grass and
   landmarks, 30 fps, gives the WebGL context back on unmount; no save: an autumn showcase
-  island). The menu is a taped-in journal page: Continue (island name · Day N, a red DAY stamp) or
-  **Start surviving** (no island in the slot: straight onto a ready-made one,
-  `slots.quickIsland`: tropical, classic terrain, any layout, default rules); a row of New
-  island / Choose your island (the New island screen) and Your islands (N/3); today's daily
-  goal and the streak, highlighted (`DailyLine`; opens 🏆 Records); "Play together": Friends
-  (opens your island; shows its multiplayer code; named "Play with friends · open X · code"),
-  Join (named "Join a friend": opens the code form) and Strangers ("Play with strangers": a
-  public island); then a dock of framed buttons (`DockButton`, an icon and a word, named in
-  full): Wardrobe, Settings (the game's settings panel without the key list), Help ("How to
-  play"), Suggest ("Suggest an update"), News ("What's new"), Jam ("Vote for us in October
-  Jam") and for the owner only Dev ("Dev · N to check": new suggestions + messages with open
+  island). **The menu is five big buttons, like a game's** (v1.34, the user: "Should be a
+  simple options like a regular game. Solo, Multiplayer, Character, News, Settings"; `BigButton`:
+  an ink icon, the word in the journal's hand and a line under it; named by the word): **Solo**
+  (its line says "Continue X · Day N") opens a page with Continue (island name · Day N, a red
+  DAY stamp), 🗂️ Your islands (N/3) and the new worlds: **Beginner / Survivor / Extremist**
+  (the `PRESETS`, named so since v1.34; one tap: a new island with that preset's rules,
+  `presetWorld`; Beginner's is tropical with the classic terrain, the others any climate,
+  terrain and layout) or **Custom** (the New island screen). **Multiplayer**: Create world
+  (a room code made up front, `newJoinCode`, shown big, `data-testid="room-code"`; the same
+  four worlds, started hosted with that code: `NewIsland.code`; "Or open X to friends · code"
+  for your current island), Join world (asks for the code) and a link to a public island
+  with strangers ("Play with strangers"). **Character**: the 👕 page (App's `wardrobe` screen)
+  with today's goal and the streak on top (`DailyLine`, opens 🏆 Records, whose Back returns
+  here) over the wardrobe. **News**: a "New" badge after an update until opened; Suggest an
+  update, What's new and the October Jam link. **Settings**: How to play, then the settings
+  panel. For the owner only, a small Dev link under the five ("Dev · N to check": new
+  suggestions + messages with open
   reports). **First launch**
   (v1.26, the coach review: get new players playing faster): the intro's Play goes straight
   onto a ready-made island (`App` `quickStart` → `Play` starts `quickIsland` when the slot is
@@ -68,13 +74,14 @@ update to the user with this link)
   friends' islands): a new island goes into a free slot (the New island screen only asks
   "This replaces…" when all three are full); 🗂️ Your islands plays, deletes (asks) or starts
   one in an empty slot (`IslandSlots`). **What's new** (`game/news.ts` `NEWS`, newest first,
-  version = RUN's): a card on the title once after an update for returning players
+  version = RUN's): the News button's "New" badge after an update for returning players
   (`unseenNews(save.newsSeen)`, visits > 1; a new player's intro marks the latest seen), and
   📰 What's new lists them. Add an entry to `NEWS` with every update. **New island** (`screens/NewIsland.tsx`): map preview, name and code, 🎲
   Surprise me / Same kind, new island, climate, terrain, layout (quarter turns + mirror), a
   map code box (the `specCode`; called "map code" in the UI since v1.22 so it isn't mixed up
-  with the multiplayer code), then the world rules (`hud/RulesPanel.tsx`); Start on X or 👥
-  Start with friends (hosts it right away); starting asks before it replaces a save. The win screen's New island lands here too (`App` `wantNew`).
+  with the multiplayer code), then the world rules (`hud/RulesPanel.tsx`); one button: ✈️ Start on X (Solo › Custom)
+  or 👥 Create world: X (Multiplayer › Create world › Custom, `friends` = the room code, shown
+  over it; hosts it right away); starting asks before it replaces a save. The win screen's New island lands here too (`App` `wantNew`).
 - **Loading in parts** (v1.29; the advice: "a faster first load"): the title comes up on the
   SDK and a light slice of the game (`App`, `Play`, `Intro`, `Suggest`, `play/slots.ts`,
   records, outfits, reminders, prefs; ~445 KB of our own code, was 870 KB), and everything else
@@ -219,7 +226,8 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   (`craftFromChests`: `removeFrom` takes from the bag first, client `craftCount`; it pays for
   build-mode pieces too), weather (`weather`: off / rare / normal / often) and island animals
   (`animals`: none / few / normal / many, `wildlifeScale`). Presets:
-  Relaxed, Survivor (the defaults), Nightmare. The pause menu's 🏝️ This island page shows the
+  Beginner, Survivor (the defaults), Extremist (Relaxed and Nightmare before v1.34; ids
+  `relaxed`/`normal`/`nightmare`). The pause menu's 🏝️ This island page shows the
   name, code and rules, and the island's owner (`sim.owner`: the solo player, or the room's
   host) can change them there mid-game (C2S/S2C `rules`, `changeRules`: storage stays as it
   was made; others' requests are ignored).
@@ -793,7 +801,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   `session`). **Leaderboards** (`rundot/leaderboard.config.json`: modes `days`, `slain`,
   `escapes`, period `alltime`, highest first, no seeds; `run.submitScore`/`run.topScores`):
   a board is posted when its record beats what it was last given (`mishmash_boards`), one post
-  at a time, 65 s apart. 🏆 Records (`screens/Records.tsx`, from the title's daily button):
+  at a time, 65 s apart. 🏆 Records (`screens/Records.tsx`, from the daily line on 👕 Character):
   your records and the top 20 per board with your rank.
 - **Daily reminders** (`game/reminders.ts` plan, `play/remind.ts` `planReminders`, v1.27):
   after each visit and each game the old schedule is cancelled (`REMINDER_IDS`, and anything

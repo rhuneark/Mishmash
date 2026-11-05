@@ -10,6 +10,7 @@ import {
   islandName,
   parseSpecCode,
   randomParts,
+  showJoinCode,
   specCode,
   specKey,
   type Climate,
@@ -49,21 +50,22 @@ function rollSpec(): IslandSpec {
 
 export function NewIslandScreen({
   replacing,
+  friends,
   onBack,
   onStart,
 }: {
   /** The saved island a new one replaces. */
   replacing: { day: number; name: string } | null;
+  /** A world for friends: the room code it gets (shown here); null for your own. */
+  friends: string | null;
   onBack: () => void;
-  /** `friends`: open it to friends right away (its multiplayer code is made with it). */
-  onStart: (fresh: NewIsland, friends: boolean) => void;
+  onStart: (fresh: NewIsland) => void;
 }) {
   const [spec, setSpec] = useState<IslandSpec>(rollSpec);
   const [rules, setRules] = useState<WorldRules>({ ...DEFAULT_RULES });
   const [code, setCode] = useState('');
   const [codeBad, setCodeBad] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const [friends, setFriends] = useState(false);
   const set = (patch: Partial<IslandSpec>) => setSpec((s) => ({ ...s, ...patch }));
   const name = islandName(spec);
 
@@ -76,14 +78,13 @@ export function NewIslandScreen({
     }
   };
 
-  const start = (withFriends: boolean) => {
+  const start = () => {
     if (replacing && !confirm) {
-      setFriends(withFriends);
       setConfirm(true);
       return;
     }
     const { seed, ...parts } = spec;
-    onStart({ seed, parts, rules }, withFriends);
+    onStart({ seed, parts, rules });
   };
 
   return (
@@ -208,7 +209,7 @@ export function NewIslandScreen({
                 This replaces {replacing.name} (day {replacing.day}). Sure?
               </p>
               <div className="row">
-                <button className="btn small primary" onClick={() => start(friends)}>
+                <button className="btn small primary" onClick={start}>
                   Replace it
                 </button>
                 <button className="btn small" onClick={() => setConfirm(false)}>
@@ -218,11 +219,14 @@ export function NewIslandScreen({
             </div>
           ) : (
             <>
-              <button className="menu-btn primary" onClick={() => start(false)}>
-                ✈️ Start on {name}
-              </button>
-              <button className="menu-btn" onClick={() => start(true)}>
-                👥 Start with friends
+              {friends && (
+                <p className="small-text center">
+                  Room code <b className="title-code">{showJoinCode(friends)}</b>: friends pick
+                  Multiplayer › Join world and type it in.
+                </p>
+              )}
+              <button className="menu-btn primary" onClick={start}>
+                {friends ? `👥 Create world: ${name}` : `✈️ Start on ${name}`}
               </button>
             </>
           )}

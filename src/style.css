@@ -5423,6 +5423,166 @@ body {
   color: #a8460f;
 }
 
+/* The main menu: five big buttons, like a game's (v1.33). */
+.title-main {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.title-menu .menu-btn.title-big {
+  gap: 12px;
+  min-height: 64px;
+  padding: 8px 14px;
+}
+
+.title-big-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+
+.title-menu .menu-btn.primary .title-big-icon {
+  color: var(--hl);
+}
+
+.title-big-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.title-big-label {
+  font-family: var(--hand);
+  font-size: calc(28px * var(--fs));
+  font-weight: 700;
+  line-height: 1;
+}
+
+.title-big-sub {
+  font-family: var(--font);
+  font-size: calc(13px * var(--fs));
+  font-weight: 400;
+  line-height: 1.25;
+  opacity: 0.85;
+}
+
+.title-menu .menu-btn.primary .title-big-sub {
+  color: #e9dab7;
+}
+
+.title-badge {
+  flex: none;
+  padding: 2px 8px;
+  border: 2px solid var(--red);
+  border-radius: var(--wob-sm);
+  color: var(--red);
+  font-family: var(--font);
+  font-size: calc(12px * var(--fs));
+  font-weight: 700;
+  text-transform: uppercase;
+  transform: rotate(-6deg);
+}
+
+.title-dev,
+.title-link {
+  align-self: center;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: calc(14px * var(--fs));
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: var(--red);
+  text-underline-offset: 3px;
+}
+
+.title-link {
+  text-align: center;
+}
+
+/* A page of the menu (Solo, Multiplayer, Create and Join world): no big logo. */
+.title-menu.title-page {
+  margin-top: 0;
+}
+
+.title-page-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.title-page-title {
+  font-family: var(--hand);
+  font-size: calc(32px * var(--fs));
+  font-weight: 700;
+  line-height: 1;
+}
+
+.room-code {
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  background: var(--grain), #fff1a8;
+}
+
+.room-code p {
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.title-menu .card.join .menu-btn {
+  justify-content: center;
+  font-family: var(--hand);
+  font-size: calc(26px * var(--fs));
+}
+
+.room-code-value {
+  font-family: var(--font);
+  font-size: calc(34px * var(--fs));
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--red);
+}
+
+.hub-settings .menu-btn.jam-btn {
+  border-color: #c2571a;
+  color: #a8460f;
+}
+
+/* The Character page: today's goal and the streak over the wardrobe. */
+.character-daily {
+  padding: 10px 14px 0;
+}
+
+.character-daily .menu-btn.title-daily {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(transparent 6%, var(--hl) 6% 92%, transparent 92%);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: calc(14px * var(--fs));
+  font-weight: 700;
+  text-align: left;
+}
+
+.character-daily .title-daily .ink-icon {
+  color: var(--red);
+}
+
 .news-card {
   border-color: var(--line);
   background: var(--grain), #fff1a8;

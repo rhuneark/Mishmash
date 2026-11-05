@@ -219,11 +219,16 @@ const until = async (page, fn, what, ms = 15000, arg) => {
   return false;
 };
 
+/** A button of the title's menu by its exact name (Solo, Multiplayer, Custom, …). */
+async function titleMenu(page, name) {
+  await page.getByRole('button', { name, exact: true }).click();
+}
+
 /**
  * The New island screen: make the island with this code (the playthrough's steps
  * assume the classic layout), try the rule presets, then pick `preset` and start.
  */
-async function newIsland(page, tag, code, preset, noSideScroll) {
+async function newIsland(page, tag, code, preset, noSideScroll, host = false) {
   await page.locator('.new-island').waitFor();
   await page.getByLabel('Map code').fill('NOT A CODE');
   await page.getByRole('button', { name: 'Use', exact: true }).click();
@@ -239,23 +244,26 @@ async function newIsland(page, tag, code, preset, noSideScroll) {
   );
   await page.locator('.map-busy').waitFor({ state: 'detached', timeout: 30000 });
   if (noSideScroll) await noSideScroll('new island');
-  // Presets fill in every rule; the night speed shows Nightmare's sprint.
-  await page.getByRole('radio', { name: 'Nightmare' }).click();
+  // Presets fill in every rule; the night speed shows Extremist's sprint.
+  await page.getByRole('radio', { name: 'Extremist' }).click();
   const night = page.getByRole('radiogroup', { name: 'How fast they move at night' });
   check(
     (await night.getByRole('radio', { name: 'Sprint' }).getAttribute('aria-checked')) === 'true',
-    `${tag} new island: the Nightmare preset didn't set the night speed`,
+    `${tag} new island: the Extremist preset didn't set the night speed`,
   );
   await page.getByRole('radio', { name: preset }).click();
   const name = await page.locator('[data-testid="island-name"]').textContent();
-  await page.getByRole('button', { name: `✈️ Start on ${name}` }).click();
+  await page
+    .getByRole('button', { name: host ? `👥 Create world: ${name}` : `✈️ Start on ${name}` })
+    .click();
   return name;
 }
 
 /** Solo survival: move, read, gather, craft, build, fight, die, save and continue. */
 async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.goto(URL);
-  await page.getByRole('button', { name: /Choose your island/ }).click();
+  await titleMenu(page, 'Solo');
+  await titleMenu(page, 'Custom');
   await shot('5-new-island');
   const islandName = await newIsland(page, tag, 'TR-C0-4242', 'Survivor', noSideScroll);
   await page.locator('.hud').waitFor({ timeout: 60000 });
@@ -2118,6 +2126,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   const here = await game(page, () => [window.__game.client.x, window.__game.client.z]);
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.getByRole('button', { name: /Save and quit/ }).click();
+  await titleMenu(page, 'Solo');
   await page.getByRole('button', { name: /Continue · Day/ }).click();
   await page.locator('.hud').waitFor({ timeout: 60000 });
   await page.waitForTimeout(500);
@@ -2133,11 +2142,14 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   check(back[2] >= 1, `${tag} game: continue lost the campfire`);
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.getByRole('button', { name: /Save and quit/ }).click();
+  await titleMenu(page, 'Solo');
   await page
     .getByRole('button', { name: `Continue · Day ${await dayNow(page)} on ${islandName}` })
     .waitFor();
-  // The title shows the daily goal done and the streak; 🏆 Records has the player's best and
-  // the leaderboards.
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  // 👕 Character shows the daily goal done and the streak; 🏆 Records has the player's best
+  // and the leaderboards.
+  await titleMenu(page, 'Character');
   const titleDaily = page.locator('.title-daily');
   await titleDaily.getByText(/Daily goal done · 1-day streak/).waitFor({ timeout: 10000 });
   await titleDaily.click();
@@ -2156,9 +2168,8 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await noSideScroll('records');
   await shot('9d-records');
   await page.getByRole('button', { name: '‹ Back' }).click();
-  // 👕 Wardrobe: a free coat goes on at once, a hat for a record isn't the player's yet,
-  // and a shop set (test mode: free) unlocks its hat.
-  await page.getByRole('button', { name: /Wardrobe/ }).click();
+  // The wardrobe (back on Character): a free coat goes on at once, a hat for a record isn't
+  // the player's yet, and a shop set (test mode: free) unlocks its hat.
   await page.locator('.wardrobe-canvas').waitFor();
   await page.getByRole('tab', { name: /Coats/ }).click();
   await page.locator('.wardrobe-tile', { hasText: 'Teal' }).click();
@@ -2176,8 +2187,9 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await shot('9e-wardrobe');
   await page.getByRole('button', { name: '‹ Back' }).click();
   // Islands keep side by side: a new one goes into a free slot, not over this one.
+  await titleMenu(page, 'Solo');
   await page.getByRole('button', { name: 'Your islands (1/3)' }).waitFor();
-  await page.getByRole('button', { name: /New island/ }).click();
+  await titleMenu(page, 'Custom');
   const second = await page.locator('[data-testid="island-name"]').textContent();
   await page.getByRole('button', { name: /Start on/ }).click();
   await page.locator('.hud').waitFor({ timeout: 60000 });
@@ -2193,6 +2205,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   );
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.getByRole('button', { name: /Save and quit/ }).click();
+  await titleMenu(page, 'Solo');
   await page.getByRole('button', { name: new RegExp(`Continue · Day 1 on ${second}`) }).waitFor();
   await page.getByRole('button', { name: 'Your islands (2/3)' }).click();
   const first = page.locator('.slot-card', { hasText: islandName });
@@ -2204,6 +2217,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   );
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.getByRole('button', { name: /Save and quit/ }).click();
+  await titleMenu(page, 'Solo');
   await page
     .getByRole('button', { name: new RegExp(`Continue · Day \\d+ on ${islandName}`) })
     .waitFor();
@@ -2214,13 +2228,18 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   });
   await page.waitForTimeout(400);
   await page.reload();
+  await titleMenu(page, 'Solo');
   await page.getByRole('button', { name: 'Your islands (3/3)' }).waitFor();
-  await page.getByRole('button', { name: /New island/ }).click();
+  await titleMenu(page, 'Custom');
   await page.locator('[data-testid="island-name"]').waitFor();
   await page.getByRole('button', { name: /Start on/ }).click();
   await page.getByText(`This replaces ${islandName}`).waitFor();
   await page.getByRole('button', { name: 'Keep mine' }).click();
   await page.getByRole('button', { name: '‹ Back' }).click();
+  // A ready-made world asks too.
+  await titleMenu(page, 'Extremist');
+  await page.getByText(`island slots are full. This replaces ${islandName}`).waitFor();
+  await page.getByRole('button', { name: 'Keep mine' }).click();
   // Throwing one away frees its slot.
   await page.getByRole('button', { name: 'Your islands (3/3)' }).click();
   const third = page.locator('.slot-card').nth(2);
@@ -2230,6 +2249,17 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.getByRole('button', { name: 'Close your islands' }).click();
   await page.getByRole('button', { name: 'Your islands (2/3)' }).waitFor();
   await page.getByRole('button', { name: /Continue · Day/ }).waitFor();
+  // A ready-made world: Beginner goes straight onto a new island, with its rules.
+  await titleMenu(page, 'Beginner');
+  await page.locator('.hud').waitFor({ timeout: 60000 });
+  check(
+    (await game(page, () => window.__game.client.link.sim.rules.bloomEvery)) === 14,
+    `${tag} solo: Beginner didn't bring its rules`,
+  );
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('button', { name: /Save and quit/ }).click();
+  await titleMenu(page, 'Solo');
+  await page.getByRole('button', { name: 'Your islands (3/3)' }).waitFor();
 }
 
 /** The day shown on the title's Continue button. */
@@ -2265,11 +2295,12 @@ async function playCoop() {
   );
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByRole('button', { name: /Save and quit/ }).click();
-  // The host's island is a made one (turned, mirrored, wetlands) with Relaxed rules:
+  // The host's island is a made one (turned, mirrored, wetlands) with Beginner rules:
   // the room has to build the same island and play by the same rules.
-  await host.page.getByRole('button', { name: /New island/ }).click();
+  await titleMenu(host.page, 'Solo');
+  await titleMenu(host.page, 'Custom');
   const spec = 'OV-W3M-31337';
-  await newIsland(host.page, 'co-op', spec, 'Relaxed');
+  await newIsland(host.page, 'co-op', spec, 'Beginner');
   await host.page.locator('.hud').waitFor({ timeout: 60000 });
   // Every island has its own multiplayer code, there from the start (solo too).
   const code = await game(host.page, () => window.__game.client.link.code);
@@ -2277,18 +2308,28 @@ async function playCoop() {
   const shown = `${code.slice(0, 3)}-${code.slice(3)}`;
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByRole('button', { name: /Save and quit/ }).click();
-  await host.page
-    .getByRole('button', { name: new RegExp(`Play with friends.*${shown}`) })
-    .waitFor();
+  // Multiplayer › Create world shows a room code for a new world, and offers this island
+  // with its own code.
+  await titleMenu(host.page, 'Multiplayer');
+  await titleMenu(host.page, 'Create world');
+  check(
+    /^[A-HJKMNP-Z2-9]{3}-[A-HJKMNP-Z2-9]{3}$/.test(
+      (await host.page.getByTestId('room-code').textContent()) ?? '',
+    ),
+    'co-op: Create world shows no room code',
+  );
+  const openMine = host.page.getByRole('button', { name: new RegExp(`Open .* to friends · code ${shown}`) });
+  await openMine.waitFor();
   // A friend can come first: they wait on the island until the host opens it.
   const friend = await open();
-  await friend.page.getByRole('button', { name: /Join a friend/ }).click();
+  await titleMenu(friend.page, 'Multiplayer');
+  await titleMenu(friend.page, 'Join world');
   await friend.page.locator('#room-code').fill(shown.toLowerCase());
   await friend.page.getByRole('button', { name: 'Join', exact: true }).click();
   await friend.page
     .getByText('Waiting for your friend to open the island')
     .waitFor({ timeout: 30000 });
-  await host.page.getByRole('button', { name: /Play with friends/ }).click();
+  await openMine.click();
   await host.page.locator('.hud').waitFor({ timeout: 60000 });
   check(
     (await game(host.page, () => window.__game.client.link.code)) === code,
@@ -2348,16 +2389,19 @@ async function playCoop() {
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByText(shown).first().waitFor();
   await host.page.getByRole('button', { name: /Close the island and quit/ }).click();
-  await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 30000 });
+  await host.page.getByRole('button', { name: 'Multiplayer', exact: true }).waitFor({ timeout: 30000 });
   // The host left: the friend is told and goes back to the title.
   await friend.page.getByText('Island closed').waitFor({ timeout: 15000 });
   await friend.page.screenshot({ path: `${SHOTS}/coop-closed.png` });
   await friend.page.getByRole('button', { name: 'Back to the title' }).click();
-  await friend.page.getByRole('button', { name: /Join a friend/ }).waitFor({ timeout: 15000 });
+  await friend.page.getByRole('button', { name: 'Multiplayer', exact: true }).waitFor({ timeout: 15000 });
   // Opened again, the island has the same code and the friend gets back in with it.
-  await host.page.getByRole('button', { name: /Play with friends/ }).click();
+  await titleMenu(host.page, 'Multiplayer');
+  await titleMenu(host.page, 'Create world');
+  await openMine.click();
   await host.page.locator('.hud').waitFor({ timeout: 60000 });
-  await friend.page.getByRole('button', { name: /Join a friend/ }).click();
+  await titleMenu(friend.page, 'Multiplayer');
+  await titleMenu(friend.page, 'Join world');
   await friend.page.locator('#room-code').fill(code);
   await friend.page.getByRole('button', { name: 'Join', exact: true }).click();
   await friend.page.locator('.hud').waitFor({ timeout: 60000 });
@@ -2368,9 +2412,10 @@ async function playCoop() {
   );
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByRole('button', { name: /Close the island and quit/ }).click();
-  await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 30000 });
+  await host.page.getByRole('button', { name: 'Multiplayer', exact: true }).waitFor({ timeout: 30000 });
   await friend.page.getByText('Island closed').waitFor({ timeout: 15000 });
   await friend.page.getByRole('button', { name: 'Back to the title' }).click();
+  await titleMenu(host.page, 'Multiplayer');
   await host.page.getByRole('button', { name: /Play with strangers/ }).click();
   await host.page.locator('.hud').waitFor({ timeout: 60000 });
   check(
@@ -2381,6 +2426,7 @@ async function playCoop() {
     'strangers: the first one in should host a public island',
   );
   const publicSeed = await game(host.page, () => window.__game.client.island.spec.seed);
+  await titleMenu(friend.page, 'Multiplayer');
   await friend.page.getByRole('button', { name: /Play with strangers/ }).click();
   await friend.page.locator('.hud').waitFor({ timeout: 60000 });
   check(
@@ -2406,7 +2452,7 @@ async function playCoop() {
     .catch(() => false);
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByRole('button', { name: /Leave the island/ }).click();
-  await host.page.getByRole('button', { name: /Continue · Day/ }).waitFor({ timeout: 30000 });
+  await host.page.getByRole('button', { name: 'Multiplayer', exact: true }).waitFor({ timeout: 30000 });
   await until(
     friend.page,
     () => window.__game.client.link.mode === 'host',
@@ -2421,7 +2467,7 @@ async function playCoop() {
   await friend.page.getByRole('button', { name: 'Menu' }).click();
   await friend.page.getByRole('button', { name: /Leave the island/ }).click();
   await friend.page
-    .getByRole('button', { name: /Play with strangers/ })
+    .getByRole('button', { name: 'Multiplayer', exact: true })
     .waitFor({ timeout: 30000 });
   console.log('strangers: done');
   for (const who of [host, friend]) {
@@ -2483,7 +2529,16 @@ for (const [width, height] of ONLY === 'coop' ? [] : VIEWPORTS) {
 
   // Back on the title: no tab bar, no Town Square, and a player has no Dev area.
   await page.getByRole('button', { name: '‹ Back' }).click();
-  await page.getByRole('button', { name: /Start surviving/ }).waitFor();
+  await page.getByRole('button', { name: 'Solo', exact: true }).waitFor();
+  // The main menu: five buttons, like a game's.
+  for (const b of ['Solo', 'Multiplayer', 'Character', 'News', 'Settings'])
+    check(
+      (await page.getByRole('button', { name: b, exact: true }).count()) === 1,
+      `${tag} title: no ${b} button`,
+    );
+  check((await page.locator('.dock-btn').count()) === 0, `${tag} title: the old dock is back`);
+  const lastMain = await page.getByRole('button', { name: 'Settings', exact: true }).boundingBox();
+  check(lastMain && lastMain.y + lastMain.height <= height, `${tag} title: the menu runs off the screen`);
   check(
     (await page.getByRole('button', { name: /Dev/ }).count()) === 0,
     `${tag} a player sees Dev`,
@@ -2496,19 +2551,20 @@ for (const [width, height] of ONLY === 'coop' ? [] : VIEWPORTS) {
     (await page.getByRole('button', { name: /Vote for updates/ }).count()) === 0,
     `${tag} hub: the vote is still there`,
   );
-  // Suggest an update opens the box again; a reload skips the intro.
-  await page.getByRole('button', { name: /Suggest an update/ }).click();
+  // News › Suggest an update opens the box again; a reload skips the intro.
+  await titleMenu(page, 'News');
+  await page.getByRole('button', { name: 'Suggest an update' }).click();
   await page.getByText('You asked, we built it').waitFor();
   await page.getByRole('button', { name: '‹ Back' }).click();
   await page.waitForTimeout(400); // the mock writes appStorage after ~100 ms
   await page.reload();
-  await page.getByRole('button', { name: /Start surviving/ }).waitFor();
+  await page.getByRole('button', { name: 'Solo', exact: true }).waitFor();
   check(
     (await page.getByText('A game the players build.').count()) === 0,
     `${tag} intro shown again`,
   );
-  check((await page.locator('.news-card').count()) === 0, `${tag} news: shown to a new player`);
-  // After an update, a returning player gets What's new once.
+  check((await page.locator('.title-badge').count()) === 0, `${tag} news: new for a new player`);
+  // After an update, a returning player sees News marked new until they open it.
   await game(page, async () => {
     const run = await import('/src/sdk/run.ts');
     const save = JSON.parse((await run.getItem('mishmash_save')) ?? '{}');
@@ -2516,21 +2572,19 @@ for (const [width, height] of ONLY === 'coop' ? [] : VIEWPORTS) {
   });
   await page.waitForTimeout(400);
   await page.reload();
-  const news = page.locator('.news-card');
-  await news.waitFor();
-  await noSideScroll('news');
-  await news.getByRole('button', { name: 'Got it' }).click();
-  await news.waitFor({ state: 'detached' });
-  await page.getByRole('button', { name: /What’s new/ }).click();
+  await page.locator('.title-badge', { hasText: 'New' }).waitFor();
+  await titleMenu(page, 'News');
   await page.locator('.news-section').first().waitFor();
-  await page.getByRole('button', { name: "Close what's new" }).click();
+  await noSideScroll('news');
+  await page.getByRole('button', { name: 'Close news' }).click();
   await page.waitForTimeout(400);
   await page.reload();
-  await page.getByRole('button', { name: /Start surviving/ }).waitFor();
-  check((await page.locator('.news-card').count()) === 0, `${tag} news: shown twice`);
+  await page.getByRole('button', { name: 'Solo', exact: true }).waitFor();
+  check((await page.locator('.title-badge').count()) === 0, `${tag} news: still new once read`);
 
-  // Settings from the title too.
-  await page.getByRole('button', { name: /Settings/ }).click();
+  // Settings from the title too, with How to play.
+  await titleMenu(page, 'Settings');
+  await page.getByRole('button', { name: /How to play/ }).waitFor();
   const autoTool = page.getByRole('switch', { name: 'Auto tool' });
   await autoTool.click();
   check(
@@ -2546,6 +2600,7 @@ for (const [width, height] of ONLY === 'coop' ? [] : VIEWPORTS) {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
     origin: new globalThis.URL(URL).origin,
   });
+  await titleMenu(page, 'News');
   await page.getByRole('button', { name: /Vote for us in October Jam/ }).click();
   await page.getByText('Link copied!').waitFor();
   const jam = 'https://run.world/jams/octoberjam?game=7VPvCLP7URUp69R6K10O';
@@ -2557,6 +2612,7 @@ for (const [width, height] of ONLY === 'coop' ? [] : VIEWPORTS) {
     (await page.getByLabel('October Jam link').inputValue()) === jam,
     `${tag} jam: no link to copy by hand`,
   );
+  await page.getByRole('button', { name: 'Close news' }).click();
   await noSideScroll('title');
   await shot('3b-title');
 

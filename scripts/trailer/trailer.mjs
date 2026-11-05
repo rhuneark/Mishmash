@@ -642,15 +642,16 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
     () => g(async () => {
       const h = window.__h, s = h.s(), { cx, cz } = window.__camp;
       const { spawnMob } = await import('/src/game/sim/mobs.ts');
-      h.zoom(90);
+      h.zoom(85);
       h.camp();
       h.clearMobs();
       const px = cx + SE[0] * 7, pz = cz + SE[1] * 7;
       h.go(px, pz, NE_RY);
-      const tx = px + NE[0] * 8, tz = pz + NE[1] * 8;
+      const tx = px + NE[0] * 7.6, tz = pz + NE[1] * 7.6;
       for (let i = 0; i < 7; i++) {
         const d = 7 + Math.floor(i / 3) * 1.6, side = ((i % 3) - 1) * 1.7;
-        spawnMob(s, 'husk', px + NE[0] * d + SE[0] * side, pz + NE[1] * d + SE[1] * side, { enraged: true });
+        // The blast takes most of their health and the flames the rest: they burn and drop.
+        spawnMob(s, 'husk', px + NE[0] * d + SE[0] * side, pz + NE[1] * d + SE[1] * side, { enraged: true, hp: 40 });
       }
       window.__shot = { tx, tz };
     }),
@@ -659,7 +660,7 @@ if (!ONLY || ONLY.some((n) => TROPIC.includes(n))) {
       h.p().hp = 100;
       h.face(NE[0], NE[1]);
       const i = Math.round((window.__t - 17.5) * 30);
-      if (i === 3) {
+      if (i === 1) {
         const slot = h.p().inv.findIndex((it) => it && it.id === 'firebomb');
         s.handle(c.you, { type: 'throw', slot, x: sh.tx, z: sh.tz });
       }

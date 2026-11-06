@@ -208,8 +208,9 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   odds and Snapjaws (`climateGen`) and repaint the island (`play/render/climate.ts`
   `climateLook`: ground, plant colours via `nodeGeometries(plants)`, grass, sky, sea, fog, map);
   terrain styles change the coast and add islets, hills or bogs (`terrainGen`). Direction words
-  in notes and objectives turn with the layout (`turnDirections`), and the lore's "every seventh
-  night" follows the rules (`noteText(…, world)`, `bloomOrdinal`). `specCode` ("AU-I1M-4242":
+  in notes and objectives turn with the layout (`turnDirections`, `noteText(…, world)`). The lore
+  says the Bloom comes "every few days" (the user's call, v1.36: no number in the story; How to
+  play and the journal tips still give the island's rule, `bloomOrdinal`). `specCode` ("AU-I1M-4242":
   climate, terrain, turn, M, seed) shares an island; `islandName` names it. Landmark models
   are built in the classic layout and turned/mirrored by their group (`buildPois`). Islands are
   generated on the client from the snapshot's `island` parts (`islandCache.islandFor`, the last one
@@ -280,7 +281,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   Perennial: its sap heals, and it makes the dead walk). It took the staff (Husks), their guard
   dogs (Thornbacks); Snapjaws grow where the dead lay down, Puffers are its seed pods. Verdance
   ordered the island kept dark, so the relay on the peak jams every signal: that is what
-  brought Flight MX207 down. Every seventh night the colony blooms and fears nothing. Told by
+  brought Flight MX207 down. Every few days the colony blooms and fears nothing. Told by
   notes at the landmarks (spot notes in `pois.ts`) and by **Dr. Kessler's 8 research pages**
   (`PAGES`): a Husk killed by a player drops the next unfound page 30% of the time
   (`PAGE_CHANCE`, `IslandSim.findPage`); found pages are shared progress in `notes` (ids

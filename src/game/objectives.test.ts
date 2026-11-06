@@ -92,9 +92,9 @@ describe('texts on a turned island', () => {
     expect(cockpit?.text).toBe('Find the cockpit in the jungle to the north-east');
     const plain = objectives(progress([], ['crash_note']))[1];
     expect(plain?.text).toBe('Find the cockpit in the jungle to the north-west');
-    const text = noteText('kessler', 1, undefined, { parts: turned, bloomEvery: 3 });
-    expect(text).toMatch(/Every third night/);
-    expect(noteText('kessler', 1)).toMatch(/seventh/);
+    const text = noteText('kessler', 1, undefined, { parts: turned });
+    expect(text).toMatch(/Every few days/);
+    expect(text).not.toMatch(/seventh/);
   });
 });
 

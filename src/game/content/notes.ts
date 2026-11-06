@@ -6,10 +6,9 @@
 // (Project Perennial): its sap heals, and it makes the dead walk. It took the
 // staff, their dogs, the marsh. Verdance ordered the island kept dark, so the
 // relay on the peak jams every signal for miles: that is what brought Flight
-// MX207 down. Every seventh night the colony blooms and nothing scares it.
+// MX207 down. Every few days the colony blooms and nothing scares it.
 
 import { turnDirections, type IslandParts } from '../islands';
-import { bloomOrdinal } from '../rules';
 import { bunkerCode, hullNumber } from './secrets';
 
 export interface NoteDef {
@@ -71,7 +70,7 @@ const list: NoteDef[] = [
     text:
       'Day 41. Specimen M ("Mother") has rooted through the courtyard. It does not need sun. It needs the dead.\n\n' +
       'Day 44. The roots reach into the bodies and the bodies stand up. We call them husks. They avoid fire, ' +
-      'but not always. Every seventh night the whole island blooms, and then nothing keeps them away.\n\n' +
+      'but not always. Every few days the whole island blooms, and then nothing keeps them away.\n\n' +
       'Day 46. The transmitter is in the lab. Mother grows over the lab door. Burn her. Please.',
   },
   {
@@ -109,8 +108,8 @@ const list: NoteDef[] = [
       'VERDANCE BIOTECH · KESSLER STATION · CONFIDENTIAL\n\n' +
       'Specimen M is a single regenerative root colony under the marsh. Its sap heals tissue in minutes. ' +
       'It also reanimates dead tissue it reaches.\n\n' +
-      'Rules: do not bury the dead. Report every bite. Torches are mandatory after dusk. Every seventh ' +
-      'night the station goes into lockdown: no exceptions.',
+      'Rules: do not bury the dead. Report every bite. Torches are mandatory after dusk. Every few days ' +
+      'the station goes into lockdown for the night: no exceptions.',
   },
   {
     id: 'directive',
@@ -151,7 +150,7 @@ const list: NoteDef[] = [
     id: 'page_3',
     title: "Dr. Kessler's research, page 3",
     text:
-      'The colony has a rhythm. Every seventh night its sap rises, every root wakes and the whole ' +
+      'The colony has a rhythm. Every few days its sap rises at nightfall, every root wakes and the whole ' +
       'marsh glows. The instruments call it a bloom.\n\nOn those nights it is not afraid of anything. ' +
       'We sleep in the bunker with the doors bolted.',
   },
@@ -160,8 +159,8 @@ const list: NoteDef[] = [
     title: "Dr. Kessler's research, page 4",
     text:
       'Fire is the only thing it respects. The sap burns hot and fast, and the roots remember. The ' +
-      'growths will not cross a lit fire line, so we carry torches everywhere now.\n\nExcept on the ' +
-      'seventh night. Then fire only makes it angry.',
+      'growths will not cross a lit fire line, so we carry torches everywhere now.\n\nExcept on a ' +
+      'bloom night. Then fire only makes it angry.',
   },
   {
     id: 'page_5',
@@ -204,7 +203,7 @@ const list: NoteDef[] = [
       '1. Keep a fire lit at night. They will not step into its light.\n' +
       '2. Walls. Then spikes in front of the walls.\n' +
       '3. Fresh water pools in the meadows are safe. The sea is not drinkable.\n' +
-      '4. Count the nights. The seventh one is different.',
+      '4. Count the nights. Every few days one is different.',
   },
   {
     id: 'castaway2',
@@ -322,15 +321,14 @@ export function cargoCode(seed: number): string {
   return code;
 }
 
-/** How the island differs from the classic one (layout and how often the Bloom comes). */
+/** How the island differs from the classic one (its layout). */
 export interface NoteWorld {
   parts: IslandParts;
-  bloomEvery: number;
 }
 
 /**
- * The text of a note, with tag digits filled in, directions turned with the island's
- * layout and the Bloom night ("every seventh night") as the island's rules have it.
+ * The text of a note, with tag digits filled in and directions turned with the island's
+ * layout.
  */
 export function noteText(noteId: string, seed: number, digit?: number, world?: NoteWorld): string {
   const note = NOTES[noteId];
@@ -345,8 +343,5 @@ export function noteText(noteId: string, seed: number, digit?: number, world?: N
   }
   if (noteId === 'hullplate') text = text.replace('{hull}', hullNumber(seed));
   if (!world) return text;
-  const nth = bloomOrdinal(world.bloomEvery);
-  return turnDirections(text, world.parts)
-    .replace(/\bseventh\b/g, nth)
-    .replace(/\bSeventh\b/g, nth[0]?.toUpperCase() + nth.slice(1));
+  return turnDirections(text, world.parts);
 }

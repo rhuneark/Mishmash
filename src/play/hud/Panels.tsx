@@ -355,7 +355,7 @@ export function NoteSheet({ client, onClose }: { client: GameClient; onClose: ()
     note.id,
     client.seed,
     spot?.kind === 'tag' ? spot.digit : undefined,
-    client.island ? { parts: client.island.spec, bloomEvery: client.rules.bloomEvery } : undefined,
+    client.island ? { parts: client.island.spec } : undefined,
   );
   return (
     <Sheet title={`📄 ${note.title}`} onClose={onClose}>

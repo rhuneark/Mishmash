@@ -1153,7 +1153,9 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   private build; **v1.35.0** (title music, no "A game the players build") **was submitted
   with the Publish workflow on 2026-11-05 at the user's request** ("Let's remove the game the
   players build. Also, need title music, and then publish public"), replacing v1.33.0 in
-  review. **Waiting:**
+  review. **v1.36.0** (the lore says the Bloom comes "every few days") **was submitted with the
+  Publish workflow on 2026-11-06 at the user's request** ("publish it public"), replacing
+  v1.35.0 in review. **Waiting:**
   the coach review's item 3: when the October Jam closes, swap the 🎃 Vote for us button
   for something lasting (Invite a friend with the island's code) and decide on the
   halloween/spooky tags (the user: "reserve 3 until after the jam").

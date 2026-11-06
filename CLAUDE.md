@@ -389,6 +389,39 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   skipped). **The wreck**: a grey belly, panel seams, a door, both ends torn open and sooty; it
   smoulders for the first three days (a `smoke` marker in the model, `view.wreckSmoke`; soft
   low-poly puffs, fx `puff`, also over supply pods).
+- **Crisp graphics** (v1.37; the user: "how do we get better graphics in here to make it
+  looking super crispy?", then "do all 4, but also tie graphics to settings as well").
+  **Resolution** (`play/resolution.ts`, pure, tested): phones used to draw the island at 1.5
+  pixels a point on 3× screens (half the sharpness, stretched). Now Auto draws up to the
+  screen's own (≤ 3) and `ResolutionGovernor` (fed every frame by Game's loop, `view.setRatio`)
+  steps through `RES_STEPS` 3 → 1 by the frame rate: a step softer after a `RES_SAMPLE` 1.5 s
+  sample under `RES_LOW_FPS` 45, a step sharper after 4 samples over `RES_HIGH_FPS` 56 (not
+  past a ratio that was too slow for a while, 20 s doubling up to 240 s), and a step down that
+  doesn't speed it up (a 30 fps battery saver, a busy CPU) is taken back and held 60 s. Where
+  it settles is saved (`settings.resSettled`, after 20 s) and the next game starts there
+  (else at 2×). `liveResolution.ratio` shows on the settings page and the FPS readout ("58 fps
+  · 2.5×"); the `perf` event carries `res` and `outlines`. The quality's `pixelRatio` is Auto's
+  cap (low 1.5, else 3); the old Auto quality drop (`autoDrop`) still steps down below that.
+  **Shadows** (`SunShadow.fit`): the box fits round what the camera sees (the four corner rays
+  onto the ground and 10 m above it, in light space, whole metres, grows at once and shrinks
+  for 3 m+, centre snapped to texels), about a fifth of the old fixed ±38 m box upright, at
+  2048 (medium and high), PCF radius 1.4. The title backdrop keeps `follow`. **Ground**:
+  anisotropic filtering 16 (capped by the device; low 4, `setGroundAnisotropy`).
+  **Outlines** (`render/outline.ts` `InkPass`): the scene goes into a render target with a
+  depth texture, then a full-screen pass darkens (warm ink) every pixel standing in front of
+  its neighbours (second difference of 1/depth, so flat ground cancels; lines about one point
+  wide, `round(ratio × 0.9)` pixels; fading into the fog). The target is flagged
+  `isXRRenderTarget` with an sRGB texture stored as plain `RGBA8`, so three tone maps, grades
+  and encodes in the materials exactly as it does for the canvas (no float targets; the sky's
+  clear colour converts the same way); multisampled below 2.4×. If the target can't be drawn
+  into (`checkFramebufferStatus`), it draws straight to the screen (`InkPass.ok`). Transparent
+  things that don't write depth (see-through trees, particles, rain) get no lines.
+  **Settings › Graphics**: Quality (the preset), then Resolution (Auto / Sharp ≤ 3 / Balanced
+  ≤ 2 / Fast ≤ 1.5), Shadows (Auto / Off / Low 1024 / High 2048), Outlines (Auto / On / Off),
+  Ground detail (Auto / Low / High); Auto follows the quality (`graphicsOf`, low: no shadows,
+  no outlines, low ground). The headless playthrough runs at ~10 fps, so Auto settles at 1×
+  and Auto quality drops to low (no outlines) there; screenshots meant to judge the look need
+  Quality and Resolution set by hand.
 - **Making it feel alive** (all client-side, nothing synced): trees, bushes and vines sway
   (`render/wind.ts` `windy()`: vertex-shader sway, one shared time uniform); grass chunks around
   you that sway and part as you walk (`render/ambient.ts`, deterministic per 32 m chunk, not on
@@ -448,7 +481,8 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   bottom left), day and time, minimap on/off, size and turning, quests (every step / next
   step / hidden), HUD size 80–140% and opacity (`--hud-scale`, `--hud-alpha`), button size,
   damage numbers, key hints; the controls and ⚙️ always stay), Graphics
-  (quality auto/low/medium/high: medium and high draw shadows; **Auto steps down** a level,
+  (quality auto/low/medium/high, then Resolution, Shadows, Outlines and Ground detail, see
+  Crisp graphics; **Auto steps down** a level,
   `settings.autoDrop` 0–2 kept in prefs, after `SLOW_SECONDS` 12 s under `SLOW_FPS` 24 in
   Game's frame loop, `graphicsFor(q, touch, drop)` / `autoLevel`; picking a quality resets it;
   grass and wildlife, FPS), Controls (key list). Settings live
@@ -941,11 +975,12 @@ src/play/          the game client: titleMusic.ts (the title theme, title tree),
                    settings.ts + prefs.ts (settings), screen.ts (landscape), audio.ts +
                    music.ts, view.ts (scene), Game.tsx (canvas, frame loop, settings),
                    telemetry.ts (analytics events and the first-session funnel),
+                   resolution.ts (Auto resolution by the frame rate),
                    records.ts (records kept and posted), remind.ts (reminders scheduled),
                    outfits.ts (the look worn, sets owned, buying), WardrobeScene.ts (preview),
                    TitleScene.ts (the title backdrop), render/ (terrain, groundTex (the
                    ground's detail texture), nodes, actors, structures, items, props, fx,
-                   geo, wind, ambient, climate, light, weather), hud/ (Hud,
+                   geo, wind, ambient, climate, light, weather, outline (ink lines)), hud/ (Hud,
                    Character (survivor menu), Menu, Panels, QuickPanel, Craft, Slots, drag,
                    itemIcons, MapView, map, RulesPanel, ChatBox)
 src/app/           community.ts (suggestions, Dev area over UgcApi), localUgc.ts (dev stand-in),
@@ -1046,7 +1081,8 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # floor (Off), a drag looks around and the survivor stays; a tap
                             # on the ground walks there, a tap on a tree chops it), pause menu, This island (change the spawn
                             # rate), a bow shot, planting and watering, feeding a goat, the
-                            # bunker sign, HUD settings, settings, rebinding a key, landscape,
+                            # bunker sign, HUD settings, Graphics settings (outlines on,
+                            # Balanced, shadows off, reset), settings, rebinding a key, landscape,
                             # save/continue, save slots (a new island in a free slot, play
                             # the first again, replace confirm when full, delete); PC build drag and drop: grab and
                             # drop a piece, drag one from the menu, right-drag looks, right

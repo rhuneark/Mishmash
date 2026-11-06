@@ -2019,6 +2019,36 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     `${tag} hud: reset didn't bring the minimap back`,
   );
   await noSideScroll('hud settings');
+  // Graphics: outlines, a fixed resolution and shadows off take hold at once; reset undoes them.
+  await page.getByRole('tab', { name: /Graphics/ }).click();
+  const pick = (group, name) =>
+    page.getByRole('radiogroup', { name: group }).getByRole('radio', { name, exact: true }).click();
+  await pick('Outlines', 'On');
+  await pick('Resolution', 'Balanced');
+  await pick('Shadows', 'Off');
+  await page.waitForTimeout(400);
+  const gfx = await game(page, () => ({
+    ink: window.__game.view.outlined,
+    ratio: window.__game.view.renderer.getPixelRatio(),
+    want: Math.max(1, Math.min(2, window.devicePixelRatio)),
+    sun: window.__game.view.sun.castShadow,
+  }));
+  check(gfx.ink, `${tag} graphics: outlines didn't turn on`);
+  check(
+    gfx.ratio === gfx.want,
+    `${tag} graphics: Balanced drew at ${gfx.ratio}×, not ${gfx.want}×`,
+  );
+  check(!gfx.sun, `${tag} graphics: shadows didn't turn off`);
+  await page.getByRole('button', { name: 'Reset this page' }).click();
+  await page.waitForTimeout(400);
+  check(
+    await game(
+      page,
+      () => window.__game.prefs.get().outlines === 'auto' && window.__game.view.sun.castShadow,
+    ),
+    `${tag} graphics: reset didn't bring Auto back`,
+  );
+  await noSideScroll('graphics settings');
   await page.getByRole('tab', { name: /Controls/ }).click();
   await page.getByRole('button', { name: 'Journal, key 1' }).click();
   await page.keyboard.press('KeyK');
@@ -2327,7 +2357,9 @@ async function playCoop() {
     ),
     'co-op: Create world shows no room code',
   );
-  const openMine = host.page.getByRole('button', { name: new RegExp(`Open .* to friends · code ${shown}`) });
+  const openMine = host.page.getByRole('button', {
+    name: new RegExp(`Open .* to friends · code ${shown}`),
+  });
   await openMine.waitFor();
   // A friend can come first: they wait on the island until the host opens it.
   const friend = await open();
@@ -2398,12 +2430,16 @@ async function playCoop() {
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByText(shown).first().waitFor();
   await host.page.getByRole('button', { name: /Close the island and quit/ }).click();
-  await host.page.getByRole('button', { name: 'Multiplayer', exact: true }).waitFor({ timeout: 30000 });
+  await host.page
+    .getByRole('button', { name: 'Multiplayer', exact: true })
+    .waitFor({ timeout: 30000 });
   // The host left: the friend is told and goes back to the title.
   await friend.page.getByText('Island closed').waitFor({ timeout: 15000 });
   await friend.page.screenshot({ path: `${SHOTS}/coop-closed.png` });
   await friend.page.getByRole('button', { name: 'Back to the title' }).click();
-  await friend.page.getByRole('button', { name: 'Multiplayer', exact: true }).waitFor({ timeout: 15000 });
+  await friend.page
+    .getByRole('button', { name: 'Multiplayer', exact: true })
+    .waitFor({ timeout: 15000 });
   // Opened again, the island has the same code and the friend gets back in with it.
   await titleMenu(host.page, 'Multiplayer');
   await titleMenu(host.page, 'Create world');
@@ -2421,7 +2457,9 @@ async function playCoop() {
   );
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByRole('button', { name: /Close the island and quit/ }).click();
-  await host.page.getByRole('button', { name: 'Multiplayer', exact: true }).waitFor({ timeout: 30000 });
+  await host.page
+    .getByRole('button', { name: 'Multiplayer', exact: true })
+    .waitFor({ timeout: 30000 });
   await friend.page.getByText('Island closed').waitFor({ timeout: 15000 });
   await friend.page.getByRole('button', { name: 'Back to the title' }).click();
   await titleMenu(host.page, 'Multiplayer');
@@ -2461,7 +2499,9 @@ async function playCoop() {
     .catch(() => false);
   await host.page.getByRole('button', { name: 'Menu' }).click();
   await host.page.getByRole('button', { name: /Leave the island/ }).click();
-  await host.page.getByRole('button', { name: 'Multiplayer', exact: true }).waitFor({ timeout: 30000 });
+  await host.page
+    .getByRole('button', { name: 'Multiplayer', exact: true })
+    .waitFor({ timeout: 30000 });
   await until(
     friend.page,
     () => window.__game.client.link.mode === 'host',
@@ -2554,7 +2594,10 @@ for (const [width, height] of ONLY === 'coop' ? [] : VIEWPORTS) {
     );
   check((await page.locator('.dock-btn').count()) === 0, `${tag} title: the old dock is back`);
   const lastMain = await page.getByRole('button', { name: 'Settings', exact: true }).boundingBox();
-  check(lastMain && lastMain.y + lastMain.height <= height, `${tag} title: the menu runs off the screen`);
+  check(
+    lastMain && lastMain.y + lastMain.height <= height,
+    `${tag} title: the menu runs off the screen`,
+  );
   check(
     (await page.getByRole('button', { name: /Dev/ }).count()) === 0,
     `${tag} a player sees Dev`,

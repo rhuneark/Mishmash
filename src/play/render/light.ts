@@ -111,14 +111,29 @@ const right = new THREE.Vector3();
 const upv = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 const at = new THREE.Vector3();
+const ray = new THREE.Ray();
+const hit = new THREE.Vector3();
+const CORNERS: [number, number][] = [
+  [-1, -1],
+  [1, -1],
+  [1, 1],
+  [-1, 1],
+];
 
-/** A directional light whose shadow box (2 × `half` metres) follows a point. */
+/**
+ * A directional light whose shadow box (2 × `half` metres) follows a point, or fits round
+ * what a camera sees (`fit`).
+ */
 export class SunShadow {
   private size = 0;
+  /** The fitted box's half width and height (light space), whole metres. */
+  private halfA = 0;
+  private halfB = 0;
 
   constructor(
     readonly light: THREE.DirectionalLight,
     private readonly half = 38,
+    radius = 2.5,
   ) {
     const cam = light.shadow.camera;
     cam.left = -half;
@@ -130,7 +145,7 @@ export class SunShadow {
     cam.updateProjectionMatrix();
     light.shadow.bias = -0.0004;
     light.shadow.normalBias = 0.05;
-    light.shadow.radius = 2.5;
+    light.shadow.radius = radius;
   }
 
   /** Shadow map size in pixels (0: no shadows). */
@@ -163,4 +178,81 @@ export class SunShadow {
     this.light.position.copy(at).addScaledVector(d, 110);
     this.light.target.updateMatrixWorld();
   }
+
+  /**
+   * Fits the box round what `camera` sees, from the ground (`ground`) up to `top` metres
+   * above it, so the whole shadow map lands on screen: about a fifth of the old fixed box in
+   * a phone held upright, so shadows come out several times sharper. Its size moves in whole
+   * metres (and only shrinks for a clear change) and it's snapped to texels, so edges don't
+   * crawl or pop while the camera moves.
+   */
+  fit(camera: THREE.Camera, ground: number, top: number, dir: THREE.Vector3): void {
+    const d = tmpDir.copy(dir).normalize();
+    right.crossVectors(UP, d).normalize();
+    upv.crossVectors(d, right);
+    camera.updateMatrixWorld();
+    let minA = Infinity;
+    let maxA = -Infinity;
+    let minB = Infinity;
+    let maxB = -Infinity;
+    let sumC = 0;
+    let n = 0;
+    for (const [sx, sy] of CORNERS) {
+      ray.origin.setFromMatrixPosition(camera.matrixWorld);
+      ray.direction.set(sx, sy, 0.5).unproject(camera).sub(ray.origin).normalize();
+      for (const h of [ground, ground + top]) {
+        const dy = ray.direction.y;
+        const t = dy < -0.05 ? Math.max(0, (h - ray.origin.y) / dy) : FIT_FAR;
+        hit.copy(ray.origin).addScaledVector(ray.direction, Math.min(t, FIT_FAR));
+        const a = hit.dot(right);
+        const b = hit.dot(upv);
+        minA = Math.min(minA, a);
+        maxA = Math.max(maxA, a);
+        minB = Math.min(minB, b);
+        maxB = Math.max(maxB, b);
+        sumC += hit.dot(d);
+        n++;
+      }
+    }
+    const want = (span: number) =>
+      Math.min(FIT_MAX, Math.max(FIT_MIN, Math.ceil(span / 2 + FIT_MARGIN)));
+    const ha = want(maxA - minA);
+    const hb = want(maxB - minB);
+    let changed = false;
+    if (ha > this.halfA || ha < this.halfA - 3) {
+      this.halfA = ha;
+      changed = true;
+    }
+    if (hb > this.halfB || hb < this.halfB - 3) {
+      this.halfB = hb;
+      changed = true;
+    }
+    const cam = this.light.shadow.camera;
+    if (changed) {
+      cam.left = -this.halfA;
+      cam.right = this.halfA;
+      cam.top = this.halfB;
+      cam.bottom = -this.halfB;
+      cam.updateProjectionMatrix();
+    }
+    const size = Math.max(256, this.size || 1024);
+    const ta = (this.halfA * 2) / size;
+    const tb = (this.halfB * 2) / size;
+    const a = Math.round((minA + maxA) / 2 / ta) * ta;
+    const b = Math.round((minB + maxB) / 2 / tb) * tb;
+    at.copy(right)
+      .multiplyScalar(a)
+      .addScaledVector(upv, b)
+      .addScaledVector(d, sumC / n);
+    this.light.target.position.copy(at);
+    this.light.position.copy(at).addScaledVector(d, 110);
+    this.light.target.updateMatrixWorld();
+  }
 }
+
+const tmpDir = new THREE.Vector3();
+/** How far a camera ray that never meets the ground is followed (m). */
+const FIT_FAR = 140;
+const FIT_MARGIN = 3;
+const FIT_MIN = 8;
+const FIT_MAX = 70;

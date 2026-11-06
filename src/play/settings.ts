@@ -4,6 +4,17 @@
 export const SETTINGS_KEY = 'mishmash_settings';
 
 export type Quality = 'auto' | 'low' | 'medium' | 'high';
+/**
+ * How sharp the island is drawn: 'auto' up to the screen's full sharpness, easing off while
+ * the game runs slow (resolution.ts); the others are fixed.
+ */
+export type Resolution = 'auto' | 'sharp' | 'balanced' | 'fast';
+/** The sun's shadows ('auto': by quality). */
+export type ShadowSetting = 'auto' | 'off' | 'low' | 'high';
+/** Ink lines round trees, rocks, buildings and creatures ('auto': by quality). */
+export type OutlineSetting = 'auto' | 'on' | 'off';
+/** The painted ground and how sharp it stays into the distance ('auto': by quality). */
+export type DetailSetting = 'auto' | 'low' | 'high';
 export type Orientation = 'portrait' | 'landscape';
 export type HudSize = 'small' | 'normal' | 'large';
 /** Isometric (diagonal and low, like Project Zomboid) or top-down (north up, steep). */
@@ -44,6 +55,12 @@ export interface Settings {
   damageNumbers: boolean;
   vibration: boolean;
   quality: Quality;
+  resolution: Resolution;
+  shadows: ShadowSetting;
+  outlines: OutlineSetting;
+  groundDetail: DetailSetting;
+  /** Auto resolution: where it settled last time on this device (a pixel ratio, 0 = not yet). */
+  resSettled: number;
   /** Daily reminders (local notifications) after a visit. */
   reminders: boolean;
   /** Auto quality: levels stepped down on this device because it couldn't keep up (0–2). */
@@ -93,6 +110,11 @@ export const DEFAULT_SETTINGS: Settings = {
   damageNumbers: true,
   vibration: true,
   quality: 'auto',
+  resolution: 'auto',
+  shadows: 'auto',
+  outlines: 'auto',
+  groundDetail: 'auto',
+  resSettled: 0,
   reminders: true,
   autoDrop: 0,
   life: true,
@@ -116,6 +138,10 @@ export const DEFAULT_SETTINGS: Settings = {
 export const BUILD_GRIDS = [1, 2];
 
 const QUALITIES: Quality[] = ['auto', 'low', 'medium', 'high'];
+const RESOLUTIONS: Resolution[] = ['auto', 'sharp', 'balanced', 'fast'];
+const SHADOWS: ShadowSetting[] = ['auto', 'off', 'low', 'high'];
+const OUTLINES: OutlineSetting[] = ['auto', 'on', 'off'];
+const DETAILS: DetailSetting[] = ['auto', 'low', 'high'];
 const ORIENTATIONS: Orientation[] = ['portrait', 'landscape'];
 const HUD_SIZES: HudSize[] = ['small', 'normal', 'large'];
 const VIEWS: CameraView[] = ['iso', 'top'];
@@ -162,6 +188,14 @@ export function parseSettings(raw: unknown): Settings {
     damageNumbers: bool(o['damageNumbers'], d.damageNumbers),
     vibration: bool(o['vibration'], d.vibration),
     quality: pick(o['quality'], QUALITIES, d.quality),
+    resolution: pick(o['resolution'], RESOLUTIONS, d.resolution),
+    shadows: pick(o['shadows'], SHADOWS, d.shadows),
+    outlines: pick(o['outlines'], OUTLINES, d.outlines),
+    groundDetail: pick(o['groundDetail'], DETAILS, d.groundDetail),
+    resSettled:
+      typeof o['resSettled'] === 'number' && o['resSettled'] >= 1 && o['resSettled'] <= 3
+        ? o['resSettled']
+        : d.resSettled,
     autoDrop: Math.round(num(o['autoDrop'], d.autoDrop, 0, 2)),
     reminders: bool(o['reminders'], d.reminders),
     life: bool(o['life'], d.life),
@@ -186,7 +220,7 @@ export function parseSettings(raw: unknown): Settings {
 }
 
 export interface GraphicsLevel {
-  /** Highest device pixel ratio drawn. */
+  /** Highest device pixel ratio drawn (Resolution: Auto). */
   pixelRatio: number;
   /** Terrain chunks drawn around you (32 m each). */
   terrain: number;
@@ -201,11 +235,15 @@ export interface GraphicsLevel {
   shadows: number;
   /** Ground detail: 1 = one texture read a pixel, 2 = full. */
   ground: number;
+  /** Texture filtering of the ground at a slant (anisotropy; capped by the device). */
+  anisotropy: number;
+  /** Ink lines round what stands on the island. */
+  outlines: boolean;
 }
 
 const LEVELS: Record<Exclude<Quality, 'auto'>, GraphicsLevel> = {
   low: {
-    pixelRatio: 1,
+    pixelRatio: 1.5,
     terrain: 2,
     nodes: 2,
     grass: 0,
@@ -213,19 +251,23 @@ const LEVELS: Record<Exclude<Quality, 'auto'>, GraphicsLevel> = {
     particles: 0.5,
     shadows: 0,
     ground: 1,
+    anisotropy: 4,
+    outlines: false,
   },
   medium: {
-    pixelRatio: 1.5,
+    pixelRatio: 3,
     terrain: 3,
     nodes: 2,
     grass: 180,
     fog: 1,
     particles: 0.8,
-    shadows: 1024,
+    shadows: 2048,
     ground: 2,
+    anisotropy: 16,
+    outlines: true,
   },
   high: {
-    pixelRatio: 2,
+    pixelRatio: 3,
     terrain: 3,
     nodes: 2,
     grass: 320,
@@ -233,8 +275,64 @@ const LEVELS: Record<Exclude<Quality, 'auto'>, GraphicsLevel> = {
     particles: 1,
     shadows: 2048,
     ground: 2,
+    anisotropy: 16,
+    outlines: true,
   },
 };
+
+/** Shadow map sizes for the Shadows setting. */
+export const SHADOW_SIZES: Record<Exclude<ShadowSetting, 'auto'>, number> = {
+  off: 0,
+  low: 1024,
+  high: 2048,
+};
+
+/**
+ * What the settings mean on this device: the quality level, with Shadows, Outlines and
+ * Ground detail set by hand where they aren't on Auto.
+ */
+export function graphicsOf(
+  s: Pick<Settings, 'quality' | 'autoDrop' | 'shadows' | 'outlines' | 'groundDetail'>,
+  touch: boolean,
+): GraphicsLevel {
+  const g = { ...graphicsFor(s.quality, touch, s.autoDrop) };
+  if (s.shadows !== 'auto') g.shadows = SHADOW_SIZES[s.shadows];
+  if (s.outlines !== 'auto') g.outlines = s.outlines === 'on';
+  if (s.groundDetail === 'low') {
+    g.ground = 1;
+    g.anisotropy = 4;
+  } else if (s.groundDetail === 'high') {
+    g.ground = 2;
+    g.anisotropy = 16;
+  }
+  return g;
+}
+
+/** Fixed resolutions: the most pixels per screen point each draws. */
+const FIXED_RATIO: Record<Exclude<Resolution, 'auto'>, number> = {
+  sharp: 3,
+  balanced: 2,
+  fast: 1.5,
+};
+
+/**
+ * The pixel ratios the island may be drawn at on a screen with `dpr` pixels per point:
+ * fixed for Sharp / Balanced / Fast, and for Auto anything from 1 up to the screen's own
+ * (or the quality's cap).
+ */
+export function resolutionRange(
+  res: Resolution,
+  dpr: number,
+  cap: number,
+): { min: number; max: number } {
+  const screen = Math.max(1, Math.min(3, dpr || 1));
+  if (res !== 'auto') {
+    const r = Math.min(screen, FIXED_RATIO[res]);
+    return { min: r, max: r };
+  }
+  const max = Math.max(1, Math.min(screen, cap));
+  return { min: Math.min(1, max), max };
+}
 
 /**
  * What a quality setting means on this device ('auto': medium on phones, high with a mouse,

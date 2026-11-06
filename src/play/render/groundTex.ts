@@ -36,6 +36,17 @@ export function groundTexture(): THREE.DataTexture {
   return tex;
 }
 
+/**
+ * How sharp the ground stays where the camera looks along it (anisotropic filtering; the
+ * device's own limit applies).
+ */
+export function setGroundAnisotropy(n: number): void {
+  const tex = groundTexture();
+  if (tex.anisotropy === n) return;
+  tex.anisotropy = n;
+  tex.needsUpdate = true;
+}
+
 const byte = (v: number) => Math.max(0, Math.min(255, Math.round(v * 255)));
 
 function mulberry(seed: number): () => number {

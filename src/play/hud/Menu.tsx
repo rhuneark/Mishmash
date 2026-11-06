@@ -28,6 +28,7 @@ import {
 import { isTouch, prefs, usePrefs } from '../prefs';
 import { planReminders } from '../remind';
 import { autoLevel, type Settings } from '../settings';
+import { liveResolution } from '../resolution';
 import { RulesEditor, RulesList } from './RulesPanel';
 
 export function PauseMenu(props: {
@@ -722,10 +723,24 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
         </Group>
       )}
       {tab === 'graphics' && (
-        <Group onReset={() => prefs.reset(['quality', 'autoDrop', 'life', 'fps'])}>
+        <Group
+          onReset={() =>
+            prefs.reset([
+              'quality',
+              'autoDrop',
+              'resolution',
+              'resSettled',
+              'shadows',
+              'outlines',
+              'groundDetail',
+              'life',
+              'fps',
+            ])
+          }
+        >
           <Choice
             label="Quality"
-            desc={`Medium and High draw shadows. Auto steps down by itself if the game runs slow${
+            desc={`Grass, effects and how far you see; the rows below follow it on Auto. Auto steps down by itself if the game runs slow${
               s.quality === 'auto' ? ` (now: ${autoLevel(isTouch(), s.autoDrop)})` : ''
             }.`}
             value={s.quality}
@@ -736,6 +751,54 @@ export function SettingsPanel({ input, sound }: { input?: Input; sound?: Sound }
               { id: 'high', label: 'High' },
             ]}
             set={(v) => set({ quality: v, autoDrop: 0 })}
+          />
+          <Choice
+            label="Resolution"
+            desc={`How sharp the island is drawn. Auto goes as sharp as your screen and eases off while the game runs slow${
+              liveResolution.ratio ? ` (now: ${liveResolution.ratio}×)` : ''
+            }; Fast saves battery.`}
+            value={s.resolution}
+            options={[
+              { id: 'auto', label: 'Auto' },
+              { id: 'sharp', label: 'Sharp' },
+              { id: 'balanced', label: 'Balanced' },
+              { id: 'fast', label: 'Fast' },
+            ]}
+            set={(v) => set({ resolution: v })}
+          />
+          <Choice
+            label="Shadows"
+            desc="The sun's shadows. High is the sharpest."
+            value={s.shadows}
+            options={[
+              { id: 'auto', label: 'Auto' },
+              { id: 'off', label: 'Off' },
+              { id: 'low', label: 'Low' },
+              { id: 'high', label: 'High' },
+            ]}
+            set={(v) => set({ shadows: v })}
+          />
+          <Choice
+            label="Outlines"
+            desc="Ink lines round trees, rocks, buildings and creatures."
+            value={s.outlines}
+            options={[
+              { id: 'auto', label: 'Auto' },
+              { id: 'on', label: 'On' },
+              { id: 'off', label: 'Off' },
+            ]}
+            set={(v) => set({ outlines: v })}
+          />
+          <Choice
+            label="Ground detail"
+            desc="The painted ground, and how sharp it stays into the distance."
+            value={s.groundDetail}
+            options={[
+              { id: 'auto', label: 'Auto' },
+              { id: 'low', label: 'Low' },
+              { id: 'high', label: 'High' },
+            ]}
+            set={(v) => set({ groundDetail: v })}
           />
           <Toggle
             label="Grass and wildlife"

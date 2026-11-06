@@ -10,6 +10,15 @@ export interface News {
 
 export const NEWS: News[] = [
   {
+    version: '1.37',
+    title: 'A sharper island',
+    items: [
+      'The island is drawn as sharp as your screen allows, and eases off by itself when your phone needs it.',
+      'Crisper shadows, ink outlines round trees, rocks, buildings and creatures, and ground that stays sharp into the distance.',
+      'Settings › Graphics: Resolution, Shadows, Outlines and Ground detail, each on Auto or set by hand.',
+    ],
+  },
+  {
     version: '1.35',
     title: 'Title music',
     items: [

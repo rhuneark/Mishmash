@@ -31,6 +31,8 @@ import { Fx, FX_COLORS } from './render/fx';
 import { MAT } from './render/geo';
 import { bagModel, crateModel, podModel } from './render/items';
 import { NodeView } from './render/nodes';
+import { InkPass } from './render/outline';
+import { setGroundAnisotropy } from './render/groundTex';
 import { nodeTint } from './render/props';
 import {
   EXPOSURE,
@@ -279,6 +281,9 @@ export class View {
   danger = 0;
   private readonly dangerSpots: { x: number; z: number }[] = [];
   private readonly sunShadow: SunShadow;
+  /** Ink outlines (Settings › Graphics › Outlines), made when first turned on. */
+  private ink: InkPass | null = null;
+  private inkOn = false;
   private readonly sunDir = new THREE.Vector3();
   private shadeAcc = 0;
   private readonly rain: Rain;
@@ -307,7 +312,7 @@ export class View {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     setupRenderer(this.renderer);
-    this.sunShadow = new SunShadow(this.sun);
+    this.sunShadow = new SunShadow(this.sun, 38, 1.4);
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0x9fd3ea);
     this.scene.add(this.hemi, this.sun, this.sun.target);
@@ -472,13 +477,22 @@ export class View {
     this.rain.setMax(Math.round(1500 * o.gfx.particles));
     this.sunShadow.setSize(o.gfx.shadows);
     this.terrain.setDetail(o.gfx.ground);
+    setGroundAnisotropy(Math.min(o.gfx.anisotropy, this.renderer.capabilities.getMaxAnisotropy()));
     setBlobShadows(o.gfx.shadows === 0);
-    const pr = Math.min(window.devicePixelRatio || 1, o.gfx.pixelRatio);
-    if (this.renderer.getPixelRatio() !== pr) {
-      this.renderer.setPixelRatio(pr);
-      this.resize(this.w, this.h);
-    }
+    this.inkOn = o.gfx.outlines;
     this.ambient.configure(o.gfx.grass, o.life);
+  }
+
+  /** Pixels drawn per screen point (Settings › Graphics › Resolution, resolution.ts). */
+  setRatio(ratio: number): void {
+    if (this.renderer.getPixelRatio() === ratio) return;
+    this.renderer.setPixelRatio(ratio);
+    this.resize(this.w, this.h);
+  }
+
+  /** Whether ink outlines are being drawn (off where the device can't). */
+  get outlined(): boolean {
+    return this.inkOn && (this.ink?.ok ?? true);
   }
 
   /** The stick or keys (screen directions) as a direction on the island. */
@@ -1218,6 +1232,8 @@ export class View {
       this.camera.lookAt(this.focus);
     }
     this.fogFrom = dist;
+    // The shadow box fits round what the camera sees (now that it has moved).
+    this.sunShadow.fit(this.camera, this.focus.y - 0.8, 10, this.sunDir);
     this.terrain.update(c.x, c.z, this.terrainRadius);
     this.nodes.update(c.x, c.z, this.nodeRadius, dt, { x: toCamX, z: toCamZ });
     const day = daylight(c.info().phase);
@@ -1793,14 +1809,6 @@ export class View {
       .copy(MOON)
       .lerp(SUN_DAY, day)
       .lerp(SUN_DUSK, warm * 0.75);
-    // The shadow box sits a little past what the camera looks at (more ground shows there).
-    const far = 6 * this.camDist;
-    this.sunShadow.follow(
-      this.focus.x - Math.sin(this.rig.yaw) * far,
-      this.focus.y,
-      this.focus.z - Math.cos(this.rig.yaw) * far,
-      this.sunDir,
-    );
     this.terrain.setWaterTint(day, bloom, 1 - this.sky.cloud);
     this.sound.setMood(1 - day, bloom, this.danger, c.rescue.phase === 'calling');
     // Fire light: the nearest fires and torches get the four point lights.
@@ -1917,7 +1925,16 @@ export class View {
   }
 
   render(): void {
-    this.renderer.render(this.scene, this.camera);
+    if (this.outlined) {
+      this.ink ??= new InkPass();
+      this.ink.render(
+        this.renderer,
+        this.scene,
+        this.camera,
+        this.fog,
+        this.renderer.getPixelRatio(),
+      );
+    } else this.renderer.render(this.scene, this.camera);
   }
 
   /** Rain falling around the camera, the sky blending to the weather, lightning fading. */
@@ -1962,6 +1979,7 @@ export class View {
   }
 
   dispose(): void {
+    this.ink?.dispose();
     this.rain.dispose();
     this.ambient.dispose();
     this.renderer.dispose();

@@ -270,7 +270,7 @@ async function startIsland(code) {
     const { client: c, prefs, view } = window.__game;
     const s = c.link.sim;
     // No auto tool or weapon: each shot puts its own in hand (a swap would take it back out).
-    prefs.set({ quality: 'high', tutorial: false, damageNumbers: false, autoTool: false, autoWeapon: false });
+    prefs.set({ quality: 'high', resolution: 'sharp', tutorial: false, damageNumbers: false, autoTool: false, autoWeapon: false });
     s.nextEvent = Infinity;
     s.weather = { kind: 'clear', until: s.time + 99999 };
     s.broadcast({ type: 'weather', w: 'clear' });

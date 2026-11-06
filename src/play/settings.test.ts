@@ -4,7 +4,9 @@ import {
   cameraRig,
   gain,
   graphicsFor,
+  graphicsOf,
   parseSettings,
+  resolutionRange,
   screenToWorld,
 } from './settings';
 
@@ -60,6 +62,31 @@ describe('settings', () => {
     expect(gain(0)).toBe(0);
     expect(gain(100)).toBe(1);
     expect(gain(50)).toBeCloseTo(0.25);
+  });
+
+  it('reads the graphics rows: Auto follows the quality, the others override it', () => {
+    const auto = { ...DEFAULT_SETTINGS };
+    expect(graphicsOf(auto, true)).toEqual(graphicsFor('auto', true));
+    expect(graphicsOf({ ...auto, quality: 'low' }, true).outlines).toBe(false);
+    expect(graphicsOf({ ...auto, quality: 'low', outlines: 'on' }, true).outlines).toBe(true);
+    expect(graphicsOf({ ...auto, shadows: 'off' }, false).shadows).toBe(0);
+    expect(graphicsOf({ ...auto, shadows: 'low' }, false).shadows).toBe(1024);
+    expect(graphicsOf({ ...auto, groundDetail: 'low' }, false).ground).toBe(1);
+    const s = parseSettings({ resolution: 'ultra', shadows: 'high', resSettled: 9 });
+    expect(s.resolution).toBe('auto');
+    expect(s.shadows).toBe('high');
+    expect(s.resSettled).toBe(0);
+    expect(parseSettings({ resSettled: 2.5 }).resSettled).toBe(2.5);
+  });
+
+  it('picks the range a screen is drawn at', () => {
+    expect(resolutionRange('auto', 3, 3)).toEqual({ min: 1, max: 3 });
+    expect(resolutionRange('auto', 3, 1.5)).toEqual({ min: 1, max: 1.5 });
+    expect(resolutionRange('auto', 1, 3)).toEqual({ min: 1, max: 1 });
+    expect(resolutionRange('sharp', 3.5, 3)).toEqual({ min: 3, max: 3 });
+    expect(resolutionRange('balanced', 3, 3)).toEqual({ min: 2, max: 2 });
+    expect(resolutionRange('fast', 2, 3)).toEqual({ min: 1.5, max: 1.5 });
+    expect(resolutionRange('fast', 1, 3)).toEqual({ min: 1, max: 1 });
   });
 
   it('turns the stick with the camera', () => {

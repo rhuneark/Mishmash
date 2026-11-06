@@ -12,7 +12,16 @@ import { Input } from './input';
 import { KEYS_KEY, parseBindings, type Action } from './keys';
 import { isTouch, prefs, usePrefs } from './prefs';
 import { rotationFor, setRotation, toLocal, turnInsets } from './screen';
-import { SLOW_FPS, SLOW_SECONDS, autoLevel, gain, graphicsFor, type Settings } from './settings';
+import {
+  SLOW_FPS,
+  SLOW_SECONDS,
+  autoLevel,
+  gain,
+  graphicsOf,
+  resolutionRange,
+  type Settings,
+} from './settings';
+import { ResolutionGovernor, liveResolution } from './resolution';
 import { View } from './view';
 import { fogKey } from './slots';
 
@@ -200,11 +209,25 @@ export function Game(props: {
       zoom: settings.camera / 100,
       shake: settings.shake,
       numbers: settings.damageNumbers,
-      gfx: graphicsFor(settings.quality, touch, settings.autoDrop),
+      gfx: graphicsOf(settings, touch),
       life: settings.life,
       grid: settings.buildGridShow,
     });
   }, [settings, touch, map]);
+  // Resolution: the range it may draw at; Auto starts where it is and keeps adjusting.
+  const governor = useRef<ResolutionGovernor | null>(null);
+  useEffect(() => {
+    const gov = governor.current;
+    if (!gov) return;
+    const range = resolutionRange(
+      settings.resolution,
+      window.devicePixelRatio,
+      graphicsOf(settings, touch).pixelRatio,
+    );
+    gov.setRange(range.min, range.max, settings.resolution === 'auto' ? gov.ratio : range.max);
+    // Only these change it (not the ratio it settles at, which is saved as it goes).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.resolution, settings.quality, settings.autoDrop, touch]);
 
   // A touch screen: a tap on the island walks there, or to what was tapped and uses it (the
   // stick's area passes its taps on too). In build mode (the survivor stands still, there's
@@ -414,10 +437,26 @@ export function Game(props: {
       zoom: s.camera / 100,
       shake: s.shake,
       numbers: s.damageNumbers,
-      gfx: graphicsFor(s.quality, touch, s.autoDrop),
+      gfx: graphicsOf(s, touch),
       life: s.life,
       grid: s.buildGridShow,
     });
+    // Auto resolution starts where it settled last time on this device (else at 2 pixels a
+    // point), then follows the frame rate.
+    const range = resolutionRange(
+      s.resolution,
+      window.devicePixelRatio,
+      graphicsOf(s, touch).pixelRatio,
+    );
+    const gov = new ResolutionGovernor(
+      range.min,
+      range.max,
+      s.resolution === 'auto' ? s.resSettled || Math.min(range.max, 2) : range.max,
+    );
+    governor.current = gov;
+    view.setRatio(gov.ratio);
+    liveResolution.ratio = gov.ratio;
+    let settledAt = 0;
     const el = canvas.current;
     const resize = () => view.resize(el.clientWidth, el.clientHeight);
     resize();
@@ -446,6 +485,17 @@ export function Game(props: {
       last = now;
       perfMs += Math.min(real, 1000);
       perfFrames++;
+      const ratio = document.hidden ? gov.ratio : gov.frame(real);
+      if (ratio !== liveResolution.ratio) {
+        view.setRatio(ratio);
+        liveResolution.ratio = ratio;
+        settledAt = now;
+      }
+      // Remember where Auto settled (once it has held a while), for next time.
+      if (settledAt && now - settledAt > 20000) {
+        settledAt = 0;
+        if (prefs.get().resolution === 'auto') prefs.set({ resSettled: ratio });
+      }
       if (perfMs >= 4000) {
         const fps = (perfFrames * 1000) / perfMs;
         const s = prefs.get();
@@ -460,7 +510,15 @@ export function Game(props: {
         if (played >= sampleAt) {
           sampleAt += 300;
           const quality = s.quality === 'auto' ? `auto-${autoLevel(touch, s.autoDrop)}` : s.quality;
-          client.telemetry?.perf(fps, quality, window.innerWidth, window.innerHeight, touch);
+          client.telemetry?.perf(
+            fps,
+            quality,
+            window.innerWidth,
+            window.innerHeight,
+            touch,
+            gov.ratio,
+            view.outlined,
+          );
         }
         perfMs = 0;
         perfFrames = 0;
@@ -495,7 +553,8 @@ export function Game(props: {
       frames++;
       fpsAcc += dt;
       if (fpsAcc >= 0.5) {
-        if (fpsEl.current) fpsEl.current.textContent = `${Math.round(frames / fpsAcc)} fps`;
+        if (fpsEl.current)
+          fpsEl.current.textContent = `${Math.round(frames / fpsAcc)} fps · ${gov.ratio}×`;
         frames = 0;
         fpsAcc = 0;
       }
@@ -515,6 +574,7 @@ export function Game(props: {
       cancelAnimationFrame(raf);
       ro.disconnect();
       viewRef.current = null;
+      governor.current = null;
       view.dispose();
       saveFog(fogAt, seed, map.fog);
     };

@@ -112,8 +112,16 @@ export class Telemetry {
   }
 
   /** How smoothly it runs: a sample now and then (frames per second, on what). */
-  perf(fps: number, quality: string, w: number, h: number, touch: boolean): void {
-    run.track('perf', { fps: Math.round(fps), quality, w, h, touch });
+  perf(
+    fps: number,
+    quality: string,
+    w: number,
+    h: number,
+    touch: boolean,
+    res: number,
+    outlines: boolean,
+  ): void {
+    run.track('perf', { fps: Math.round(fps), quality, w, h, touch, res, outlines });
   }
 
   /** The game is closing: how long it lasted and how far it got. */

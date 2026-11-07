@@ -2026,27 +2026,26 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await pick('Outlines', 'On');
   await pick('Resolution', 'Balanced');
   await pick('Shadows', 'Off');
-  await page.waitForTimeout(400);
+  await until(
+    page,
+    () => window.__game.view.outlined && !window.__game.view.sun.castShadow,
+    `${tag} graphics: outlines didn't turn on or shadows off`,
+    15000,
+  );
   const gfx = await game(page, () => ({
-    ink: window.__game.view.outlined,
     ratio: window.__game.view.renderer.getPixelRatio(),
     want: Math.max(1, Math.min(2, window.devicePixelRatio)),
-    sun: window.__game.view.sun.castShadow,
   }));
-  check(gfx.ink, `${tag} graphics: outlines didn't turn on`);
   check(
     gfx.ratio === gfx.want,
     `${tag} graphics: Balanced drew at ${gfx.ratio}×, not ${gfx.want}×`,
   );
-  check(!gfx.sun, `${tag} graphics: shadows didn't turn off`);
   await page.getByRole('button', { name: 'Reset this page' }).click();
-  await page.waitForTimeout(400);
-  check(
-    await game(
-      page,
-      () => window.__game.prefs.get().outlines === 'auto' && window.__game.view.sun.castShadow,
-    ),
+  await until(
+    page,
+    () => window.__game.prefs.get().outlines === 'auto' && window.__game.view.sun.castShadow,
     `${tag} graphics: reset didn't bring Auto back`,
+    15000,
   );
   await noSideScroll('graphics settings');
   await page.getByRole('tab', { name: /Controls/ }).click();

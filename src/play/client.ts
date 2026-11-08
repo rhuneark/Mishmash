@@ -233,7 +233,8 @@ export type Panel =
   | 'map'
   | 'menu'
   | 'note'
-  | 'screen';
+  | 'screen'
+  | 'offers';
 
 /** Pages of the pause menu. */
 export type MenuPage = 'main' | 'settings' | 'friends' | 'howto' | 'island';
@@ -539,6 +540,10 @@ export class GameClient {
           }
         }
         if (before?.alive && msg.me.alive) this.gains(before.inv, msg.me.inv);
+        // A new ad reward on offer: a word on where to find it (the 🎁 button by the journal).
+        const fresh = this.offerAfter(msg.me.offers);
+        if (before && fresh && !(before.offers ?? []).includes(fresh) && !this.tutStep())
+          this.toast(`${REWARDS[fresh].icon} ${REWARDS[fresh].name} on offer: see 🎁 up top.`);
         if (before && msg.me.xp > before.xp) this.emit({ type: 'xp', n: msg.me.xp - before.xp });
         if (before && levelFor(msg.me.xp) > levelFor(before.xp)) {
           const text = `⭐ Level ${levelFor(msg.me.xp)}! Spend your skill point in 🎒 › Skills.`;
@@ -1563,8 +1568,18 @@ export class GameClient {
 
   /** The ad reward the HUD offers now (ads.ts OFFERED, most pressing first), if any. */
   offer(): RewardKind | null {
+    return this.offerAfter(this.me?.offers);
+  }
+
+  /** The ad rewards on offer that "Not now" hasn't put away today. */
+  offers(): RewardKind[] {
     const day = Math.floor(this.time / DAY);
-    for (const k of this.me?.offers ?? []) if (this.dismissed.get(k) !== day) return k;
+    return (this.me?.offers ?? []).filter((k) => this.dismissed.get(k) !== day);
+  }
+
+  private offerAfter(list: RewardKind[] | undefined): RewardKind | null {
+    const day = Math.floor(this.time / DAY);
+    for (const k of list ?? []) if (this.dismissed.get(k) !== day) return k;
     return null;
   }
 

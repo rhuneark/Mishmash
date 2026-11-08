@@ -159,6 +159,67 @@ export function ScreenSheet({ client, onClose }: { client: GameClient; onClose: 
   );
 }
 
+/**
+ * 🎁 Offers: the ad rewards whose moment has come (ads.ts OFFERED): the repair crew after a
+ * Bloom night, the vet drone, the bonus shipment, the crew's care package. Each one is watched
+ * (or claimed with a Gold Card), or put away for the day.
+ */
+export function OffersSheet({ client, onClose }: { client: GameClient; onClose: () => void }) {
+  const list = client.offers();
+  const gold = client.goldCard();
+  return (
+    <Sheet title="🎁 Offers" onClose={onClose}>
+      <p className="muted small-text">
+        {gold
+          ? 'Your Verdance Gold Card claims these without the video, once a day each.'
+          : 'Each one plays an ad you choose to watch, once a day.'}
+      </p>
+      {list.length === 0 && <p className="small-text">Nothing on offer right now.</p>}
+      <div className="channels">
+        {list.map((kind) => {
+          const r = REWARDS[kind];
+          const desc =
+            kind === 'vet'
+              ? `${client.me?.lostPet ?? 'Your pet'} can still be saved: a Verdance vet drone carries them home to your bedroll, alive.`
+              : r.desc;
+          return (
+            <div key={kind} className="channel offer">
+              <div className="channel-head">
+                <span className="channel-icon">{r.icon}</span>
+                <b>{r.name}</b>
+              </div>
+              <p className="small-text">{desc}</p>
+              <div className="row">
+                <button
+                  className="btn primary"
+                  disabled={client.adBusy !== null}
+                  onClick={() => void client.watchAd(kind)}
+                >
+                  {client.adBusy === kind ? 'Playing…' : gold ? '✨ Claim' : '▶ Watch ad'}
+                </button>
+                <button
+                  className="btn ghost"
+                  onClick={() => {
+                    client.dismissOffer(kind);
+                    if (client.offers().length === 0) onClose();
+                  }}
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {client.link.mode !== 'solo' && !gold && (
+        <p className="muted small-text">
+          The island keeps going while you watch: find a safe spot.
+        </p>
+      )}
+    </Sheet>
+  );
+}
+
 export function KeypadSheet({ client, onClose }: { client: GameClient; onClose: () => void }) {
   const [code, setCode] = useState('');
   const lock = client.keypadLock;

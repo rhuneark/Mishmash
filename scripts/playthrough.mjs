@@ -2272,14 +2272,25 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
       acc: 0,
     });
   });
-  await page.locator('.offer-card', { hasText: 'Dawn repair crew' }).waitFor({ timeout: 20000 });
-  await page.locator('.offer-card').getByRole('button', { name: '✨ Claim' }).click();
+  // The 🎁 button by the journal: its sheet lists the offer.
+  const gift = page.getByRole('button', { name: 'Offers: Dawn repair crew' });
+  await gift.waitFor({ timeout: 20000 });
+  await gift.click();
+  const offer = page.locator('.channel.offer', { hasText: 'Dawn repair crew' });
+  await offer.waitFor();
+  await offer.getByRole('button', { name: '✨ Claim' }).click();
   await until(
     page,
     () => (window.__game.client.link.sim.buildings.get(99999)?.hp ?? 0) > 5,
     `${tag} offers: the repair crew didn't come`,
   );
-  await page.locator('.offer-card').waitFor({ state: 'detached', timeout: 20000 });
+  await offer.waitFor({ state: 'detached', timeout: 20000 });
+  await page
+    .locator('.sheet')
+    .getByRole('button', { name: /Close|✕/ })
+    .first()
+    .click();
+  await gift.waitFor({ state: 'detached', timeout: 20000 });
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.getByRole('button', { name: /Save and quit/ }).click();
   await titleMenu(page, 'Solo');

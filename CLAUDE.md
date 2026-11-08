@@ -657,9 +657,12 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   user: "a better, more well rounded, and even more unique way for people to play ads or spend
   money"; they picked these four): the authority works out which are open per survivor
   (`IslandSim.offersFor`, `MeNet.offers` in `ads.ts` `OFFERED` order, checked again every
-  second as the clock and the island change) and the HUD shows the first as a compact card under
-  the daily goal (`Hud.tsx` `OfferCard`: icon, name, `short` line, ▶ Watch ad / ✨ Claim, ✕ "Not
-  now" hides that one for the island day, `client.dismissOffer`). **🛠️ Dawn repair crew**: the
+  second as the clock and the island change) and the HUD shows a 🎁 button by the journal
+  (`.offer-btn`, a count badge and a slow glow; named "Offers: <first one>"; hidden while the
+  tutorial runs; a toast when a new one opens) that opens the 🎁 Offers sheet (`Panels.tsx`
+  `OffersSheet`, panel `offers`: each with ▶ Watch an ad / ✨ Claim and "Not now", which hides
+  that one for the island day, `client.dismissOffer`; `client.offers()`). It was a card under
+  the daily goal first, which covered the action buttons on small phones. **🛠️ Dawn repair crew**: the
   day after a Bloom night until dusk (`afterBloomNight`), when a piece is below its kind's hp:
   every damaged piece on the island back to full (`repairCrew`, toasts the crew).
   **🎁 Crew care package**: co-op only (2+ survivors up), at dusk and by night (`crewHour`): a
@@ -671,7 +674,7 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   (the bonus once per real day). **Verdance Gold Card** (shop `gold_card`, `client.goldCard()`):
   `watchAd` skips the video and claims at once, still once a day each (works on desktop too,
   where RUN has no ads); buttons say ✨ Claim. New reward: a `RewardKind` + `REWARDS` entry
-  (`short` if offered) and its case in `onReward`; an offered one also goes in `OFFERED` and
+  and its case in `onReward`; an offered one also goes in `OFFERED` and
   `offersFor`.
 - **Survival basics, the tutorial** (`game/tutorial.ts`, v1.23; the user: "an easy to follow
   tutorial reminiscent of this type of game"; v1.24: "more prominent on PC… not in your face,

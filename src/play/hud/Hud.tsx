@@ -20,7 +20,14 @@ import { keyHint, type Action, type Bindings } from '../keys';
 import type { Fog } from './map';
 import { FullMap, MiniMap } from './MapView';
 import { PauseMenu } from './Menu';
-import { JournalSheet, KeypadSheet, NoteSheet, ScreenSheet, StorageSheet } from './Panels';
+import {
+  JournalSheet,
+  KeypadSheet,
+  NoteSheet,
+  OffersSheet,
+  ScreenSheet,
+  StorageSheet,
+} from './Panels';
 import { CharacterMenu } from './Character';
 import { QuickWindow } from './QuickPanel';
 import { ChatBox, ChatLog } from './ChatBox';
@@ -91,6 +98,8 @@ export function Hud(props: HudProps) {
   const quests = showInfo && settings.quests !== 'off' && !quick && !build ? client.quests() : [];
   // Survival basics: its card, and what it lights up.
   const tut = client.tutStep();
+  // An ad reward whose moment has come (ads.ts OFFERED): the 🎁 button by the journal.
+  const offer = client.offer();
   // With the level badge hidden (Settings › HUD), 🎒 is the way to the skills.
   const badge = showInfo && settings.stats;
   const glowKey = client.tutGlow();
@@ -145,6 +154,17 @@ export function Hud(props: HudProps) {
             />
           )}
           <div className="hud-corner-buttons">
+            {offer && !tut && (
+              <button
+                className="round-btn offer-btn"
+                onClick={() => client.openPanel('offers')}
+                aria-label={`Offers: ${REWARDS[offer].name}`}
+                title={REWARDS[offer].name}
+              >
+                <Icon name="gift" />
+                <span className="chat-badge">{client.offers().length}</span>
+              </button>
+            )}
             {showInfo && (
               <button
                 className={`round-btn${lit('journal')}`}
@@ -186,7 +206,6 @@ export function Hud(props: HudProps) {
         {!tut && !quick && !build && showInfo && settings.quests !== 'off' && (
           <DailyChip client={client} />
         )}
-        {!tut && !quick && !build && <OfferCard client={client} />}
         {/* With the tutorial card up, big messages come under it instead of over it. */}
         {tut && !quick && !build && client.banner && (
           <div key={client.banner.id} className={`banner side ${client.banner.kind}`}>
@@ -324,6 +343,7 @@ export function Hud(props: HudProps) {
       {panel === 'storage' && <StorageSheet client={client} onClose={close} />}
       {panel === 'keypad' && <KeypadSheet client={client} onClose={close} />}
       {panel === 'screen' && <ScreenSheet client={client} onClose={close} />}
+      {panel === 'offers' && <OffersSheet client={client} onClose={close} />}
       {panel === 'journal' && <JournalSheet client={client} onClose={close} />}
       {panel === 'note' && (
         <NoteSheet client={client} onClose={() => client.openPanel(client.noteBack ?? null)} />
@@ -695,42 +715,6 @@ function TutorialCard({
 }
 
 /** Today's daily goal under the quests, with how far along (gone once it's done). */
-/**
- * An ad reward whose moment has come (ads.ts OFFERED): the repair crew after a Bloom night,
- * the vet drone, the bonus shipment, the crew's care package. Watch it (or claim it with a
- * Gold Card), or "Not now" for the rest of the day.
- */
-function OfferCard({ client }: { client: GameClient }) {
-  const kind = client.offer();
-  if (!kind) return null;
-  const r = REWARDS[kind];
-  const text = (r.short ?? r.desc).replace('{pet}', client.me?.lostPet ?? 'your pet');
-  return (
-    <div className="offer-card" role="group" aria-label={r.name} title={r.desc}>
-      <span className="offer-kicker">
-        {r.icon} {r.name}
-      </span>
-      <span className="offer-text">{text}</span>
-      <span className="offer-row">
-        <button
-          className="btn small primary"
-          disabled={client.adBusy !== null}
-          onClick={() => void client.watchAd(kind)}
-        >
-          {client.adBusy === kind ? 'Playing…' : client.goldCard() ? '✨ Claim' : '▶ Watch ad'}
-        </button>
-        <button
-          className="btn small ghost offer-x"
-          aria-label="Not now"
-          onClick={() => client.dismissOffer(kind)}
-        >
-          ✕
-        </button>
-      </span>
-    </div>
-  );
-}
-
 function DailyChip({ client }: { client: GameClient }) {
   const d = client.me?.daily;
   const goal = d && DAILY_GOALS.find((g) => g.id === d.goal);

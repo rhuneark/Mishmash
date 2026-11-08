@@ -1129,43 +1129,39 @@ button:disabled {
   width: 210px;
 }
 
-/* An ad reward whose moment has come (the repair crew, the vet drone…), under the quests. */
-.offer-card {
-  display: grid;
-  gap: 3px;
-  width: 184px;
-  max-width: 48vw;
-  padding: 6px 8px 7px;
-  pointer-events: auto;
+/* 🎁 Offers: an ad reward whose moment has come (the repair crew, the vet drone…). */
+.offer-btn {
+  position: relative;
+  animation: offer-nudge 2.4s ease-in-out infinite;
 }
 
-.offer-kicker {
-  font-size: calc(17px * var(--fs));
-  line-height: 1.05;
+.offer-btn .chat-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
 }
 
-.offer-text {
-  font-size: calc(14px * var(--fs));
-  line-height: 1.2;
+@keyframes offer-nudge {
+  0%,
+  80%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 211, 106, 0);
+  }
+  90% {
+    box-shadow: 0 0 0 6px rgba(255, 211, 106, 0.55);
+  }
 }
 
-.offer-row {
-  display: flex;
-  gap: 6px;
-}
-
-.offer-row .btn {
-  min-height: 44px;
-  flex: 1 1 auto;
-  padding: 0 8px;
-}
-
-.offer-row .offer-x {
-  flex: 0 0 44px;
-}
-
-.game.pc .hud .offer-card {
-  width: 260px;
+@media (prefers-reduced-motion: reduce) {
+  .offer-btn {
+    animation: none;
+  }
 }
 
 /* The quest being tracked, and its next step. */
@@ -5830,7 +5826,8 @@ body {
   color: #fff4e0;
 }
 
-.chat-btn .chat-badge {
+.chat-btn .chat-badge,
+.offer-btn .chat-badge {
   background: var(--red);
   color: #fff4e0;
 }
@@ -6037,8 +6034,7 @@ body {
 
 /* Quests, the daily goal, offers and the tutorial: pages pinned under the minimap. */
 .quest,
-.daily-chip,
-.offer-card {
+.daily-chip {
   border: 1.6px solid var(--line);
   border-left-width: 1.6px;
   border-radius: var(--wob-sm);
@@ -6049,15 +6045,6 @@ body {
 
 .daily-chip {
   background: var(--grain), #fff1a8;
-}
-
-.offer-card {
-  background: var(--grain), #dff2e3;
-}
-
-.offer-kicker {
-  font-family: var(--hand);
-  color: var(--ink);
 }
 
 .quest-title {
@@ -6280,6 +6267,15 @@ body {
 }
 
 .channel.used {
+  color: var(--ink);
+}
+
+/* 🎁 Offers: a page of the journal, not a screen. */
+.channel.offer {
+  border: 1.6px solid var(--line);
+  border-radius: var(--wob-sm);
+  background: var(--grain), #dff2e3;
+  box-shadow: 0 2px 6px rgba(30, 20, 10, 0.2);
   color: var(--ink);
 }
 

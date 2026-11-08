@@ -34,8 +34,6 @@ export interface RewardDef {
   icon: string;
   name: string;
   desc: string;
-  /** One line for the HUD's offer card (`{pet}`: the pet's name). */
-  short?: string;
   /** Placement for RUN's ad attribution. */
   adId: string;
 }
@@ -63,28 +61,24 @@ export const REWARDS: Record<RewardKind, RewardDef> = {
     icon: '🛠️',
     name: 'Dawn repair crew',
     desc: 'The Bloom chewed on your base last night. A Verdance repair crew patches every damaged piece back to full.',
-    short: 'Every damaged piece back to full.',
     adId: 'repair_crew',
   },
   crew: {
     icon: '🎁',
     name: 'Crew care package',
     desc: 'Night is coming. A care package lands at every survivor’s feet: a ration, water and a bandage each.',
-    short: 'Supplies at every survivor’s feet.',
     adId: 'crew_package',
   },
   vet: {
     icon: '🩺',
     name: 'Vet drone',
     desc: 'A Verdance vet drone finds your pet and carries it home to your bedroll, alive.',
-    short: 'Bring {pet} home, alive.',
     adId: 'vet_drone',
   },
   bonus: {
     icon: '📦',
     name: 'Bonus shipment',
     desc: 'Daily goal done! A second care package and the XP again.',
-    short: 'Today’s care package and XP again.',
     adId: 'bonus_shipment',
   },
 };

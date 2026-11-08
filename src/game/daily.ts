@@ -56,6 +56,8 @@ export interface DailyProgress {
   day: number;
   n: number;
   done: boolean;
+  /** The bonus shipment (ads.ts) claimed for it. */
+  bonus?: boolean;
 }
 
 /** Saved progress (untrusted); anything broken is a fresh start. */
@@ -69,6 +71,7 @@ export function parseDaily(raw: unknown): DailyProgress | undefined {
     day,
     n: typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(999, Math.floor(n))) : 0,
     done: o['done'] === true,
+    ...(o['bonus'] === true ? { bonus: true } : {}),
   };
 }
 

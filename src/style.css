@@ -1129,6 +1129,45 @@ button:disabled {
   width: 210px;
 }
 
+/* An ad reward whose moment has come (the repair crew, the vet drone…), under the quests. */
+.offer-card {
+  display: grid;
+  gap: 3px;
+  width: 184px;
+  max-width: 48vw;
+  padding: 6px 8px 7px;
+  pointer-events: auto;
+}
+
+.offer-kicker {
+  font-size: calc(17px * var(--fs));
+  line-height: 1.05;
+}
+
+.offer-text {
+  font-size: calc(14px * var(--fs));
+  line-height: 1.2;
+}
+
+.offer-row {
+  display: flex;
+  gap: 6px;
+}
+
+.offer-row .btn {
+  min-height: 44px;
+  flex: 1 1 auto;
+  padding: 0 8px;
+}
+
+.offer-row .offer-x {
+  flex: 0 0 44px;
+}
+
+.game.pc .hud .offer-card {
+  width: 260px;
+}
+
 /* The quest being tracked, and its next step. */
 .quest.tracked {
   border-color: rgba(255, 211, 106, 0.5);
@@ -4716,7 +4755,30 @@ button:disabled {
   border: 3px solid;
 }
 
+/* Five tabs: they wrap onto two rows on a narrow phone. */
+.segmented.wardrobe-tabs {
+  flex-wrap: wrap;
+}
+
+.segmented.wardrobe-tabs .segment {
+  flex: 1 1 30%;
+}
+
+.wardrobe-emoji {
+  display: grid;
+  place-items: center;
+  border: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
 .wardrobe-shop {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wardrobe-shop-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -5973,9 +6035,10 @@ body {
   background: var(--green);
 }
 
-/* Quests, the daily goal and the tutorial: pages pinned under the minimap. */
+/* Quests, the daily goal, offers and the tutorial: pages pinned under the minimap. */
 .quest,
-.daily-chip {
+.daily-chip,
+.offer-card {
   border: 1.6px solid var(--line);
   border-left-width: 1.6px;
   border-radius: var(--wob-sm);
@@ -5986,6 +6049,15 @@ body {
 
 .daily-chip {
   background: var(--grain), #fff1a8;
+}
+
+.offer-card {
+  background: var(--grain), #dff2e3;
+}
+
+.offer-kicker {
+  font-family: var(--hand);
+  color: var(--ink);
 }
 
 .quest-title {

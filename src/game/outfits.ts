@@ -108,15 +108,62 @@ export const COATS: readonly Coat[] = [
   },
 ];
 
+/** A base style, pet gear or a fire colour: looks for what you build and tame. */
+export interface Extra {
+  id: string;
+  name: string;
+  unlock: Unlock;
+}
+
+/**
+ * Paint for the walls, floors, roofs and doors a survivor builds (everyone on the island sees
+ * it; play/render/paint.ts does the painting).
+ */
+export const BASE_STYLES: readonly Extra[] = [
+  { id: 'plain', name: 'Island timber', unlock: FREE },
+  { id: 'outpost', name: 'Verdance Outpost', unlock: { by: 'shop', pack: 'base_outpost' } },
+  { id: 'driftwood', name: 'Driftwood', unlock: { by: 'shop', pack: 'base_driftwood' } },
+  { id: 'cabin', name: 'Cozy Cabin', unlock: { by: 'shop', pack: 'base_cabin' } },
+];
+
+/** What a survivor's pets wear. */
+export const PET_GEAR: readonly Extra[] = [
+  { id: 'none', name: 'No gear', unlock: FREE },
+  { id: 'collar', name: 'Red collar', unlock: { by: 'shop', pack: 'pet_gear' } },
+  { id: 'bandana', name: 'Bandana', unlock: { by: 'shop', pack: 'pet_gear' } },
+  { id: 'tophat', name: 'Tiny top hat', unlock: { by: 'shop', pack: 'pet_gear' } },
+];
+
+/** The flames of a survivor's campfires, torch posts, lamps and torches. */
+export const FLAMES: readonly Extra[] = [
+  { id: 'fire', name: 'Firelight', unlock: FREE },
+  { id: 'blue', name: 'Blue spirit', unlock: { by: 'shop', pack: 'fire_colours' } },
+  { id: 'green', name: 'Bloom green', unlock: { by: 'shop', pack: 'fire_colours' } },
+  { id: 'violet', name: 'Violet', unlock: { by: 'shop', pack: 'fire_colours' } },
+  { id: 'white', name: 'Ghost white', unlock: { by: 'shop', pack: 'fire_colours' } },
+];
+
 export interface Look {
   hat: string;
   coat: string;
+  base: string;
+  pet: string;
+  flame: string;
 }
 
-export const DEFAULT_LOOK: Look = { hat: 'none', coat: 'auto' };
+export const DEFAULT_LOOK: Look = {
+  hat: 'none',
+  coat: 'auto',
+  base: 'plain',
+  pet: 'none',
+  flame: 'fire',
+};
 
 const hatById = new Map(HATS.map((h) => [h.id, h]));
 const coatById = new Map(COATS.map((c) => [c.id, c]));
+const baseById = new Map(BASE_STYLES.map((e) => [e.id, e]));
+const petById = new Map(PET_GEAR.map((e) => [e.id, e]));
+const flameById = new Map(FLAMES.map((e) => [e.id, e]));
 
 export function hatOf(id: string): Hat {
   return hatById.get(id) ?? (HATS[0] as Hat);
@@ -126,17 +173,21 @@ export function coatOf(id: string): Coat {
   return coatById.get(id) ?? (COATS[0] as Coat);
 }
 
+/** "hat.coat.base.pet.flame" (codes from before v1.38 have the first two only). */
 export function lookCode(look: Look): string {
-  return `${look.hat}.${look.coat}`;
+  return `${look.hat}.${look.coat}.${look.base}.${look.pet}.${look.flame}`;
 }
 
 /** A look from its code (untrusted: unknown parts are the default). */
 export function parseLook(raw: unknown): Look {
   if (typeof raw !== 'string') return { ...DEFAULT_LOOK };
-  const [hat = '', coat = ''] = raw.slice(0, 40).split('.');
+  const [hat = '', coat = '', base = '', pet = '', flame = ''] = raw.slice(0, 80).split('.');
   return {
     hat: hatById.has(hat) ? hat : DEFAULT_LOOK.hat,
     coat: coatById.has(coat) ? coat : DEFAULT_LOOK.coat,
+    base: baseById.has(base) ? base : DEFAULT_LOOK.base,
+    pet: petById.has(pet) ? pet : DEFAULT_LOOK.pet,
+    flame: flameById.has(flame) ? flame : DEFAULT_LOOK.flame,
   };
 }
 
@@ -149,9 +200,13 @@ export function unlocked(u: Unlock, r: Records, owned: ReadonlySet<string>): boo
 
 /** The look to wear: anything no longer the player's goes back to the default part. */
 export function wearable(look: Look, r: Records, owned: ReadonlySet<string>): Look {
+  const ok = (u: Unlock | undefined) => !!u && unlocked(u, r, owned);
   return {
-    hat: unlocked(hatOf(look.hat).unlock, r, owned) ? look.hat : DEFAULT_LOOK.hat,
-    coat: unlocked(coatOf(look.coat).unlock, r, owned) ? look.coat : DEFAULT_LOOK.coat,
+    hat: ok(hatOf(look.hat).unlock) ? look.hat : DEFAULT_LOOK.hat,
+    coat: ok(coatOf(look.coat).unlock) ? look.coat : DEFAULT_LOOK.coat,
+    base: ok(baseById.get(look.base)?.unlock) ? look.base : DEFAULT_LOOK.base,
+    pet: ok(petById.get(look.pet)?.unlock) ? look.pet : DEFAULT_LOOK.pet,
+    flame: ok(flameById.get(look.flame)?.unlock) ? look.flame : DEFAULT_LOOK.flame,
   };
 }
 

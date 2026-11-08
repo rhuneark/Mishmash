@@ -7,7 +7,7 @@ import { ITEMS } from '../game/content/items';
 import { MONSTERS } from '../game/content/monsters';
 import { NODE } from '../game/content/nodes';
 import { POD_FALL } from '../game/sim/events';
-import { MOB_STATE } from '../game/sim/protocol';
+import { MOB_STATE, type BuildingNet } from '../game/sim/protocol';
 import { NIGHT_END, NIGHT_START, daylight, lowTide } from '../game/sim/time';
 import { circleHitsBox, colorFor, footprint } from '../game/sim/types';
 import { BIOME, biomeAt, forNodesNear, heightAt, poolNear, type Island } from '../game/world';
@@ -24,6 +24,7 @@ import {
 import { STAR_ICON, itemIconUrl } from './hud/itemIcons';
 import { buzz } from './prefs';
 import { lookCode, parseLook } from '../game/outfits';
+import { FLAME_PAINT } from '../game/paints';
 import { RIM, Actor, setBlobShadows } from './render/actors';
 import { Ambient } from './render/ambient';
 import { climateLook } from './render/climate';
@@ -206,7 +207,7 @@ export class View {
   private me: Actor;
   private readonly others = new Map<string, Actor>();
   private readonly mobs = new Map<number, Actor>();
-  private readonly builds = new Map<number, { view: BuildingView; kind: string }>();
+  private readonly builds = new Map<number, { view: BuildingView; kind: string; paint: string }>();
   private readonly dropMeshes = new Map<number, DropView>();
   private readonly pois: PoiView[];
   /** Treasure X marks on the ground (map number → model). */
@@ -424,19 +425,19 @@ export class View {
       this.scene.remove(m.obj);
       this.dropMeshes.delete(id);
     }
-    for (const b of this.client.buildings.values()) this.addBuilding(b.id, b.kind, b.x, b.z, b.rot);
+    for (const b of this.client.buildings.values()) this.addBuilding(b);
     for (const d of this.client.drops.values()) this.addDrop(d.id, d.x, d.z, d.kind);
     for (const a of this.mobs.values()) this.scene.remove(a.root);
     this.mobs.clear();
     this.nodes.markDirty();
   }
 
-  private addBuilding(id: number, kind: string, x: number, z: number, rot: number): void {
-    const view = buildingModel(kind);
-    view.group.position.set(x, heightAt(this.island, x, z), z);
-    view.group.rotation.y = rot * (Math.PI / 2);
+  private addBuilding(b: BuildingNet): void {
+    const view = buildingModel(b.kind, b.s, b.f);
+    view.group.position.set(b.x, heightAt(this.island, b.x, b.z), b.z);
+    view.group.rotation.y = b.rot * (Math.PI / 2);
     this.scene.add(view.group);
-    this.builds.set(id, { view, kind });
+    this.builds.set(b.id, { view, kind: b.kind, paint: paintKey(b) });
   }
 
   private addDrop(id: number, x: number, z: number, kind?: 'crate' | 'pod'): void {
@@ -557,7 +558,12 @@ export class View {
       }
       case 'build': {
         const old = this.builds.get(e.b.id);
-        if (!old) this.addBuilding(e.b.id, e.b.kind, e.b.x, e.b.z, e.b.rot);
+        // Repainted (its builder picked another base style or fire colour): drawn again.
+        if (old && old.paint !== paintKey(e.b)) {
+          this.scene.remove(old.view.group);
+          this.builds.delete(e.b.id);
+        }
+        if (!this.builds.has(e.b.id)) this.addBuilding(e.b);
         return;
       }
       case 'unbuild': {
@@ -1081,6 +1087,8 @@ export class View {
         this.scene.add(a.root);
         this.mobs.set(m.id, a);
       }
+      // A pet wears what its owner dressed it in.
+      a.setGear(c.pets.get(m.id)?.gear);
       if (m.dying > 0 && a.dying === 0) a.dying = 0.01;
       a.root.position.set(m.x, this.y(m.x, m.z), m.z);
       a.root.rotation.y = m.ry;
@@ -1373,11 +1381,17 @@ export class View {
     return { masks: this.roofMasks, faded, mode };
   }
 
-  private showRoof(roof: THREE.Mesh, id: number, net: { kind: string; rot: number }, s: RoofState) {
+  private showRoof(
+    roof: THREE.Mesh,
+    id: number,
+    net: { kind: string; rot: number; s?: string },
+    s: RoofState,
+  ) {
     const mask = s.masks.get(id) ?? 0;
-    if (roof.userData['mask'] !== mask) {
-      roof.userData['mask'] = mask;
-      roof.geometry = roofGeometry(net.kind, mask);
+    const key = `${mask}|${net.s ?? ''}`;
+    if (roof.userData['mask'] !== key) {
+      roof.userData['mask'] = key;
+      roof.geometry = roofGeometry(net.kind, mask, net.s);
     }
     // Shaped in world directions: undo the piece's own turn.
     roof.rotation.y = -net.rot * (Math.PI / 2);
@@ -1823,15 +1837,31 @@ export class View {
         y: b.kind === 'torch_post' ? 2.2 : b.kind === 'heart_lantern' ? 1.9 : 1,
         r: light,
         d: this.dist(b.x, b.z),
-        ...(b.kind === 'heart_lantern' ? { color: 0xff7ab8 } : {}),
+        ...(b.kind === 'heart_lantern'
+          ? { color: 0xff7ab8 }
+          : b.f && FLAME_PAINT[b.f]
+            ? { color: FLAME_PAINT[b.f]?.light }
+            : {}),
       });
     }
+    // A torch in hand burns in its holder's fire colour.
+    const torchLight = (id: string) => {
+      const flame = parseLook(c.players.find((q) => q.id === id)?.look).flame;
+      return flame !== 'fire' ? { color: FLAME_PAINT[flame]?.light } : {};
+    };
     const torch = ITEMS['torch']?.light ?? 8;
     if (c.me?.alive && c.heldSlot()?.id === 'torch')
-      sources.push({ x: c.x, z: c.z, y: 2, r: torch, d: 0 });
+      sources.push({ x: c.x, z: c.z, y: 2, r: torch, d: 0, ...torchLight(c.you) });
     for (const o of c.others.values()) {
       if (o.alive && o.held === 'torch')
-        sources.push({ x: o.x, z: o.z, y: 2, r: torch, d: this.dist(o.x, o.z) });
+        sources.push({
+          x: o.x,
+          z: o.z,
+          y: 2,
+          r: torch,
+          d: this.dist(o.x, o.z),
+          ...torchLight(o.id),
+        });
     }
     sources.sort((a, b) => a.d - b.d);
     const night = 1 - day;
@@ -1984,4 +2014,9 @@ export class View {
     this.ambient.dispose();
     this.renderer.dispose();
   }
+}
+
+/** A piece's paint (base style and fire colour): drawn again when it changes. */
+function paintKey(b: BuildingNet): string {
+  return `${b.s ?? ''}|${b.f ?? ''}`;
 }

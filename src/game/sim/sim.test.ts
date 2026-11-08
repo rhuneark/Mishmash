@@ -9,7 +9,7 @@ import { NODE } from '../content/nodes';
 import { POI_BY_ID, SPAWN, MOTHER_SPOT, RESCUE_SECONDS } from '../content/pois';
 import { rng } from '../rng';
 import { IslandSim } from './sim';
-import { runDirector, spawnMob } from './mobs';
+import { damageMob, runDirector, spawnMob } from './mobs';
 import { BASE_CLEAR, placementProblem, snapFlush, snapToGrid } from './place';
 import { POD_FALL, POD_LOOT, compass, pickEvent, rollLoot } from './events';
 import { bestSlot, count, emptyInv, weaponScore } from './inventory';
@@ -934,6 +934,38 @@ describe('the build menu', () => {
     expect(count(p.inv, 'wood')).toBe(5);
   });
 
+  it('paints what a survivor builds and tames in their look, and repaints it when it changes', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann', 'none.auto.cabin.collar.blue');
+    const p = h.sim.players.get('a')!;
+    const at = spotFor(h, 'wall_wood');
+    h.sim.give(p, 'wood', 8);
+    h.sim.handle('a', { type: 'build', kind: 'wall_wood', ...at, rot: 0 });
+    const wall = [...h.sim.buildings.values()].find((b) => b.kind === 'wall_wood')!;
+    expect([wall.style, wall.flame]).toEqual(['cabin', 'blue']);
+    const net = h.sim.net(wall);
+    expect([net.s, net.f]).toEqual(['cabin', 'blue']);
+    const dog = spawnMob(h.sim, 'dog', p.x + 3, p.z, {});
+    dog.tame = { owner: 'a', name: 'Biscuit', mode: 'follow', next: 0 };
+    // Back with a new look: everything of theirs follows it.
+    h.sim.leave('a');
+    h.sim.join('a', 'Ann', 'none.auto.outpost.tophat.fire');
+    expect([wall.style, wall.flame]).toEqual(['outpost', undefined]);
+    expect(dog.tame.gear).toBe('tophat');
+    expect(h.sim.petList().find((q) => q.id === dog.id)?.gear).toBe('tophat');
+    // Kept in the save; unknown paint is dropped.
+    const raw = JSON.parse(JSON.stringify(h.sim.serialize()));
+    raw.buildings[0].flame = 'rainbow';
+    const back = parseIslandSave(raw);
+    expect(back?.buildings[0]?.style).toBe('outpost');
+    expect(back?.buildings[0]?.flame).toBeUndefined();
+    expect(back?.pets?.[0]?.gear).toBe('tophat');
+    // Plain again: the island's own look.
+    h.sim.leave('a');
+    h.sim.join('a', 'Ann', 'none.auto');
+    expect([wall.style, wall.flame, dog.tame.gear]).toEqual([undefined, undefined, undefined]);
+  });
+
   it('on a public island, only who built a piece (or the host) takes it down', () => {
     const h = harness();
     h.sim.open = true;
@@ -961,8 +993,11 @@ describe('the build menu', () => {
     h.sim.join('a', 'Ann', 'pilot.teal');
     h.sim.join('b', 'Bo', 'crown.gold');
     const list = h.sim.playerList();
-    expect(list.find((p) => p.id === 'a')).toMatchObject({ look: 'pilot.teal', color: 0x5fd3d0 });
-    expect(list.find((p) => p.id === 'b')?.look).toBe('none.auto');
+    expect(list.find((p) => p.id === 'a')).toMatchObject({
+      look: 'pilot.teal.plain.none.fire',
+      color: 0x5fd3d0,
+    });
+    expect(list.find((p) => p.id === 'b')?.look).toBe('none.auto.plain.none.fire');
   });
 
   it('uses a piece made before the build menu first', () => {
@@ -1660,6 +1695,116 @@ describe('the in-flight channel and Second wind (ads)', () => {
     // Kept with the survivor in the save.
     const back = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())));
     expect(back?.players['a']?.ads?.wind).toBe(Math.floor(h.sim.time / DAY));
+  });
+});
+
+describe('the ads offered on the HUD', () => {
+  it('sends the dawn repair crew the morning after a Bloom night, once a day', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a');
+    if (!p) throw new Error();
+    const wall = {
+      id: 900,
+      kind: 'wall_wood',
+      x: p.x + 4,
+      z: p.z,
+      rot: 0,
+      hp: 10,
+      owner: 'a',
+      v: 0,
+      acc: 0,
+    };
+    h.sim.buildings.set(900, wall);
+    const max = BUILDINGS['wall_wood']?.hp ?? 0;
+    expect(max).toBeGreaterThan(10);
+    // Day 2: the night before wasn't a Bloom night.
+    h.sim.time = DAY + DAY * 0.3;
+    expect(h.sim.offersFor(p)).not.toContain('repair');
+    h.sim.handle('a', { type: 'reward', kind: 'repair' });
+    expect(wall.hp).toBe(10);
+    // The morning after night 7 (a Bloom night): the crew can come.
+    h.sim.time = 7 * DAY + DAY * 0.3;
+    expect(h.sim.offersFor(p)).toContain('repair');
+    h.sim.handle('a', { type: 'reward', kind: 'repair' });
+    expect(wall.hp).toBe(max);
+    expect(h.sim.offersFor(p)).not.toContain('repair');
+    expect(h.toasts('a').some((t) => t.includes('repair crew patched up 1 piece'))).toBe(true);
+    // Nothing broken, nothing offered.
+    wall.hp = 10;
+    h.sim.time += DAY * 0.05;
+    h.sim.handle('a', { type: 'reward', kind: 'repair' });
+    expect(wall.hp).toBe(10);
+  });
+
+  it('drops a care package at every survivor’s feet at dusk, in co-op only', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a');
+    if (!p) throw new Error();
+    h.sim.time = DAY * 0.78;
+    expect(h.sim.offersFor(p)).not.toContain('crew');
+    h.sim.handle('a', { type: 'reward', kind: 'crew' });
+    expect([...h.sim.drops.values()].some((d) => d.label.startsWith('Care package'))).toBe(false);
+    h.sim.join('b', 'Bo');
+    expect(h.sim.offersFor(p)).toContain('crew');
+    // Midday is not its moment.
+    h.sim.time = DAY * 0.4;
+    expect(h.sim.offersFor(p)).not.toContain('crew');
+    h.sim.time = DAY * 0.78;
+    h.sim.handle('a', { type: 'reward', kind: 'crew' });
+    const packages = [...h.sim.drops.values()].filter((d) => d.label === 'Care package from Ann');
+    expect(packages).toHaveLength(2);
+    expect(
+      packages.every((d) => d.kind === 'crate' && d.items.some((s) => s.id === 'ration')),
+    ).toBe(true);
+    expect(h.toasts('b').some((t) => t.includes('Ann sent the crew a care package'))).toBe(true);
+    expect(h.sim.offersFor(p)).not.toContain('crew');
+  });
+
+  it('brings a pet that died home to your bedroll with the vet drone', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a');
+    if (!p) throw new Error();
+    const dog = spawnMob(h.sim, 'dog', p.x + 3, p.z, {});
+    dog.tame = { owner: 'a', name: 'Biscuit', mode: 'follow', next: 0 };
+    expect(h.sim.offersFor(p)).not.toContain('vet');
+    damageMob(h.sim, dog, 9999, null, 0);
+    expect(h.sim.mobs.has(dog.id)).toBe(false);
+    expect(p.lostPet?.name).toBe('Biscuit');
+    expect(h.sim.offersFor(p)).toContain('vet');
+    h.sim.handle('a', { type: 'reward', kind: 'vet' });
+    const back = [...h.sim.mobs.values()].find((m) => m.tame?.name === 'Biscuit');
+    expect(back?.kind).toBe('dog');
+    expect(back?.tame?.owner).toBe('a');
+    expect(p.lostPet).toBeNull();
+    expect(h.sim.offersFor(p)).not.toContain('vet');
+  });
+
+  it('pays the daily goal again with the bonus shipment, once', () => {
+    const h = harness();
+    h.sim.join('a', 'Ann');
+    const p = h.sim.players.get('a');
+    if (!p) throw new Error();
+    let day = 20_000;
+    while (dailyGoal(day).kind !== 'craft') day++;
+    h.sim.wallMs = day * DAY_MS + 5_000;
+    h.sim.handle('a', { type: 'reward', kind: 'bonus' });
+    expect(p.daily?.bonus).toBeUndefined();
+    for (let i = 0; i < dailyGoal(day).need; i++) h.sim.did(p, 'craft');
+    expect(h.sim.offersFor(p)).toContain('bonus');
+    const xp = p.xp;
+    const bandages = count(p.inv, 'bandage');
+    h.sim.handle('a', { type: 'reward', kind: 'bonus' });
+    expect(p.xp).toBe(xp + DAILY_XP);
+    expect(count(p.inv, 'bandage')).toBe(bandages + 2);
+    expect(p.daily?.bonus).toBe(true);
+    expect(h.sim.offersFor(p)).not.toContain('bonus');
+    h.sim.handle('a', { type: 'reward', kind: 'bonus' });
+    expect(p.xp).toBe(xp + DAILY_XP);
+    const saved = parseIslandSave(JSON.parse(JSON.stringify(h.sim.serialize())));
+    expect(saved?.players['a']?.daily?.bonus).toBe(true);
   });
 });
 

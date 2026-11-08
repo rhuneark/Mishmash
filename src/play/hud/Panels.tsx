@@ -137,7 +137,11 @@ export function ScreenSheet({ client, onClose }: { client: GameClient; onClose: 
                   disabled={client.adBusy !== null}
                   onClick={() => void client.watchAd(kind)}
                 >
-                  {client.adBusy === kind ? 'Playing…' : '▶ Watch an ad'}
+                  {client.adBusy === kind
+                    ? 'Playing…'
+                    : client.goldCard()
+                      ? '✨ Claim (Gold Card)'
+                      : '▶ Watch an ad'}
                 </button>
               ) : (
                 <p className="muted small-text">Watched today. New episode tomorrow.</p>

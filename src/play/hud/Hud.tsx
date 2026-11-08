@@ -186,6 +186,7 @@ export function Hud(props: HudProps) {
         {!tut && !quick && !build && showInfo && settings.quests !== 'off' && (
           <DailyChip client={client} />
         )}
+        {!tut && !quick && !build && <OfferCard client={client} />}
         {/* With the tutorial card up, big messages come under it instead of over it. */}
         {tut && !quick && !build && client.banner && (
           <div key={client.banner.id} className={`banner side ${client.banner.kind}`}>
@@ -694,6 +695,42 @@ function TutorialCard({
 }
 
 /** Today's daily goal under the quests, with how far along (gone once it's done). */
+/**
+ * An ad reward whose moment has come (ads.ts OFFERED): the repair crew after a Bloom night,
+ * the vet drone, the bonus shipment, the crew's care package. Watch it (or claim it with a
+ * Gold Card), or "Not now" for the rest of the day.
+ */
+function OfferCard({ client }: { client: GameClient }) {
+  const kind = client.offer();
+  if (!kind) return null;
+  const r = REWARDS[kind];
+  const text = (r.short ?? r.desc).replace('{pet}', client.me?.lostPet ?? 'your pet');
+  return (
+    <div className="offer-card" role="group" aria-label={r.name} title={r.desc}>
+      <span className="offer-kicker">
+        {r.icon} {r.name}
+      </span>
+      <span className="offer-text">{text}</span>
+      <span className="offer-row">
+        <button
+          className="btn small primary"
+          disabled={client.adBusy !== null}
+          onClick={() => void client.watchAd(kind)}
+        >
+          {client.adBusy === kind ? 'Playing…' : client.goldCard() ? '✨ Claim' : '▶ Watch ad'}
+        </button>
+        <button
+          className="btn small ghost offer-x"
+          aria-label="Not now"
+          onClick={() => client.dismissOffer(kind)}
+        >
+          ✕
+        </button>
+      </span>
+    </div>
+  );
+}
+
 function DailyChip({ client }: { client: GameClient }) {
   const d = client.me?.daily;
   const goal = d && DAILY_GOALS.find((g) => g.id === d.goal);
@@ -1116,7 +1153,9 @@ function DeathScreen({ client }: { client: GameClient }) {
             <span>
               {client.adBusy === 'wind' ? 'Playing…' : `${REWARDS.wind.icon} ${REWARDS.wind.name}`}
             </span>
-            <span className="ad-sub">Watch an ad: get up right here, with your bag</span>
+            <span className="ad-sub">
+              {client.goldCard() ? 'Gold Card' : 'Watch an ad'}: get up right here, with your bag
+            </span>
           </button>
         ) : (
           <p className="muted small-text">Second wind is used for today.</p>

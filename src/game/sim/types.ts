@@ -5,6 +5,7 @@ import { parsePerks, type Perks } from '../skills';
 import { TUT_DONE, TUT_VERSION, parseTut } from '../tutorial';
 import { parseDaily, type DailyProgress } from '../daily';
 import { BUILDINGS, slotsOf } from '../content/buildings';
+import { BASE_STYLES, FLAMES, PET_GEAR } from '../outfits';
 import { CROP_BY_ID } from '../content/crops';
 import { MONSTERS, type MonsterKind } from '../content/monsters';
 import { cleanJoinCode, isClassic, parseParts, type IslandParts } from '../islands';
@@ -54,6 +55,8 @@ export interface SimPlayer {
   ads: RewardDays;
   /** The bag they left when they last fell (Second wind gives it back). */
   lastBag: number | null;
+  /** Their pet that died lately (the vet drone can bring it back; not saved). */
+  lostPet: { kind: MonsterKind; name: string; at: number } | null;
   /** Survival basics (tutorial.ts): the step they're on, and how many steps have paid. */
   tut: number;
   tutPaid: number;
@@ -76,6 +79,9 @@ export interface Building {
   inv?: (Slot | null)[];
   /** Garden plot: what grows (crops.ts), how far (0..1), and seconds it stays wet. */
   crop?: { id: string; grow: number; wet: number };
+  /** Its builder's base style and fire colour (outfits.ts; missing: the island's own). */
+  style?: string;
+  flame?: string;
 }
 
 /** A bag on the ground, a crate washed up on a beach, or a Verdance supply pod. */
@@ -144,6 +150,8 @@ export interface PetState {
   mode: 'follow' | 'stay';
   /** Island time its next egg or milk is ready. */
   next: number;
+  /** What its owner dressed it in (outfits.ts PET_GEAR; missing: nothing). */
+  gear?: string;
 }
 
 export interface PetSave extends PetState {
@@ -293,6 +301,10 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
           grow: Math.min(1, Math.max(0, num(crop['grow'], 0))),
           wet: Math.max(0, num(crop['wet'], 0)),
         };
+      const style = str(b['style'], '');
+      if (BASE_STYLES.some((e) => e.id === style && e.id !== 'plain')) building.style = style;
+      const flame = str(b['flame'], '');
+      if (FLAMES.some((e) => e.id === flame && e.id !== 'fire')) building.flame = flame;
       save.buildings.push(building);
       save.nextId = Math.max(save.nextId, id + 1);
     }
@@ -380,6 +392,9 @@ export function parseIslandSave(raw: unknown): IslandSave | null {
         name: str(o['name'], 'Buddy').slice(0, 16),
         mode: o['mode'] === 'stay' ? 'stay' : 'follow',
         next: num(o['next'], 0),
+        ...(PET_GEAR.some((e) => e.id === o['gear'] && e.id !== 'none')
+          ? { gear: o['gear'] as string }
+          : {}),
       });
     }
     if (pets.length) save.pets = pets.slice(0, 40);

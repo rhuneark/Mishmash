@@ -14,7 +14,13 @@ import {
 } from '../game/islands';
 import { randomSeed } from '../game/rng';
 import { DEFAULT_RULES, type WorldRules } from '../game/rules';
-import { ISLAND_SLOTS } from '../game/save';
+import { ISLAND_SLOTS, MAX_ISLAND_SLOTS } from '../game/save';
+import { outfitStore } from './outfits';
+
+/** Island slots this player has: three, six with the shop's three more islands. */
+export function islandSlots(): number {
+  return outfitStore.get().owned.has('more_islands') ? MAX_ISLAND_SLOTS : ISLAND_SLOTS;
+}
 import { newSave, parseIslandSave, type IslandSave } from '../game/sim/types';
 
 export const ISLAND_KEY = 'mishmash_island';
@@ -34,7 +40,8 @@ export function currentSlot(): number {
 }
 
 export function chooseSlot(n: number): void {
-  slot = Math.max(1, Math.min(ISLAND_SLOTS, Math.floor(n) || 1));
+  // Up to six even before the shop's ownership loads (Continue goes on to the slot played last).
+  slot = Math.max(1, Math.min(MAX_ISLAND_SLOTS, Math.floor(n) || 1));
 }
 
 /** The minimap's explored fog: one per slot, and one for friends' islands. */
@@ -115,7 +122,7 @@ export async function readSave(key: string): Promise<IslandSave | null> {
 /** Every slot's island (null: empty). */
 export async function listIslands(): Promise<((IslandSave & { code: string }) | null)[]> {
   const out: ((IslandSave & { code: string }) | null)[] = [];
-  for (let n = 1; n <= ISLAND_SLOTS; n++) {
+  for (let n = 1; n <= islandSlots(); n++) {
     const last = lastSaves.get(n);
     out.push(last?.code ? (last as IslandSave & { code: string }) : await loadIsland(n));
   }

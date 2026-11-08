@@ -55,7 +55,17 @@ import {
   type Inv,
 } from './inventory';
 import { FIRST_EVENT, compass, rollLoot, runEvents, sponsorPod } from './events';
-import { isRewardKind, islandDay, rewardReady } from '../ads';
+import {
+  CREW_KIT,
+  OFFERED,
+  VET_WINDOW,
+  afterBloomNight,
+  crewHour,
+  isRewardKind,
+  islandDay,
+  rewardReady,
+  type RewardKind,
+} from '../ads';
 import { TUTORIAL, TUT_DONE, TUT_GIFT, TUT_VERSION, builtBy, type TutView } from '../tutorial';
 import { DAILY_GIFT, DAILY_XP, dailyGoal, utcDay, type DailyKind } from '../daily';
 import { lookCode, parseLook, shirtOf } from '../outfits';
@@ -223,6 +233,7 @@ export class IslandSim {
         perks: { ...(p.perks ?? {}) },
         ads: { ...(p.ads ?? {}) },
         lastBag: null,
+        lostPet: null,
         tut: p.tut ?? TUT_DONE,
         tutPaid: p.tutPaid ?? (p.tut === undefined ? TUT_DONE : 0),
         ...(p.daily ? { daily: { ...p.daily } } : {}),
@@ -360,6 +371,7 @@ export class IslandSim {
         perks: {},
         ads: {},
         lastBag: null,
+        lostPet: null,
         tut: 0,
         tutPaid: 0,
       };
@@ -371,6 +383,7 @@ export class IslandSim {
     const worn = parseLook(look);
     p.look = lookCode(worn);
     p.color = shirtOf(worn, colorFor(id));
+    this.dressBelongings(p);
     p.lastPos = this.time;
     this.online.add(id);
     const data = JSON.stringify(this.snapshot());
@@ -425,6 +438,7 @@ export class IslandSim {
         owner: m.tame.owner,
         mode: m.tame.mode,
         ready: !!gives && this.time >= m.tame.next,
+        ...(m.tame.gear ? { gear: m.tame.gear } : {}),
       });
     }
     return out;
@@ -784,6 +798,7 @@ export class IslandSim {
           name,
           mode: 'follow',
           next: this.time + (animal.gives?.every ?? 0) / 2,
+          ...this.gearOf(p),
         };
         delete m.fed;
         m.roamer = false;
@@ -1527,6 +1542,7 @@ export class IslandSim {
       owner: p.id,
       v: kind === 'campfire' ? CAMPFIRE_FUEL_START : 0,
       acc: 0,
+      ...this.paintOf(p),
     };
     const slots = slotsOf(kind);
     if (slots) b.inv = new Array<Slot | null>(slots).fill(null);
@@ -1735,7 +1751,12 @@ export class IslandSim {
       this.secondWind(p);
       return;
     }
-    if (!p.alive || !this.screenNear(p)) return;
+    if (kind === 'bonus') return this.bonusShipment(p);
+    if (!p.alive) return;
+    if (kind === 'vet') return this.vetDrone(p);
+    if (kind === 'repair') return this.repairCrew(p);
+    if (kind === 'crew') return this.crewPackage(p);
+    if (!this.screenNear(p)) return;
     if (kind === 'guide') {
       const poi = this.unfound(p);
       if (!poi) {
@@ -1791,6 +1812,181 @@ export class IslandSim {
       }
       p.tut++;
     } else return;
+    this.dirty(p);
+  }
+
+  /** A builder's base style and fire colour, for what they build (missing: the island's own). */
+  private paintOf(p: SimPlayer): { style?: string; flame?: string } {
+    const look = parseLook(p.look);
+    return {
+      ...(look.base !== 'plain' ? { style: look.base } : {}),
+      ...(look.flame !== 'fire' ? { flame: look.flame } : {}),
+    };
+  }
+
+  /** What a survivor dresses their pets in. */
+  private gearOf(p: SimPlayer): { gear?: string } {
+    const gear = parseLook(p.look).pet;
+    return gear !== 'none' ? { gear } : {};
+  }
+
+  /**
+   * A survivor's look (base style, fire colour, pet gear) on everything of theirs: what they
+   * built and the animals they tamed, so a new style repaints their base for everyone.
+   */
+  private dressBelongings(p: SimPlayer): void {
+    const paint = this.paintOf(p);
+    for (const b of this.buildings.values()) {
+      if (b.owner !== p.id || (b.style === paint.style && b.flame === paint.flame)) continue;
+      if (paint.style) b.style = paint.style;
+      else delete b.style;
+      if (paint.flame) b.flame = paint.flame;
+      else delete b.flame;
+      this.broadcast({ type: 'build', b: this.net(b) });
+    }
+    const gear = this.gearOf(p).gear;
+    let pets = false;
+    for (const m of this.mobs.values()) {
+      if (m.tame?.owner !== p.id || m.tame.gear === gear) continue;
+      if (gear) m.tame.gear = gear;
+      else delete m.tame.gear;
+      pets = true;
+    }
+    if (pets) this.petsChanged();
+  }
+
+  /** The rewards the HUD may offer this survivor now (ads.ts OFFERED), most pressing first. */
+  offersFor(p: SimPlayer): RewardKind[] {
+    if (!p.alive || p.escaped) return [];
+    const ready = (k: RewardKind) => rewardReady(p.ads, k, this.time);
+    const open: Record<string, boolean> = {
+      vet: !!p.lostPet && this.time - p.lostPet.at < VET_WINDOW && ready('vet'),
+      repair:
+        ready('repair') &&
+        afterBloomNight(this.time, this.rules.bloomEvery) &&
+        this.damagedPieces() > 0,
+      bonus: (() => {
+        const day = this.wallDay();
+        const d = p.daily;
+        return day >= 0 && d?.day === day && d.done && !d.bonus;
+      })(),
+      crew: ready('crew') && crewHour(this.time) && this.crew().length >= 2,
+    };
+    return OFFERED.filter((k) => open[k]);
+  }
+
+  /** Survivors on the island right now, up and about. */
+  private crew(): SimPlayer[] {
+    const out: SimPlayer[] = [];
+    for (const id of this.online) {
+      const q = this.players.get(id);
+      if (q?.alive && !q.escaped) out.push(q);
+    }
+    return out;
+  }
+
+  /** Built pieces below full strength. */
+  private damagedPieces(): number {
+    let n = 0;
+    for (const b of this.buildings.values()) {
+      const max = BUILDINGS[b.kind]?.hp ?? 0;
+      if (b.hp < max) n++;
+    }
+    return n;
+  }
+
+  /** The dawn repair crew: every damaged piece on the island back to full. */
+  private repairCrew(p: SimPlayer): void {
+    if (!afterBloomNight(this.time, this.rules.bloomEvery)) return;
+    let n = 0;
+    for (const b of this.buildings.values()) {
+      const max = BUILDINGS[b.kind]?.hp ?? 0;
+      if (b.hp >= max) continue;
+      b.hp = max;
+      n++;
+      this.broadcast({ type: 'build', b: this.net(b) });
+    }
+    if (!n) {
+      this.toast(p.id, '🛠️ The repair crew found nothing to fix.');
+      return;
+    }
+    p.ads.repair = islandDay(this.time);
+    this.fx('unlock', p.x, p.z, p.id);
+    for (const q of this.crew())
+      this.toast(
+        q.id,
+        q === p
+          ? `🛠️ The Verdance repair crew patched up ${n} piece${n === 1 ? '' : 's'}.`
+          : `🛠️ ${p.name} called the repair crew: ${n} piece${n === 1 ? '' : 's'} patched up.`,
+      );
+    this.dirty(p);
+  }
+
+  /** The crew care package: supplies at every survivor's feet (co-op). */
+  private crewPackage(p: SimPlayer): void {
+    const crew = this.crew();
+    if (crew.length < 2 || !crewHour(this.time)) return;
+    for (const q of crew) {
+      this.makeBag(
+        q.x + 0.6,
+        q.z + 0.6,
+        CREW_KIT.map((s) => ({ ...s })),
+        `Care package from ${p.name}`,
+        this.time + DAY,
+        'crate',
+      );
+      this.toast(
+        q.id,
+        q === p
+          ? '🎁 Care packages are down at everyone’s feet.'
+          : `🎁 ${p.name} sent the crew a care package: it’s at your feet.`,
+      );
+    }
+    p.ads.crew = islandDay(this.time);
+    this.dirty(p);
+  }
+
+  /** The vet drone: the pet that died comes home to your bedroll (or the crash site), alive. */
+  private vetDrone(p: SimPlayer): void {
+    const lost = p.lostPet;
+    if (!lost || this.time - lost.at >= VET_WINDOW) return;
+    const bed = p.spawn !== null ? this.buildings.get(p.spawn) : undefined;
+    const home = bed && BUILDINGS[bed.kind]?.spawn ? bed : this.island.spawn;
+    const x = home.x + 1.4;
+    const z = home.z + 1;
+    const m = spawnMob(this, lost.kind, x, z, {});
+    const gives = MONSTERS[lost.kind].animal?.gives;
+    m.tame = {
+      owner: p.id,
+      name: lost.name,
+      mode: 'follow',
+      next: this.time + (gives?.every ?? 0),
+      ...this.gearOf(p),
+    };
+    m.gx = x;
+    m.gz = z;
+    p.lostPet = null;
+    p.ads.vet = islandDay(this.time);
+    this.petsChanged();
+    this.fx('unlock', x, z, p.id);
+    this.toast(p.id, `🩺 The vet drone brought ${lost.name} home, safe and sound.`);
+    this.dirty(p);
+  }
+
+  /** The bonus shipment: today's daily goal pays its care package and XP again. */
+  private bonusShipment(p: SimPlayer): void {
+    const day = this.wallDay();
+    const d = p.daily;
+    if (day < 0 || !d || d.day !== day || !d.done || d.bonus) return;
+    d.bonus = true;
+    for (const g of DAILY_GIFT) this.give(p, g.id, g.n);
+    this.gainXp(p, DAILY_XP);
+    this.fx('levelup', p.x, p.z, p.id, 0);
+    this.out(p.id, {
+      type: 'event',
+      e: 'daily',
+      text: `📦 Bonus shipment: another care package and +${DAILY_XP} XP.`,
+    });
     this.dirty(p);
   }
 
@@ -2051,6 +2247,8 @@ export class IslandSim {
       runEvents(this);
       runWeather(this);
       this.petsChanged();
+      // What the HUD offers follows the clock (dawn, dusk) and the island (damage, a crew).
+      for (const id of this.online) this.meDirty.add(id);
       this.discover();
       this.expireDrops();
       this.updateRescue();
@@ -2401,10 +2599,14 @@ export class IslandSim {
               goal: dailyGoal(this.wallDay()).id,
               n: p.daily?.day === this.wallDay() ? p.daily.n : 0,
               done: p.daily?.day === this.wallDay() && p.daily.done,
+              ...(p.daily?.day === this.wallDay() && p.daily.bonus ? { bonus: true } : {}),
             },
           }
         : {}),
     };
+    const offers = this.offersFor(p);
+    if (offers.length) me.offers = offers;
+    if (p.lostPet) me.lostPet = p.lostPet.name;
     const key = JSON.stringify(me);
     if (this.lastMe.get(p.id) === key) return;
     this.lastMe.set(p.id, key);
@@ -2439,6 +2641,8 @@ export function buildingNet(b: Building): BuildingNet {
   if (b.v) net.v = Math.round(b.v);
   if (b.inv) net.inv = b.inv.map((s) => (s ? { ...s } : null));
   if (b.crop) net.crop = cropNet(b.crop);
+  if (b.style) net.s = b.style;
+  if (b.flame) net.f = b.flame;
   return net;
 }
 

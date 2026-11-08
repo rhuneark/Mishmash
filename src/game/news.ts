@@ -10,6 +10,15 @@ export interface News {
 
 export const NEWS: News[] = [
   {
+    version: '1.38',
+    title: 'Help when you need it, and a base that’s yours',
+    items: [
+      'New ad rewards, offered right when they help: a repair crew the morning after a Bloom night, a vet drone to bring a lost pet home, a bonus shipment for your daily goal, and care packages for the whole crew in co-op.',
+      'In 👕 Character: base styles (Verdance Outpost, Driftwood, Cozy Cabin), pet gear and fire colours. Looks only: everyone on your island sees them.',
+      'Three more island slots, and the Verdance Gold Card: claim every ad reward without the video, still once a day.',
+    ],
+  },
+  {
     version: '1.37',
     title: 'A sharper island',
     items: [

@@ -5,7 +5,7 @@ import type { IslandParts } from '../islands';
 import type { WorldRules } from '../rules';
 import type { WeatherKind } from './weather';
 import type { Perks } from '../skills';
-import type { RewardDays } from '../ads';
+import type { RewardDays, RewardKind } from '../ads';
 
 export interface Slot {
   id: string;
@@ -101,6 +101,9 @@ export interface BuildingNet {
   inv?: (Slot | null)[];
   /** Garden plot: [crop index (crops.ts), stage 0-3, wet 1/0, grown %]. */
   crop?: [number, number, number, number];
+  /** Its builder's base style and fire colour (missing: the island's own). */
+  s?: string;
+  f?: string;
 }
 
 export interface DropNet {
@@ -144,7 +147,11 @@ export interface MeNet {
   /** Survival basics: the step you're on (TUT_DONE: finished or skipped). */
   tut: number;
   /** Today's daily goal (when the island knows the date): which, how far, done. */
-  daily?: { day: number; goal: string; n: number; done: boolean };
+  daily?: { day: number; goal: string; n: number; done: boolean; bonus?: boolean };
+  /** Rewards the HUD may offer now (ads.ts OFFERED; missing: none). */
+  offers?: RewardKind[];
+  /** The name of their pet that died lately (the vet drone's offer). */
+  lostPet?: string;
 }
 
 export interface RescueNet {
@@ -182,6 +189,8 @@ export interface PetNet {
   mode: 'follow' | 'stay';
   /** Its egg or milk is ready. */
   ready: boolean;
+  /** What it wears (outfits.ts PET_GEAR; missing: nothing). */
+  gear?: string;
 }
 
 export type FxKind =

@@ -10,7 +10,7 @@ export interface SaveData {
   visits: number;
   /** The intro has been read (it then stays under About). */
   introSeen: boolean;
-  /** The island save slot played last (1…ISLAND_SLOTS). */
+  /** The island save slot played last (1…MAX_ISLAND_SLOTS). */
   slot: number;
   /** The newest What's new the player has seen (news.ts version). */
   newsSeen: string;
@@ -18,6 +18,8 @@ export interface SaveData {
 
 /** Islands a player can keep side by side. */
 export const ISLAND_SLOTS = 3;
+/** With the shop's three more islands (shop.ts `more_islands`). */
+export const MAX_ISLAND_SLOTS = 6;
 
 export function newSave(): SaveData {
   return { v: SAVE_VERSION, visits: 0, introSeen: false, slot: 1, newsSeen: '' };
@@ -41,7 +43,7 @@ export function parseSave(raw: string | null): SaveData {
   }
   save.introSeen = fields['introSeen'] === true;
   const slot = fields['slot'];
-  if (typeof slot === 'number' && Number.isInteger(slot) && slot >= 1 && slot <= ISLAND_SLOTS)
+  if (typeof slot === 'number' && Number.isInteger(slot) && slot >= 1 && slot <= MAX_ISLAND_SLOTS)
     save.slot = slot;
   if (typeof fields['newsSeen'] === 'string') save.newsSeen = fields['newsSeen'].slice(0, 16);
   return save;

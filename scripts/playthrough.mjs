@@ -2217,9 +2217,21 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.locator('.wardrobe-lock').getByText('Escape an island').waitFor();
   await page.getByRole('button', { name: 'Take it off' }).click();
   await page.locator('.wardrobe-tile', { hasText: 'Verdance hood' }).click();
-  await page.getByRole('button', { name: /Get the Verdance set/ }).click();
-  await page.getByText('Verdance set is yours').waitFor({ timeout: 10000 });
+  await page.getByRole('button', { name: /Get Verdance set/ }).click();
+  await page.getByText('Verdance set: yours').waitFor({ timeout: 10000 });
   await page.locator('.wardrobe-wearing', { hasText: 'Verdance hood' }).waitFor();
+  // A base style and a fire colour (test mode: free), and the Gold Card from the shop.
+  await page.getByRole('tab', { name: /Base/ }).click();
+  await page.locator('.wardrobe-tile', { hasText: 'Cozy Cabin' }).click();
+  await page.getByRole('button', { name: /Get Cozy Cabin/ }).click();
+  await page.getByText('Cozy Cabin: yours').waitFor({ timeout: 10000 });
+  await page.getByRole('tab', { name: /Fire/ }).click();
+  await page.locator('.wardrobe-tile', { hasText: 'Blue spirit' }).click();
+  await page.getByRole('button', { name: /Get Fire colours/ }).click();
+  await page.getByText('Fire colours: yours').waitFor({ timeout: 10000 });
+  await page.locator('.wardrobe-wearing', { hasText: 'Cozy Cabin' }).waitFor();
+  await page.getByRole('button', { name: 'Buy Verdance Gold Card' }).click();
+  await page.getByText('Verdance Gold Card: yours').waitFor({ timeout: 10000 });
   await page.waitForTimeout(500);
   await noSideScroll('wardrobe');
   await shot('9e-wardrobe');
@@ -2238,13 +2250,40 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
     return [me?.look, me?.color];
   });
   check(
-    worn[0] === 'hood.teal' && worn[1] === 0x5fd3d0,
+    worn[0] === 'hood.teal.cabin.none.blue' && worn[1] === 0x5fd3d0,
     `${tag} wardrobe: the island didn't get the outfit (${worn})`,
   );
+  // An offer when its moment comes: the repair crew the morning after a Bloom night, claimed
+  // with the Gold Card (no video); a piece built now wears the Cozy Cabin paint.
+  await game(page, () => {
+    const c = window.__game.client;
+    const s = c.link.sim;
+    const p = s.players.get(c.you);
+    s.time = 7 * 600 + 600 * 0.3;
+    s.buildings.set(99999, {
+      id: 99999,
+      kind: 'wall_wood',
+      x: p.x + 6,
+      z: p.z + 6,
+      rot: 0,
+      hp: 5,
+      owner: c.you,
+      v: 0,
+      acc: 0,
+    });
+  });
+  await page.locator('.offer-card', { hasText: 'Dawn repair crew' }).waitFor({ timeout: 20000 });
+  await page.locator('.offer-card').getByRole('button', { name: '✨ Claim' }).click();
+  await until(
+    page,
+    () => (window.__game.client.link.sim.buildings.get(99999)?.hp ?? 0) > 5,
+    `${tag} offers: the repair crew didn't come`,
+  );
+  await page.locator('.offer-card').waitFor({ state: 'detached', timeout: 20000 });
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.getByRole('button', { name: /Save and quit/ }).click();
   await titleMenu(page, 'Solo');
-  await page.getByRole('button', { name: new RegExp(`Continue · Day 1 on ${second}`) }).waitFor();
+  await page.getByRole('button', { name: new RegExp(`Day \\d+ on ${second}`) }).waitFor();
   await page.getByRole('button', { name: 'Your islands (2/3)' }).click();
   const first = page.locator('.slot-card', { hasText: islandName });
   await first.getByRole('button', { name: '▶ Play' }).click();
@@ -2298,6 +2337,14 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await page.getByRole('button', { name: /Save and quit/ }).click();
   await titleMenu(page, 'Solo');
   await page.getByRole('button', { name: 'Your islands (3/3)' }).waitFor();
+  // Three more islands from the shop: six slots.
+  await page.getByRole('button', { name: '‹ Back' }).click();
+  await titleMenu(page, 'Character');
+  await page.getByRole('button', { name: 'Buy Three more islands' }).click();
+  await page.getByText('Three more islands: yours').waitFor({ timeout: 10000 });
+  await page.getByRole('button', { name: '‹ Back' }).click();
+  await titleMenu(page, 'Solo');
+  await page.getByRole('button', { name: 'Your islands (3/6)' }).waitFor({ timeout: 10000 });
 }
 
 /** The day shown on the title's Continue button. */

@@ -4,7 +4,9 @@ import * as THREE from 'three';
 import { POI_BY_ID, type PoiDef, type Spot } from '../../game/content/pois';
 import { SECRETS } from '../../game/content/secrets';
 import type { IslandParts } from '../../game/islands';
-import { WALL_HEIGHT } from '../../game/content/buildings';
+import { BUILDINGS, WALL_HEIGHT } from '../../game/content/buildings';
+import { STYLE_PAINT, flameMap } from '../../game/paints';
+import { repaint, repaintGeometry } from './paint';
 import { MAT, box, cone, cyl, disc, dodeca, ico, merge, mesh, sphere, torus } from './geo';
 
 export interface BuildingView {
@@ -58,8 +60,8 @@ const roofCache = new Map<string, THREE.BufferGeometry>();
  * A 2 m roof tile: a slab with thatch or plank rows, and eaves that slope down and out on
  * every side without a neighbouring tile, so tiles together read as one roof.
  */
-export function roofGeometry(kind: string, mask: number): THREE.BufferGeometry {
-  const key = `${kind}|${mask}`;
+export function roofGeometry(kind: string, mask: number, style = 'plain'): THREE.BufferGeometry {
+  const key = `${kind}|${mask}|${style}`;
   const hit = roofCache.get(key);
   if (hit) return hit;
   const thatch = kind === 'roof_thatch';
@@ -82,12 +84,27 @@ export function roofGeometry(kind: string, mask: number): THREE.BufferGeometry {
     return box(0.56, 0.1, 2.06, dark, { y: y - 0.08, x: -out, rz: tilt });
   };
   for (const side of [ROOF_N, ROOF_E, ROOF_S, ROOF_W]) if (!(mask & side)) parts.push(eave(side));
-  const geo = merge(parts);
+  const paint = STYLE_PAINT[style];
+  const geo = paint ? repaintGeometry(merge(parts), paint) : merge(parts);
   roofCache.set(key, geo);
   return geo;
 }
 
-export function buildingModel(kind: string): BuildingView {
+/**
+ * A built piece, in its builder's base style (walls, floors, roofs and doors) and fire colour
+ * (campfires, torch posts, lamps), game/paints.ts.
+ */
+export function buildingModel(kind: string, style = 'plain', flame = 'fire'): BuildingView {
+  const view = plainModel(kind);
+  const cat = BUILDINGS[kind]?.cat;
+  const paint = STYLE_PAINT[style];
+  if (paint && (cat === 'walls' || cat === 'floors')) repaint(view.group, paint);
+  const fire = flameMap(flame);
+  if (fire && (view.flame || kind === 'lamp')) repaint(view.group, fire);
+  return view;
+}
+
+function plainModel(kind: string): BuildingView {
   const group = new THREE.Group();
   const view: BuildingView = { group };
   switch (kind) {

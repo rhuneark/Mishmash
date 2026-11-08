@@ -79,7 +79,7 @@ update to the user with this link)
   reports). **First launch**
   (v1.26, the coach review: get new players playing faster): the intro's Play goes straight
   onto a ready-made island (`App` `quickStart` → `Play` starts `quickIsland` when the slot is
-  empty), no New island screen. **Save slots** (`ISLAND_SLOTS` 3, `slots.islandKey`: slot 1
+  empty), no New island screen. **Save slots** (`ISLAND_SLOTS` 3, six with the shop's Three more islands: `slots.islandSlots()`; `slots.islandKey`: slot 1
   keeps `mishmash_island`, then `mishmash_island_2`/`_3`; `currentSlot`/`chooseSlot`, the hub
   save's `slot` remembers the last one; `listIslands`, `deleteIsland`; saves are kept per slot
   by `keeper(slot)` bound when a game starts; the minimap fog per slot, `fogKey`, and one for
@@ -653,8 +653,26 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   ad was earned; `IslandSim.onReward` checks the day, a screen in reach (or being dead for
   Second wind). Solo play waits while an ad plays; in co-op the island keeps going (the sheet
   says so). Outside the RUN app (desktop, or no ad ready) the player is told no ad is ready;
-  the local mock shows a "Close Ad" overlay. New reward: a `RewardKind` + `REWARDS` entry and
-  its case in `onReward`.
+  the local mock shows a "Close Ad" overlay. **Offered when their moment comes** (v1.38; the
+  user: "a better, more well rounded, and even more unique way for people to play ads or spend
+  money"; they picked these four): the authority works out which are open per survivor
+  (`IslandSim.offersFor`, `MeNet.offers` in `ads.ts` `OFFERED` order, checked again every
+  second as the clock and the island change) and the HUD shows the first as a compact card under
+  the daily goal (`Hud.tsx` `OfferCard`: icon, name, `short` line, ▶ Watch ad / ✨ Claim, ✕ "Not
+  now" hides that one for the island day, `client.dismissOffer`). **🛠️ Dawn repair crew**: the
+  day after a Bloom night until dusk (`afterBloomNight`), when a piece is below its kind's hp:
+  every damaged piece on the island back to full (`repairCrew`, toasts the crew).
+  **🎁 Crew care package**: co-op only (2+ survivors up), at dusk and by night (`crewHour`): a
+  `crate` with `CREW_KIT` (ration, water, bandage) at every survivor's feet. **🩺 Vet drone**:
+  when a pet dies its owner gets `SimPlayer.lostPet` (not saved; `MeNet.lostPet` names it) for
+  `VET_WINDOW` (a day): the pet comes back tamed by your bedroll (or the crash site) with its
+  name (`vetDrone`). **📦 Bonus shipment**: once today's daily goal is done: `DAILY_GIFT` and
+  `DAILY_XP` again, once (`DailyProgress.bonus`, saved). All once per island day per survivor
+  (the bonus once per real day). **Verdance Gold Card** (shop `gold_card`, `client.goldCard()`):
+  `watchAd` skips the video and claims at once, still once a day each (works on desktop too,
+  where RUN has no ads); buttons say ✨ Claim. New reward: a `RewardKind` + `REWARDS` entry
+  (`short` if offered) and its case in `onReward`; an offered one also goes in `OFFERED` and
+  `offersFor`.
 - **Survival basics, the tutorial** (`game/tutorial.ts`, v1.23; the user: "an easy to follow
   tutorial reminiscent of this type of game"; v1.24: "more prominent on PC… not in your face,
   but on the side, highlighted if tracking the quest, and crossed off or checked if completed",
@@ -827,7 +845,24 @@ Portrait 2.5D over a flat-shaded low-poly island. Everything is procedural (no a
   `rundot/shop.config.json` is generated (`npm run shop-config`; `outfits.test.ts` fails when
   they differ). Outside RUN the shop is in test mode (free, forgotten on reload). The shop
   config reaches public players only with the next publish (RUN's storefront reads the
-  `public` tag).
+  `public` tag). **More to buy** (v1.38, the user's picks; `Pack.kind`): **base styles**
+  Verdance Outpost / Driftwood / Cozy Cabin (199 each, `base_*`), the **Pet wardrobe** (149:
+  red collar, bandana, tiny top hat), **Fire colours** (99: blue spirit, Bloom green, violet,
+  ghost white), **Three more islands** (199, `more_islands`: six slots, `slots.islandSlots()`;
+  the hub save keeps a slot up to `MAX_ISLAND_SLOTS` 6) and the **Verdance Gold Card** (499,
+  see Ads). The look grew to "hat.coat.base.pet.flame" (`BASE_STYLES`, `PET_GEAR`, `FLAMES`;
+  older two-part codes still read). What a survivor builds keeps their style and fire colour
+  (`Building.style`/`flame`, saved; `BuildingNet.s`/`f`) and their pets wear their gear
+  (`PetState.gear`, saved; `PetNet.gear`); at every `hello` the authority repaints what's
+  theirs (`dressBelongings`), so everyone on the island sees it. Painting is by vertex colour
+  (`play/render/paint.ts` `repaint`/`repaintGeometry`, the palettes in `game/paints.ts`:
+  `STYLE_PAINT` maps the models' timber, beam, stone and roof colours; `FLAME_PAINT` the
+  flame and its light): `buildingModel(kind, style, flame)` paints walls and floors/roofs
+  (`cat` walls/floors) and campfires, torch posts and lamps; `roofGeometry(…, style)`; the
+  view redraws a piece whose paint changes (`paintKey`) and lights fires in their colour; a
+  held torch burns in its holder's; `Actor.setGear` puts the gear on a pet's head. Wardrobe
+  tabs: Hats, Coats, Base, Pets, Fire; the shop grouped (outfit sets, base styles, pets and
+  fire, extras; "Buy X" buttons).
 - **The daily goal** (`game/daily.ts`, v1.27; the coach review: "give players a reason to
   come back tomorrow"): one goal per real (UTC) day, the same for everyone (`DAILY_GOALS`,
   append only; `dailyGoal(day)` a fixed shuffle): fell 10 trees or rocks, craft 8, slay 8 of
@@ -956,7 +991,8 @@ src/game/          Pure rules. No SDK, no React, no DOM. Deterministic given inp
   records.ts         records across islands and the leaderboards they feed
   reminders.ts       daily reminders: when (quiet hours) and what each says
   outfits.ts         hats and coats, how each is unlocked, look codes
-  shop.ts            the shop's outfit sets (RUN Bits) and the shop config made from them
+  shop.ts            the shop's packs (RUN Bits) and the shop config made from them
+  paints.ts          base style and fire colour palettes (what play/render/paint.ts paints)
   content/           items, recipes, nodes, buildings, crops, monsters, landmarks (pois),
                      secrets (bunker, wreck, markers, treasure), notes
   sim/               the island authority: sim.ts (IslandSim), mobs.ts (monsters, director),
@@ -980,7 +1016,8 @@ src/play/          the game client: titleMusic.ts (the title theme, title tree),
                    outfits.ts (the look worn, sets owned, buying), WardrobeScene.ts (preview),
                    TitleScene.ts (the title backdrop), render/ (terrain, groundTex (the
                    ground's detail texture), nodes, actors, structures, items, props, fx,
-                   geo, wind, ambient, climate, light, weather, outline (ink lines)), hud/ (Hud,
+                   geo, wind, ambient, climate, light, weather, outline (ink lines), paint
+                   (repaints vertex colours)), hud/ (Hud,
                    Character (survivor menu), Menu, Panels, QuickPanel, Craft, Slots, drag,
                    itemIcons, MapView, map, RulesPanel, ChatBox)
 src/app/           community.ts (suggestions, Dev area over UgcApi), localUgc.ts (dev stand-in),
@@ -1016,7 +1053,7 @@ scripts/thumbnail.mjs    `npm run thumbnail`: re-exports public/thumbnail.jpg fr
 rundot/realtime.config.json  room type `island` → src/server/IslandRoom.ts (max 4 players)
 rundot/ugc.config.json   UGC limits and moderation
 rundot/leaderboard.config.json  the records' boards: days, slain, escapes (all time)
-rundot/shop.config.json  the shop's outfit sets, GENERATED from src/game/shop.ts (npm run shop-config)
+rundot/shop.config.json  the shop's packs, GENERATED from src/game/shop.ts (npm run shop-config)
 scripts/shop-config.ts   writes it
 rundot/textGen.config.json  `{ "disabled": true }`: AI text generation is off (unused; without
                          this file every deploy auto-enables it with permissive spend limits)
@@ -1067,7 +1104,9 @@ npm run playthrough         # Playwright at 375×667 and 390×844: hub (intro, n
                             # Skip, restart from How to play, the last step's journal glow;
                             # the daily goal: its chip, done, the streak on the title,
                             # 🏆 Records and a board; 👕 Wardrobe: a coat, a locked hat,
-                            # a shop set bought in test mode, the look on the island;
+                            # a shop set bought in test mode, a base style and fire colour
+                            # and the Gold Card bought, the look on the island; the repair
+                            # crew's offer claimed with the Gold Card; three more islands;
                             # walk, read, gather, the survivor menu: crafting by category,
                             # XP and learning a skill; touch: a swipe on the crafting grid
                             # scrolls, a mouse drag scrolls it too (and picks nothing), a

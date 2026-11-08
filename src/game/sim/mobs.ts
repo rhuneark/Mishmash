@@ -100,6 +100,12 @@ function killMob(sim: IslandSim, m: Mob): void {
   const def = MONSTERS[m.kind];
   if (m.tame) {
     sim.toast(m.tame.owner, `${def.animal?.icon ?? ''} ${m.tame.name} is gone.`);
+    // The vet drone (ads.ts) can still bring it back for a while.
+    const owner = sim.players.get(m.tame.owner);
+    if (owner) {
+      owner.lostPet = { kind: m.kind, name: m.tame.name, at: sim.time };
+      sim.dirty(owner);
+    }
     sim.petsChanged();
     return;
   }

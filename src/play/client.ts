@@ -65,14 +65,14 @@ import {
   type UseKind,
 } from '../game/sim/protocol';
 import { MONSTER_RADIUS } from '../game/sim/sim';
-import { dayInfo, lowTide, type DayInfo } from '../game/sim/time';
+import { DAY, dayInfo, lowTide, type DayInfo } from '../game/sim/time';
 import { GENERATOR_SAP } from '../game/content/secrets';
 import { PERK_STEP, levelFor, pointsFor, spent, xpForLevel, type PerkId } from '../game/skills';
 import { WEATHER_KINDS, type WeatherKind } from '../game/sim/weather';
 import { footprint, pushOutOfBox } from '../game/sim/types';
 import { DEEP, HALF, forNodesNear, heightAt, poolNear, type Island } from '../game/world';
 import type { Link } from './link';
-import { wornLook } from './outfits';
+import { outfitStore, wornLook } from './outfits';
 import { Telemetry } from './telemetry';
 
 export const WALK = 4.2;
@@ -1553,20 +1553,43 @@ export class GameClient {
     return !!this.me && rewardReady(this.me.ads ?? {}, kind, this.time);
   }
 
+  /** The Verdance Gold Card (shop.ts): ad rewards without the video, still once a day each. */
+  goldCard(): boolean {
+    return outfitStore.get().owned.has('gold_card');
+  }
+
+  /** Offers put away with "Not now", and the island day they were. */
+  private dismissed = new Map<RewardKind, number>();
+
+  /** The ad reward the HUD offers now (ads.ts OFFERED, most pressing first), if any. */
+  offer(): RewardKind | null {
+    const day = Math.floor(this.time / DAY);
+    for (const k of this.me?.offers ?? []) if (this.dismissed.get(k) !== day) return k;
+    return null;
+  }
+
+  /** "Not now": the offer stays away for the rest of the island day. */
+  dismissOffer(kind: RewardKind): void {
+    this.dismissed.set(kind, Math.floor(this.time / DAY));
+    run.track('ad_offer_dismissed', { kind });
+    this.touch();
+  }
+
   /**
    * Plays a rewarded ad the player chose; only one watched to the end asks the authority for
-   * its reward. Solo play waits while it plays.
+   * its reward. Solo play waits while it plays. A Gold Card claims it without the video.
    */
   async watchAd(kind: RewardKind): Promise<void> {
     if (this.adBusy || !this.rewardReady(kind)) return;
     this.adBusy = kind;
     this.touch();
+    const gold = this.goldCard();
     const solo = this.link.mode === 'solo';
-    if (solo) this.link.pause();
-    const res = await run.showRewardedAd(REWARDS[kind].adId, REWARDS[kind].name);
-    if (solo) this.link.resume();
+    if (solo && !gold) this.link.pause();
+    const res = gold ? 'earned' : await run.showRewardedAd(REWARDS[kind].adId, REWARDS[kind].name);
+    if (solo && !gold) this.link.resume();
     this.adBusy = null;
-    run.track('ad_reward', { kind, result: res });
+    run.track('ad_reward', { kind, result: gold ? 'gold' : res });
     if (res === 'earned') {
       this.send({ type: 'reward', kind });
       if (kind !== 'wind' && this.panel === 'screen') this.openPanel(null);

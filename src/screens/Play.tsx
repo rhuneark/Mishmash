@@ -35,6 +35,7 @@ import {
   chooseSlot,
   type NewIsland,
 } from '../play/slots';
+import { loadOutfits, outfitStore } from '../play/outfits';
 import { NEWS, type News } from '../game/news';
 import { CLIMATE_NAMES } from '../game/islands';
 import type { TitleScene } from '../play/TitleScene';
@@ -136,13 +137,19 @@ export function Play({
   // The slot a new island goes into: a free one first, else the one played now.
   const [target, setTarget] = useState<number | null>(null);
 
+  // Six slots once the shop's three more islands are owned.
+  const { owned } = useSyncExternalStore(outfitStore.subscribe, outfitStore.get);
+  const moreIslands = owned.has('more_islands');
+  useEffect(() => {
+    void loadOutfits();
+  }, []);
   useEffect(() => {
     let cancelled = false;
     void listIslands().then((list) => !cancelled && setIslands(list));
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [moreIslands]);
 
   const save = islands === undefined ? undefined : (islands[slot - 1] ?? null);
   const pick = (n: number) => {

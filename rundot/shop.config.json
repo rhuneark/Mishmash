@@ -113,6 +113,188 @@
       "sortOrder": 4,
       "releasedAt": null,
       "expiresAt": null
+    },
+    {
+      "itemId": "base_outpost",
+      "name": "Verdance Outpost",
+      "description": "White panels and green trim, like Kessler Station. Paints the walls, floors, roofs and doors you build. Everyone on your island sees it.",
+      "category": "non_consumable",
+      "price": {
+        "type": "bucks",
+        "value": "199"
+      },
+      "entitlements": [
+        {
+          "entitlementId": "base_outpost",
+          "quantity": 1,
+          "consumable": false
+        }
+      ],
+      "unique": true,
+      "active": true,
+      "regions": [],
+      "refundEligible": false,
+      "refundWindowHours": 0,
+      "tags": ["base"],
+      "sortOrder": 5,
+      "releasedAt": null,
+      "expiresAt": null
+    },
+    {
+      "itemId": "base_driftwood",
+      "name": "Driftwood",
+      "description": "Sun-bleached planks and pale sandstone, washed up and nailed together. Paints the walls, floors, roofs and doors you build.",
+      "category": "non_consumable",
+      "price": {
+        "type": "bucks",
+        "value": "199"
+      },
+      "entitlements": [
+        {
+          "entitlementId": "base_driftwood",
+          "quantity": 1,
+          "consumable": false
+        }
+      ],
+      "unique": true,
+      "active": true,
+      "regions": [],
+      "refundEligible": false,
+      "refundWindowHours": 0,
+      "tags": ["base"],
+      "sortOrder": 6,
+      "releasedAt": null,
+      "expiresAt": null
+    },
+    {
+      "itemId": "base_cabin",
+      "name": "Cozy Cabin",
+      "description": "Warm red-brown logs and a red shingle roof. Paints the walls, floors, roofs and doors you build.",
+      "category": "non_consumable",
+      "price": {
+        "type": "bucks",
+        "value": "199"
+      },
+      "entitlements": [
+        {
+          "entitlementId": "base_cabin",
+          "quantity": 1,
+          "consumable": false
+        }
+      ],
+      "unique": true,
+      "active": true,
+      "regions": [],
+      "refundEligible": false,
+      "refundWindowHours": 0,
+      "tags": ["base"],
+      "sortOrder": 7,
+      "releasedAt": null,
+      "expiresAt": null
+    },
+    {
+      "itemId": "pet_gear",
+      "name": "Pet wardrobe",
+      "description": "A red collar, a bandana and a tiny top hat for every animal you tame. Looks only.",
+      "category": "non_consumable",
+      "price": {
+        "type": "bucks",
+        "value": "149"
+      },
+      "entitlements": [
+        {
+          "entitlementId": "pet_gear",
+          "quantity": 1,
+          "consumable": false
+        }
+      ],
+      "unique": true,
+      "active": true,
+      "regions": [],
+      "refundEligible": false,
+      "refundWindowHours": 0,
+      "tags": ["pet"],
+      "sortOrder": 8,
+      "releasedAt": null,
+      "expiresAt": null
+    },
+    {
+      "itemId": "fire_colours",
+      "name": "Fire colours",
+      "description": "Blue spirit, Bloom green, violet and ghost white flames for your campfires, torch posts, lamps and torches.",
+      "category": "non_consumable",
+      "price": {
+        "type": "bucks",
+        "value": "99"
+      },
+      "entitlements": [
+        {
+          "entitlementId": "fire_colours",
+          "quantity": 1,
+          "consumable": false
+        }
+      ],
+      "unique": true,
+      "active": true,
+      "regions": [],
+      "refundEligible": false,
+      "refundWindowHours": 0,
+      "tags": ["fire"],
+      "sortOrder": 9,
+      "releasedAt": null,
+      "expiresAt": null
+    },
+    {
+      "itemId": "more_islands",
+      "name": "Three more islands",
+      "description": "Keep six islands side by side instead of three.",
+      "category": "non_consumable",
+      "price": {
+        "type": "bucks",
+        "value": "199"
+      },
+      "entitlements": [
+        {
+          "entitlementId": "more_islands",
+          "quantity": 1,
+          "consumable": false
+        }
+      ],
+      "unique": true,
+      "active": true,
+      "regions": [],
+      "refundEligible": false,
+      "refundWindowHours": 0,
+      "tags": ["extra"],
+      "sortOrder": 10,
+      "releasedAt": null,
+      "expiresAt": null
+    },
+    {
+      "itemId": "gold_card",
+      "name": "Verdance Gold Card",
+      "description": "Claim the in-flight channel, Second wind, the repair crew, care packages, the vet drone and bonus shipments without watching the ad. Still once a day each.",
+      "category": "non_consumable",
+      "price": {
+        "type": "bucks",
+        "value": "499"
+      },
+      "entitlements": [
+        {
+          "entitlementId": "gold_card",
+          "quantity": 1,
+          "consumable": false
+        }
+      ],
+      "unique": true,
+      "active": true,
+      "regions": [],
+      "refundEligible": false,
+      "refundWindowHours": 0,
+      "tags": ["extra"],
+      "sortOrder": 11,
+      "releasedAt": null,
+      "expiresAt": null
     }
   ],
   "sales": [],

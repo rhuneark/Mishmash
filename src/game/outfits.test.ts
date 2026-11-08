@@ -1,18 +1,45 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { COATS, HATS, lookCode, parseLook, shirtOf, unlocked, wearable } from './outfits';
+import {
+  BASE_STYLES,
+  COATS,
+  DEFAULT_LOOK,
+  FLAMES,
+  HATS,
+  PET_GEAR,
+  lookCode,
+  parseLook,
+  shirtOf,
+  unlocked,
+  wearable,
+} from './outfits';
 import { PACKS, SETS, packsFor, shopConfig } from './shop';
 import { newRecords } from './records';
 
 describe('outfits', () => {
   it('reads looks from untrusted codes', () => {
-    expect(parseLook('cap.khaki')).toEqual({ hat: 'cap', coat: 'khaki' });
-    expect(parseLook('crown.gold')).toEqual({ hat: 'none', coat: 'auto' });
-    expect(parseLook(42)).toEqual({ hat: 'none', coat: 'auto' });
-    expect(lookCode(parseLook('tophat.midnight'))).toBe('tophat.midnight');
-    expect(new Set(HATS.map((h) => h.id)).size).toBe(HATS.length);
-    expect(new Set(COATS.map((c) => c.id)).size).toBe(COATS.length);
-    for (const id of [...HATS, ...COATS].map((o) => o.id)) expect(id).not.toContain('.');
+    // Codes from before base styles, pet gear and flames still read.
+    expect(parseLook('cap.khaki')).toEqual({ ...DEFAULT_LOOK, hat: 'cap', coat: 'khaki' });
+    expect(parseLook('crown.gold')).toEqual(DEFAULT_LOOK);
+    expect(parseLook(42)).toEqual(DEFAULT_LOOK);
+    expect(parseLook('cap.khaki.cabin.bandana.blue')).toEqual({
+      hat: 'cap',
+      coat: 'khaki',
+      base: 'cabin',
+      pet: 'bandana',
+      flame: 'blue',
+    });
+    expect(parseLook('cap.khaki.castle.bow.pink')).toEqual({
+      ...DEFAULT_LOOK,
+      hat: 'cap',
+      coat: 'khaki',
+    });
+    const full = 'captain.midnight.driftwood.bandana.violet';
+    expect(lookCode(parseLook(full))).toBe(full);
+    for (const list of [HATS, COATS, BASE_STYLES, PET_GEAR, FLAMES]) {
+      expect(new Set(list.map((o) => o.id)).size).toBe(list.length);
+      for (const o of list) expect(o.id).not.toContain('.');
+    }
   });
 
   it('unlocks by records and by shop sets', () => {
@@ -25,23 +52,39 @@ describe('outfits', () => {
     expect(unlocked(hood.unlock, r, none)).toBe(false);
     expect(unlocked(hood.unlock, r, new Set(['outfit_verdance']))).toBe(true);
     // What isn't the player's comes off.
-    expect(wearable({ hat: 'hood', coat: 'teal' }, r, none)).toEqual({ hat: 'none', coat: 'teal' });
-    expect(shirtOf({ hat: 'none', coat: 'auto' }, 0x123456)).toBe(0x123456);
-    expect(shirtOf({ hat: 'none', coat: 'teal' }, 0x123456)).toBe(0x5fd3d0);
+    const worn = { ...DEFAULT_LOOK, hat: 'hood', coat: 'teal', base: 'cabin', flame: 'blue' };
+    expect(wearable(worn, r, none)).toEqual({ ...DEFAULT_LOOK, coat: 'teal' });
+    expect(wearable(worn, r, new Set(['base_cabin', 'fire_colours']))).toEqual({
+      ...worn,
+      hat: 'none',
+    });
+    expect(shirtOf(DEFAULT_LOOK, 0x123456)).toBe(0x123456);
+    expect(shirtOf({ ...DEFAULT_LOOK, coat: 'teal' }, 0x123456)).toBe(0x5fd3d0);
   });
 
   it('sells every shop outfit in a set, and the bundle only while no set is owned', () => {
-    for (const o of [...HATS, ...COATS])
-      if (o.unlock.by === 'shop') expect(SETS as readonly string[]).toContain(o.unlock.pack);
+    for (const o of [...HATS, ...COATS, ...BASE_STYLES, ...PET_GEAR, ...FLAMES])
+      if (o.unlock.by === 'shop') {
+        const pack = o.unlock.pack;
+        expect(SETS as readonly string[]).toContain(pack);
+        expect(PACKS.some((p) => (p.sets as readonly string[]).includes(pack))).toBe(true);
+      }
     expect(packsFor(new Set()).map((p) => p.id)).toEqual(PACKS.map((p) => p.id));
-    expect(packsFor(new Set(['outfit_night'])).map((p) => p.id)).toEqual([
-      'outfit_verdance',
-      'outfit_captain',
-    ]);
+    const outfits = (owned: string[]) =>
+      packsFor(new Set(owned))
+        .filter((p) => p.kind === 'outfit')
+        .map((p) => p.id);
+    expect(outfits(['outfit_night'])).toEqual(['outfit_verdance', 'outfit_captain']);
     expect(packsFor(new Set(SETS))).toEqual([]);
     const bundle = PACKS.find((p) => p.sets.length > 1)!;
-    const singles = PACKS.filter((p) => p.sets.length === 1).reduce((n, p) => n + p.bits, 0);
+    const singles = PACKS.filter((p) => p.kind === 'outfit' && p.sets.length === 1).reduce(
+      (n, p) => n + p.bits,
+      0,
+    );
     expect(bundle.bits).toBeLessThan(singles);
+    // Every pack sells something, once.
+    expect(new Set(PACKS.map((p) => p.id)).size).toBe(PACKS.length);
+    for (const set of SETS) expect(PACKS.some((p) => p.sets.includes(set))).toBe(true);
   });
 
   it('rundot/shop.config.json matches the catalog (run npm run shop-config)', () => {

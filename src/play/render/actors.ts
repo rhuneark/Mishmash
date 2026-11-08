@@ -3,9 +3,15 @@
 
 import * as THREE from 'three';
 import { MOB_STATE } from '../../game/sim/protocol';
-import { MAT, box, cone, cyl, ico, mesh, sphere } from './geo';
+import { MAT, box, cone, cyl, ico, mesh, sphere, torus } from './geo';
 import { heldModel } from './items';
 import { coatOf, shirtOf, type Look } from '../../game/outfits';
+import { FIRE, flameMap } from '../../game/paints';
+import { repaint } from './paint';
+
+/** A held torch's flame colours (render/items.ts). */
+const TORCH_OUTER = 0xffa53a;
+const TORCH_CORE = 0xffe07a;
 
 export type ActorKind =
   | 'player'
@@ -222,6 +228,50 @@ export class Actor {
         this.shadow.scale.setScalar(0.3);
         break;
     }
+  }
+
+  /** What a pet wears (outfits.ts PET_GEAR), on its head and neck; missing: nothing. */
+  gear: string | undefined;
+  private gearMesh: THREE.Object3D | null = null;
+
+  setGear(gear: string | undefined): void {
+    if (gear === this.gear) return;
+    this.gear = gear;
+    this.gearMesh?.parent?.remove(this.gearMesh);
+    this.gearMesh = null;
+    const head = this.parts['head'];
+    if (!gear || !head) return;
+    const fowl = this.kind === 'fowl';
+    const beast = BEASTS[this.kind as 'boar' | 'goat' | 'dog'];
+    if (!fowl && !beast) return;
+    // Sized to the head: a dog's is the measure.
+    const k = fowl ? 0.55 : (beast?.size ?? 0.3) / 0.3;
+    const top = fowl ? 0.15 : 0.21 * k;
+    const parts: THREE.BufferGeometry[] = [];
+    if (gear === 'collar')
+      parts.push(
+        torus(0.13 * k, 0.025 * k, 0xc8302a, { y: -0.03 * k, z: -0.05 * k }),
+        sphere(0.03 * k, 5, 4, 0xf2c14e, { y: -0.17 * k, z: -0.03 * k }),
+      );
+    else if (gear === 'bandana')
+      parts.push(
+        torus(0.13 * k, 0.03 * k, 0xd23b3b, { y: -0.03 * k, z: -0.05 * k }),
+        cone(0.12 * k, 0.18 * k, 3, 0xd23b3b, {
+          y: -0.16 * k,
+          z: 0.02 * k,
+          rx: Math.PI,
+          sz: 0.35,
+        }),
+      );
+    else if (gear === 'tophat')
+      parts.push(
+        cyl(0.11 * k, 0.11 * k, 0.02 * k, 10, 0x1e1e24, { y: top, z: 0.04 * k }),
+        cyl(0.065 * k, 0.07 * k, 0.13 * k, 8, 0x1e1e24, { y: top + 0.075 * k, z: 0.04 * k }),
+        cyl(0.072 * k, 0.074 * k, 0.025 * k, 8, 0xc0303a, { y: top + 0.025 * k, z: 0.04 * k }),
+      );
+    if (!parts.length) return;
+    this.gearMesh = mesh(parts);
+    head.add(this.gearMesh);
   }
 
   /** A boar, goat or dog: a body, a head that can dip to graze, four swinging legs. */
@@ -630,6 +680,14 @@ export class Actor {
     this.held?.parent?.remove(this.held);
     this.held = itemId ? heldModel(itemId) : null;
     if (!this.held) return;
+    // A torch burns in its holder's fire colour.
+    const fire = itemId === 'torch' && this.look ? flameMap(this.look.flame) : null;
+    if (fire)
+      repaint(this.held, {
+        ...fire,
+        [TORCH_OUTER]: fire[FIRE.outer] as number,
+        [TORCH_CORE]: fire[FIRE.core] as number,
+      });
     // A petal mask is worn, not carried.
     if (itemId === 'petal_mask' && head) {
       this.held.rotation.set(0, 0, 0);

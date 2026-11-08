@@ -2349,7 +2349,7 @@ async function playGame(page, tag, width, height, shot, noSideScroll) {
   await titleMenu(page, 'Solo');
   await page.getByRole('button', { name: 'Your islands (3/3)' }).waitFor();
   // Three more islands from the shop: six slots.
-  await page.getByRole('button', { name: '‹ Back' }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   await titleMenu(page, 'Character');
   await page.getByRole('button', { name: 'Buy Three more islands' }).click();
   await page.getByText('Three more islands: yours').waitFor({ timeout: 10000 });

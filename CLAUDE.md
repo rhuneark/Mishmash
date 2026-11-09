@@ -1236,7 +1236,11 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   v1.35.0 in review. **v1.37.0** (crisp graphics: full resolution by frame rate, fitted
   shadows, sharp ground, ink outlines, the Graphics rows) **was submitted with the Publish
   workflow on 2026-11-07 at the user's request** ("publish it public"), replacing v1.36.0 in
-  review. **Waiting:**
+  review. **v1.38.0** (ads offered when they help: the dawn repair crew, the vet drone, the
+  bonus shipment, the crew care package behind the 🎁 button; the shop's base styles, pet
+  wardrobe, fire colours, three more islands and the Gold Card) **was submitted with the
+  Publish workflow on 2026-11-09 at the user's request** ("publish it public"), replacing
+  v1.37.0 in review; the new shop packs go live with it. **Waiting:**
   the coach review's item 3: when the October Jam closes, swap the 🎃 Vote for us button
   for something lasting (Invite a friend with the island's code) and decide on the
   halloween/spooky tags (the user: "reserve 3 until after the jam").

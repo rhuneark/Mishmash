@@ -1,0 +1,54 @@
+name: Insights (read-only)
+
+# Reads what RUN knows about the game: which version each tag serves (is the public one the
+# newest, and what's in review), the analytics exports on offer, the leaderboards and RUN's
+# market digest. Changes nothing. Hand-run, and on changes to this file.
+# The repo is public, so these logs are too: print aggregates only, never player ids, names
+# or per-player rows.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/happy-mayer-ufwo5m
+    paths:
+      - '.github/workflows/insights.yml'
+
+concurrency:
+  group: rundot-insights
+  cancel-in-progress: false
+
+jobs:
+  insights:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RUNDOT_API_KEY: ${{ secrets.RUNDOT_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install RUN CLI
+        run: |
+          curl -fsSL https://github.com/series-ai/rundot-cli-releases/releases/latest/download/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Log in to RUN
+        run: |
+          if [ -z "$RUNDOT_API_KEY" ]; then echo "::error::RUNDOT_API_KEY secret is not set"; exit 1; fi
+          printf '%s' "$RUNDOT_API_KEY" | rundot login --api-key-stdin
+
+      - name: Which version each tag serves
+        run: rundot game list-tags || true
+
+      - name: Analytics exports on offer
+        run: |
+          rundot analytics queries || true
+          rundot analytics export --help || true
+
+      - name: Leaderboards
+        run: rundot leaderboard config || true
+
+      - name: RUN market digest
+        run: rundot intel whats-hot || true
+
+      - name: Game commands
+        run: rundot game --help || true

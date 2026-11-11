@@ -1244,6 +1244,11 @@ Headless WebGL is SwiftShader (~10 fps): fine for checks, not for judging perfor
   the coach review's item 3: when the October Jam closes, swap the 🎃 Vote for us button
   for something lasting (Invite a friend with the island's code) and decide on the
   halloween/spooky tags (the user: "reserve 3 until after the jam").
+- `.github/workflows/insights.yml`: read-only, hand-run (and on changes to it; they don't
+  deploy): which version each tag serves (`rundot game list-tags`: what's public, what's in
+  review), the analytics exports on offer, the leaderboards and RUN's market digest. **The repo
+  is public, so its Actions logs are too**: print aggregates only, never player ids, names or
+  per-player rows.
 - The RUN site (`w.run`) may be blocked by a cloud container's network policy; verify locally
   and ask the user to check the live build.
 

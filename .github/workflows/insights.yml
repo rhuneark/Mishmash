@@ -1,8 +1,9 @@
 name: Insights (read-only)
 
 # Reads what RUN knows about the game: which version each tag serves (is the public one the
-# newest, and what's in review), the analytics exports on offer, the leaderboards and RUN's
-# market digest. Changes nothing. Hand-run, and on changes to this file.
+# newest, and what's in review), the game's settings and the aggregate analytics exports
+# (players, retention, the first-session funnel, events, crashes). Changes nothing.
+# Hand-run, and on changes to this file.
 # The repo is public, so these logs are too: print aggregates only, never player ids, names
 # or per-player rows.
 on:
@@ -39,16 +40,47 @@ jobs:
       - name: Which version each tag serves
         run: rundot game list-tags || true
 
-      - name: Analytics exports on offer
+      - name: The game's settings on RUN (lines with an email left out)
+        run: rundot game info 2>&1 | grep -v '@' || true
+
+      - name: Analytics (aggregate exports; columns that could name a player are dropped)
         run: |
-          rundot analytics queries || true
-          rundot analytics export --help || true
-
-      - name: Leaderboards
-        run: rundot leaderboard config || true
-
-      - name: RUN market digest
-        run: rundot intel whats-hot || true
-
-      - name: Game commands
-        run: rundot game --help || true
+          cat > scrub.py <<'PY'
+          import csv, re, sys
+          path, limit = sys.argv[1], int(sys.argv[2])
+          rows = list(csv.reader(open(path, newline='')))
+          if not rows:
+              print('(empty)'); sys.exit()
+          bad = re.compile(r'profile|email|username|user_name|display_name|player_name|device_id|install_id|session_id|ip_address', re.I)
+          exact = {'user', 'user_id', 'userid', 'player', 'player_id', 'playerid', 'ip', 'name'}
+          keep = [i for i, h in enumerate(rows[0]) if not bad.search(h) and h.strip().lower() not in exact]
+          dropped = [h for i, h in enumerate(rows[0]) if i not in keep]
+          if dropped: print('(columns dropped: ' + ', '.join(dropped) + ')')
+          out = csv.writer(sys.stdout)
+          for r in rows[: limit + 1]:
+              out.writerow([r[i] if i < len(r) else '' for i in keep])
+          if len(rows) > limit + 1: print('(+%d more rows)' % (len(rows) - limit - 1))
+          PY
+          export_one() {
+            echo "::group::$1"
+            if rundot analytics export "$1" --output "$1.csv" > /dev/null 2> err.txt; then
+              python3 scrub.py "$1.csv" "$2"
+            else
+              head -c 400 err.txt; echo
+            fi
+            echo "::endgroup::"
+          }
+          export_one dashboard_summary 40
+          export_one daily_activity_30d 40
+          export_one platform_mix_30d 40
+          export_one version_mix_30d 40
+          export_one retention_by_platform_30d 40
+          export_one funnel_steps_30d 60
+          export_one session_end_summary_30d 60
+          export_one core_loop_events_30d 60
+          export_one top_custom_events_30d 60
+          export_one custom_event_metrics_30d 120
+          export_one monetization_events_30d 40
+          export_one share_funnel_30d 40
+          export_one crash_free_summary_30d 40
+          export_one error_signatures_7d 15
